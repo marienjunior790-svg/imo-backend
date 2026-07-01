@@ -15,10 +15,11 @@ async function bootstrap() {
   const app = createApp();
 
   app.listen(env.PORT, '0.0.0.0', () => {
+    const publicUrl = env.PUBLIC_API_URL ?? `http://localhost:${env.PORT}`;
     console.log(`\n🏠 IMMO-tec API`);
     console.log(`   Environnement : ${env.NODE_ENV}`);
-    console.log(`   URL           : http://localhost:${env.PORT}${env.API_PREFIX}`);
-    console.log(`   Health        : http://localhost:${env.PORT}${env.API_PREFIX}/health\n`);
+    console.log(`   URL           : ${publicUrl}${env.API_PREFIX}`);
+    console.log(`   Health        : ${publicUrl}${env.API_PREFIX}/health\n`);
   });
 
   const shutdown = async () => {

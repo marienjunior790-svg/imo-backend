@@ -1,5 +1,5 @@
 import express from 'express';
-import cors from 'cors';
+import cors, { type CorsOptions } from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
@@ -11,13 +11,22 @@ import { errorMiddleware } from './shared/middleware/validate.middleware.js';
 export function createApp() {
   const app = express();
 
+  if (env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+  }
+
   app.use(helmet());
-  app.use(
-    cors({
-      origin: corsOrigins ?? true,
-      credentials: true,
-    }),
-  );
+
+  const corsOptions: CorsOptions = {
+    credentials: true,
+    origin:
+      env.NODE_ENV === 'production'
+        ? corsOrigins?.length
+          ? corsOrigins
+          : false
+        : corsOrigins ?? true,
+  };
+  app.use(cors(corsOptions));
   app.use(morgan(env.NODE_ENV === 'development' ? 'dev' : 'combined'));
   app.use(express.json({ limit: '2mb' }));
   app.use(express.urlencoded({ extended: true }));

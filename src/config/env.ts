@@ -26,8 +26,11 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default('gpt-4o'),
   AI_MAX_HISTORY: z.coerce.number().default(10),
-  // CORS (production) — liste séparée par des virgules, ex: https://app.example.com
+  // CORS (production) — origines séparées par des virgules (obligatoire si frontend web)
+  // CORS_ORIGINS=https://app.example.com,https://admin.example.com
   CORS_ORIGINS: z.string().optional(),
+  // URL publique affichée au démarrage (Railway : https://xxx.up.railway.app)
+  PUBLIC_API_URL: z.string().url().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -54,3 +57,18 @@ export const isOpenAiConfigured = Boolean(env.OPENAI_API_KEY);
 export const corsOrigins = env.CORS_ORIGINS
   ? env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
   : undefined;
+
+const DEV_JWT_MARKERS = ['immo-tec-dev-access-secret', 'immo-tec-dev-refresh-secret', 'change-me-production'];
+
+if (env.NODE_ENV === 'production') {
+  const weakJwt =
+    DEV_JWT_MARKERS.some((m) => env.JWT_ACCESS_SECRET.includes(m)) ||
+    DEV_JWT_MARKERS.some((m) => env.JWT_REFRESH_SECRET.includes(m));
+  if (weakJwt) {
+    console.error('❌ JWT_ACCESS_SECRET / JWT_REFRESH_SECRET : utilisez des secrets aléatoires en production (Railway Variables).');
+    process.exit(1);
+  }
+  if (!env.DATABASE_URL.includes('sslmode=') && !env.DATABASE_URL.includes('ssl=true')) {
+    console.warn('⚠️  DATABASE_URL sans SSL explicite — Neon/Railway/Supabase recommandent ?sslmode=require');
+  }
+}
