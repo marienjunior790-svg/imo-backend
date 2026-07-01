@@ -69,7 +69,7 @@ export class InspectionService {
         tenantId: data.tenantId,
         type: data.type,
         notes: data.notes,
-        checklist: data.checklist,
+        checklist: data.checklist as any,
         conductedById: userId,
         photos: [],
       },
