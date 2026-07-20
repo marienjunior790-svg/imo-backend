@@ -26,7 +26,13 @@ import inspectionRoutes from '../modules/inspections/inspection.routes.js';
 const router = Router();
 
 router.get('/health', (_req, res) => {
-  res.json({ success: true, message: 'ITC API opérationnelle', timestamp: new Date().toISOString() });
+  res.json({
+    success: true,
+    message: 'ITC API opérationnelle',
+    timestamp: new Date().toISOString(),
+    uptimeSec: Math.floor(process.uptime()),
+    env: process.env.NODE_ENV ?? 'development',
+  });
 });
 
 router.get('/', (_req, res) => {

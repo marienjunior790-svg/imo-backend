@@ -1,7 +1,7 @@
 /**
- * IMMO-tec — Initialisation base (catalogue fonctionnalités uniquement)
+ * IMMO-tec — Catalogue système uniquement (fonctionnalités + RBAC).
+ * Les utilisateurs se créent via inscription ou administration.
  * Exécution : npx prisma db seed
- * Les organisations et utilisateurs se créent via l'inscription ou l'administration.
  */
 import { PrismaClient } from '@prisma/client';
 import { FEATURE_CATALOG } from '../src/shared/constants/feature-keys.js';
@@ -35,7 +35,7 @@ async function seedRbac() {
       });
     }
   }
-  console.log(`✅ ${PERMISSION_CATALOG.length} permissions RBAC + matrices rôles initialisées`);
+  console.log(`✅ ${PERMISSION_CATALOG.length} permissions RBAC initialisées`);
 }
 
 async function main() {
@@ -57,7 +57,7 @@ async function main() {
 
   console.log(`✅ ${FEATURE_CATALOG.length} fonctionnalités catalogue initialisées`);
   await seedRbac();
-  console.log('ℹ️  Créez votre organisation via l\'inscription (mobile ou web).\n');
+  console.log('ℹ️  Comptes utilisateurs : inscription mobile ou administration plateforme.\n');
 }
 
 main()

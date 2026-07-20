@@ -52,7 +52,13 @@ export class CloudinaryService {
       });
     }
 
-    // Fallback local (dev sans Cloudinary)
+    // Fallback local — développement uniquement
+    if (env.NODE_ENV === 'production') {
+      throw new ValidationError(
+        'Stockage Cloudinary obligatoire en production. Configurez CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY et CLOUDINARY_API_SECRET.',
+      );
+    }
+
     const uploadsDir = join(process.cwd(), 'uploads', options.folder);
     await mkdir(uploadsDir, { recursive: true });
     const filePath = join(uploadsDir, options.fileName);

@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import { ZodSchema } from 'zod';
 import { sendError } from '../utils/response.util.js';
+import { captureException } from '../../infrastructure/monitoring/sentry.js';
 
 export function validateBody<T>(schema: ZodSchema<T>) {
   return (req: Request, _res: Response, next: NextFunction): void => {
@@ -16,6 +17,7 @@ export function validateQuery<T>(schema: ZodSchema<T>) {
   };
 }
 
-export function errorMiddleware(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
+export function errorMiddleware(err: unknown, req: Request, res: Response, _next: NextFunction): void {
+  captureException(err, { path: req.path, method: req.method });
   sendError(res, err);
 }

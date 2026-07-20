@@ -31,6 +31,13 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().optional(),
   // URL publique affichée au démarrage (Railway : https://xxx.up.railway.app)
   PUBLIC_API_URL: z.string().url().optional(),
+  // Premier super-admin (une seule fois, si aucun SUPER_ADMIN en base)
+  BOOTSTRAP_SUPER_ADMIN_EMAIL: z.string().email().optional(),
+  BOOTSTRAP_SUPER_ADMIN_PASSWORD: z.string().min(8).optional(),
+  // Monitoring (optionnel)
+  SENTRY_DSN: z.string().url().optional(),
+  // Cache IA (ms)
+  AI_CONTEXT_CACHE_TTL_MS: z.coerce.number().default(60_000),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -66,6 +73,10 @@ if (env.NODE_ENV === 'production') {
     DEV_JWT_MARKERS.some((m) => env.JWT_REFRESH_SECRET.includes(m));
   if (weakJwt) {
     console.error('❌ JWT_ACCESS_SECRET / JWT_REFRESH_SECRET : utilisez des secrets aléatoires en production (Railway Variables).');
+    process.exit(1);
+  }
+  if (!isCloudinaryConfigured) {
+    console.error('❌ Cloudinary obligatoire en production (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET).');
     process.exit(1);
   }
   if (!env.DATABASE_URL.includes('sslmode=') && !env.DATABASE_URL.includes('ssl=true')) {

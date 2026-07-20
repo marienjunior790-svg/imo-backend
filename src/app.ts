@@ -40,8 +40,10 @@ export function createApp() {
     }),
   );
 
-  // Fichiers locaux (fallback dev sans Cloudinary)
-  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+  // Fichiers locaux — uniquement hors production (Cloudinary obligatoire en prod)
+  if (env.NODE_ENV !== 'production') {
+    app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+  }
 
   app.use(env.API_PREFIX, routes);
 

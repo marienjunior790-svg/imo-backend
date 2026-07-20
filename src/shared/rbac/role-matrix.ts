@@ -46,6 +46,9 @@ const OWNER: string[] = [
   'USER_CREATE',
   'USER_EDIT',
   'USER_DELETE',
+  'AI_USE',
+  'AI_CHAT',
+  'AI_ANALYZE',
 ];
 
 const AGENT: string[] = [
@@ -125,6 +128,8 @@ export const ROLE_PERMISSION_MATRIX: Record<SystemRole, string[] | 'ALL'> = {
     'NOTIFICATION_CENTER_VIEW',
     'MESSAGE_VIEW',
     'SETTINGS_VIEW',
+    'AI_USE',
+    'AI_CHAT',
   ],
   TECHNICIAN: [
     'TECH_HOME_VIEW',

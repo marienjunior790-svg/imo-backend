@@ -2,6 +2,8 @@ import { inject, injectable } from 'tsyringe';
 import { ApartmentStatus, LeaseStatus, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { decimalToNumber } from '../../shared/utils/response.util.js';
+import { TtlCache } from '../../shared/utils/ttl-cache.js';
+import { env } from '../../config/env.js';
 
 /** Contexte organisation scoping — données agrégées pour l'IA (pas de dump brut) */
 export interface AiOrganizationContext {
@@ -29,9 +31,24 @@ export interface AiOrganizationContext {
 
 @injectable()
 export class AiContextService {
+  private readonly cache = new TtlCache<AiOrganizationContext>(env.AI_CONTEXT_CACHE_TTL_MS);
+
   constructor(@inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async buildContext(organizationId: string): Promise<AiOrganizationContext> {
+    const cached = this.cache.get(organizationId);
+    if (cached) return cached;
+
+    const ctx = await this.fetchContext(organizationId);
+    this.cache.set(organizationId, ctx);
+    return ctx;
+  }
+
+  invalidateOrganization(organizationId: string): void {
+    this.cache.invalidate(organizationId);
+  }
+
+  private async fetchContext(organizationId: string): Promise<AiOrganizationContext> {
     const org = await this.prisma.organization.findUnique({
       where: { id: organizationId },
       select: { id: true, name: true, city: true, plan: true },

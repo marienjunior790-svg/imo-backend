@@ -17,7 +17,8 @@
     "test": "jest --config jest.config.cjs",
     "test:watch": "jest --config jest.config.cjs --watch",
     "test:coverage": "jest --config jest.config.cjs --coverage",
-    "test:integration": "cross-env RUN_DB_TESTS=true jest --config jest.config.cjs tests/integration/auth.db.test.ts"
+    "test:integration": "cross-env RUN_DB_TESTS=true jest --config jest.config.cjs tests/integration/auth.db.test.ts",
+    "lint": "tsc --noEmit"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -44,7 +45,8 @@
     "reflect-metadata": "^0.2.2",
     "tsyringe": "^4.8.0",
     "openai": "^4.73.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@sentry/node": "^8.42.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
