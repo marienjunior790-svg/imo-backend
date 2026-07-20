@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { container } from 'tsyringe';
 import authRoutes from '../modules/auth/auth.routes.js';
 import buildingRoutes from '../modules/buildings/building.routes.js';
 import apartmentRoutes from '../modules/apartments/apartment.routes.js';
@@ -22,17 +23,44 @@ import portalRoutes from '../modules/portal/portal.routes.js';
 import notificationRoutes from '../modules/notifications/notification.routes.js';
 import notificationCenterRoutes from '../modules/notification-center/notification-center.routes.js';
 import inspectionRoutes from '../modules/inspections/inspection.routes.js';
+import { PrismaService } from '../infrastructure/prisma/prisma.service.js';
 
+const APP_VERSION = process.env.npm_package_version ?? '0.8.0';
 const router = Router();
 
-router.get('/health', (_req, res) => {
-  res.json({
-    success: true,
-    message: 'ITC API opérationnelle',
+router.get('/health', async (_req, res) => {
+  const uptime = Math.floor(process.uptime());
+  const environment = process.env.NODE_ENV ?? 'development';
+  let database: 'connected' | 'disconnected' = 'disconnected';
+
+  try {
+    const prisma = container.resolve(PrismaService);
+    await Promise.race([
+      prisma.$queryRaw`SELECT 1`,
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('health db timeout')), 2500);
+      }),
+    ]);
+    database = 'connected';
+  } catch {
+    database = 'disconnected';
+  }
+
+  const ok = database === 'connected';
+  const body = {
+    status: ok ? 'ok' : 'degraded',
+    version: APP_VERSION,
+    database,
+    uptime,
+    environment,
+    success: ok,
+    message: ok ? 'ITC API opérationnelle' : 'ITC API — base de données inaccessible',
     timestamp: new Date().toISOString(),
-    uptimeSec: Math.floor(process.uptime()),
-    env: process.env.NODE_ENV ?? 'development',
-  });
+    uptimeSec: uptime,
+    env: environment,
+  };
+
+  res.status(ok ? 200 : 503).json(body);
 });
 
 router.get('/', (_req, res) => {

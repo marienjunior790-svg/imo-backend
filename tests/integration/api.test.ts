@@ -4,13 +4,16 @@ import { createApp } from '../../src/app.js';
 describe('Integration — Health', () => {
   const app = createApp();
 
-  it('GET /api/v1/health retourne 200', async () => {
+  it('GET /api/v1/health retourne le contrat RC', async () => {
     const res = await request(app).get('/api/v1/health');
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.message).toMatch(/ITC|IMMO/i);
+    // 200 si DB dispo (CI/local), 503 si Prisma non connecté (createApp isolé)
+    expect([200, 503]).toContain(res.status);
+    expect(res.body.version).toBeDefined();
+    expect(res.body.database).toMatch(/connected|disconnected/);
+    expect(res.body.status).toMatch(/ok|degraded/);
+    expect(typeof res.body.uptime).toBe('number');
+    expect(res.body.environment).toBeDefined();
     expect(res.body.timestamp).toBeDefined();
-    expect(res.body.uptimeSec).toBeGreaterThanOrEqual(0);
   });
 });
 

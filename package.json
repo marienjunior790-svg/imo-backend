@@ -1,6 +1,6 @@
 {
   "name": "immo-tec-backend",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "description": "IMMO-tec — API de gestion immobilière",
   "main": "dist/server.js",
   "scripts": {
