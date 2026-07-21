@@ -25,7 +25,9 @@ import notificationCenterRoutes from '../modules/notification-center/notificatio
 import inspectionRoutes from '../modules/inspections/inspection.routes.js';
 import { PrismaService } from '../infrastructure/prisma/prisma.service.js';
 
-const APP_VERSION = process.env.npm_package_version ?? '0.8.0';
+/** Priorité : APP_VERSION (start-prod) → npm_package_version → fallback RC */
+const APP_VERSION =
+  process.env.APP_VERSION ?? process.env.npm_package_version ?? '0.8.0';
 const router = Router();
 
 router.get('/health', async (_req, res) => {
@@ -47,6 +49,7 @@ router.get('/health', async (_req, res) => {
   }
 
   const ok = database === 'connected';
+  // Contrat RC 0.8.0 — champs obligatoires en tête
   const body = {
     status: ok ? 'ok' : 'degraded',
     version: APP_VERSION,
