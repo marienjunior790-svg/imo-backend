@@ -6,8 +6,8 @@ describe('Integration — Health', () => {
 
   it('GET /api/v1/health retourne le contrat RC', async () => {
     const res = await request(app).get('/api/v1/health');
-    // 200 si DB dispo (CI/local), 503 si Prisma non connecté (createApp isolé)
-    expect([200, 503]).toContain(res.status);
+    // Liveness HTTP 200 (Railway). status/database portent l'état réel.
+    expect(res.status).toBe(200);
     expect(res.body.version).toBeDefined();
     expect(res.body.database).toMatch(/connected|disconnected/);
     expect(res.body.status).toMatch(/ok|degraded/);

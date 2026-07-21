@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-# Version applicative (node direct ne definit pas npm_package_version)
-export APP_VERSION="${APP_VERSION:-$(node -p "require('./package.json').version")}"
+APP_VERSION=$(node -p "require('./package.json').version")
+export APP_VERSION
 
 echo "Applying Prisma migrations..."
 npx prisma migrate deploy

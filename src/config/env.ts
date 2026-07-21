@@ -76,8 +76,11 @@ if (env.NODE_ENV === 'production') {
     process.exit(1);
   }
   if (!isCloudinaryConfigured) {
-    console.error('❌ Cloudinary obligatoire en production (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET).');
-    process.exit(1);
+    // Ne bloque plus le boot : les uploads échoueront déjà via CloudinaryService.
+    // Un exit(1) ici empêche tout redeploy RC si les variables manquent sur Railway.
+    console.error(
+      '⚠️  Cloudinary non configuré (CLOUDINARY_CLOUD_NAME / API_KEY / API_SECRET). Uploads images/PDF indisponibles jusqu’à configuration.',
+    );
   }
   if (!env.DATABASE_URL.includes('sslmode=') && !env.DATABASE_URL.includes('ssl=true')) {
     console.warn('⚠️  DATABASE_URL sans SSL explicite — Neon/Railway/Supabase recommandent ?sslmode=require');

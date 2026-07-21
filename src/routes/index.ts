@@ -49,7 +49,7 @@ router.get('/health', async (_req, res) => {
   }
 
   const ok = database === 'connected';
-  // Contrat RC 0.8.0 — champs obligatoires en tête
+  // HTTP 200 = process vivant (Railway healthcheck). status/database = contrat RC.
   const body = {
     status: ok ? 'ok' : 'degraded',
     version: APP_VERSION,
@@ -63,7 +63,7 @@ router.get('/health', async (_req, res) => {
     env: environment,
   };
 
-  res.status(ok ? 200 : 503).json(body);
+  res.status(200).json(body);
 });
 
 router.get('/', (_req, res) => {
