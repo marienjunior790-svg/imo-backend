@@ -48,7 +48,8 @@ export class AuthRepository {
           type: data.organizationType,
           email: data.email.toLowerCase(),
           phone: data.phone,
-          isValidated: data.organizationType === 'OWNER',
+          // Self-serve : org immédiatement utilisable (sinon USER_CREATE / admin bloqués en 403).
+          isValidated: true,
         },
       });
 
