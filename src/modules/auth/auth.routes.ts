@@ -1,7 +1,14 @@
 import { Router } from 'express';
 import { container } from 'tsyringe';
 import { AuthService } from './auth.service.js';
-import { loginSchema, logoutSchema, refreshSchema, registerTenantSchema, changePasswordSchema } from './auth.schema.js';
+import {
+  loginSchema,
+  logoutSchema,
+  refreshSchema,
+  registerSchema,
+  registerTenantSchema,
+  changePasswordSchema,
+} from './auth.schema.js';
 import { authenticatedPipeline } from '../../shared/middleware/security.stack.js';
 import { authRateLimit } from '../../shared/middleware/auth-rate-limit.middleware.js';
 import { validateBody } from '../../shared/middleware/validate.middleware.js';
@@ -19,11 +26,10 @@ function clientIp(req: { ip?: string; headers: Record<string, string | string[] 
 router.post(
   '/register',
   authRateLimit,
-  asyncHandler(async (_req, res) => {
-    res.status(403).json({
-      success: false,
-      message: 'Inscription agence/propriétaire désactivée. Contactez l\'administrateur ITC pour obtenir un compte.',
-    });
+  validateBody(registerSchema),
+  asyncHandler(async (req, res) => {
+    const result = await authService.register(req.body);
+    sendSuccess(res, result, 'Compte organisation créé', 201);
   }),
 );
 

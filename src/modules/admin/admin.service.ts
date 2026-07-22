@@ -170,7 +170,7 @@ export class AdminService {
 
 
 
-    const existing = await this.prisma.user.findUnique({ where: { email: input.email } });
+    const existing = await this.prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
 
     if (existing) throw new ConflictError('Cet e-mail est déjà utilisé');
 
@@ -194,7 +194,7 @@ export class AdminService {
 
       data: {
 
-        email: input.email,
+        email: input.email.toLowerCase(),
 
         passwordHash,
 

@@ -180,22 +180,67 @@ export class AuthService {
   ) {}
 
   async register(input: RegisterInput) {
-    const existing = await this.repo.findByEmail(input.email);
-    if (existing) throw new ConflictError('Cet email est déjà utilisé');
+    const email = input.email.toLowerCase();
+    console.log('[auth] Signup started', { email, org: input.organizationName, type: input.organizationType });
+
+    const existing = await this.repo.findByEmail(email);
+    if (existing) {
+      console.warn('[auth] Signup conflict — email exists', { email });
+      throw new ConflictError('Cet email est déjà utilisé');
+    }
 
     const passwordHash = await bcrypt.hash(input.password, 12);
-    const user = await this.repo.createOrganizationWithAdmin({ ...input, passwordHash });
+    console.log('[auth] Password hashed');
+
+    let user;
+    try {
+      user = await this.repo.createOrganizationWithAdmin({ ...input, email, passwordHash });
+      console.log('[auth] Auth user + organization created', {
+        userId: user.id,
+        role: user.role,
+        organizationId: user.organizationId,
+      });
+    } catch (err) {
+      console.error('[auth] Organization/user transaction failed', {
+        email,
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+      throw err;
+    }
 
     if (user.organizationId) {
-      await this.subscriptionService.createDefaultSubscription(user.organizationId);
+      try {
+        await this.subscriptionService.createDefaultSubscription(user.organizationId);
+        console.log('[auth] Default subscription created', { organizationId: user.organizationId });
+      } catch (err) {
+        // Compte déjà commité : ne pas bloquer la session — l'utilisateur doit pouvoir se connecter.
+        console.error('[auth] Subscription create failed (non-blocking)', {
+          organizationId: user.organizationId,
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+      }
     }
 
     const tokens = await this.issueTokens(user.id, user.email, user.role, user.organizationId);
+    console.log('[auth] Session created', { userId: user.id });
+
     const subscription = user.organizationId
-      ? await this.subscriptionService.getSubscription(user.organizationId)
+      ? await this.subscriptionService.getSubscription(user.organizationId).catch(() => null)
       : null;
     const permissions = await this.featureService.getUserFeatureMap(user.id, user.role);
     const rbac = await this.rbacService.getPermissionsMap(user.role);
+
+    await this.auditService.log({
+      action: AuditAction.AUTH_REGISTER_ORG,
+      userId: user.id,
+      userRole: user.role,
+      organizationId: user.organizationId,
+      newValue: { email: user.email, organizationName: input.organizationName },
+    }).catch(() => undefined);
+
+    console.log('[auth] Signup complete — redirect with session', { userId: user.id, role: user.role });
 
     return {
       user: sanitizeUser(user),
@@ -208,11 +253,30 @@ export class AuthService {
   }
 
   async registerTenant(input: { email: string; password: string; firstName: string; lastName: string; phone: string }) {
-    const existing = await this.repo.findByEmail(input.email);
-    if (existing) throw new ConflictError('Cet email est déjà utilisé');
+    const email = input.email.toLowerCase();
+    console.log('[auth] Tenant signup started', { email });
+
+    const existing = await this.repo.findByEmail(email);
+    if (existing) {
+      console.warn('[auth] Tenant signup conflict', { email });
+      throw new ConflictError('Cet email est déjà utilisé');
+    }
 
     const passwordHash = await bcrypt.hash(input.password, 12);
-    const user = await this.repo.createTenantUser({ ...input, passwordHash });
+    console.log('[auth] Tenant password hashed');
+
+    let user;
+    try {
+      user = await this.repo.createTenantUser({ ...input, email, passwordHash });
+      console.log('[auth] Tenant user created', { userId: user.id, role: user.role });
+    } catch (err) {
+      console.error('[auth] Tenant user create failed', {
+        email,
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+      throw err;
+    }
 
     await this.auditService.log({
       action: AuditAction.AUTH_REGISTER_TENANT,
@@ -222,8 +286,12 @@ export class AuthService {
     });
 
     const tokens = await this.issueTokens(user.id, user.email, user.role, null);
+    console.log('[auth] Tenant session created', { userId: user.id });
+
     const permissions = await this.featureService.getUserFeatureMap(user.id, user.role);
     const rbac = await this.rbacService.getPermissionsMap(user.role);
+
+    console.log('[auth] Tenant signup complete', { userId: user.id });
 
     return {
       user: sanitizeUser(user),

@@ -28,12 +28,11 @@ describe('Integration — Auth validation', () => {
     expect(res.body.success).toBe(false);
   });
 
-  it('POST /auth/register rejette données incomplètes', async () => {
+  it('POST /auth/register rejette données incomplètes (400, plus de 403)', async () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
       .send({ email: 'test@test.cg' });
-    // 400 validation Zod, ou 403 si stack sécurité bloque avant
-    expect([400, 403]).toContain(res.status);
+    expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
   });
 });
