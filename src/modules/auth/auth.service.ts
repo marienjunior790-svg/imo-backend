@@ -365,6 +365,7 @@ export class AuthRepository {
             'AUTH_MFA_DISABLE',
             'AUTH_ACCOUNT_LOCKED',
             'INVITE_ACCEPT',
+            'MEMBERSHIP_CREATE',
           ],
         },
       },
@@ -619,11 +620,12 @@ export class AuthService {
 
     await this.repo.clearLoginFailures(user.id);
     const extras = await this.buildSessionExtras(user);
+    const effectiveRole = extras.membership.role as UserRole;
     const tokens = await this.issueTokens(
       user.id,
       user.email,
-      user.role,
-      user.organizationId,
+      effectiveRole,
+      extras.membership.organizationId ?? user.organizationId,
       extras.membership.id,
       { ipAddress: meta?.ipAddress, userAgent: meta?.userAgent },
     );
@@ -631,13 +633,13 @@ export class AuthService {
     const subscription = user.organizationId
       ? await this.subscriptionService.getSubscription(user.organizationId)
       : null;
-    const permissions = await this.featureService.getUserFeatureMap(user.id, user.role);
-    const rbac = await this.rbacService.getPermissionsMap(user.role);
+    const permissions = await this.featureService.getUserFeatureMap(user.id, effectiveRole);
+    const rbac = await this.rbacService.getPermissionsMap(effectiveRole);
 
     await this.auditService.log({
       action: AuditAction.AUTH_LOGIN,
       userId: user.id,
-      userRole: user.role,
+      userRole: effectiveRole,
       organizationId: user.organizationId,
       ipAddress: meta?.ipAddress,
     });
@@ -648,7 +650,7 @@ export class AuthService {
       subscription,
       permissions,
       rbac,
-      homePath: resolveHomePath(user.role),
+      homePath: resolveHomePath(effectiveRole),
       onboarding: toOnboardingSnapshot(user.organization?.onboarding),
       mfaRequired: false as const,
       ...extras,
@@ -698,8 +700,8 @@ export class AuthService {
     const tokens = await this.issueTokens(
       stored.user.id,
       stored.user.email,
-      stored.user.role,
-      stored.user.organizationId,
+      membership.role,
+      membership.organizationId ?? stored.user.organizationId,
       membership.id,
       { familyId: stored.familyId, ipAddress: meta?.ipAddress, userAgent: meta?.userAgent },
     );
@@ -739,17 +741,19 @@ export class AuthService {
     const found = await this.repo.findById(userId);
     if (!found) throw new UnauthorizedError('Utilisateur introuvable');
 
-    const subscription = found.organizationId
-      ? await this.subscriptionService.getSubscription(found.organizationId)
-      : null;
-    const permissions = await this.featureService.getUserFeatureMap(found.id, found.role);
-    const rbac = await this.rbacService.getPermissionsMap(found.role);
     const extras = await this.buildSessionExtras({
       id: found.id,
       role: found.role,
       organizationId: found.organizationId,
       organization: found.organization,
     });
+    const effectiveRole = extras.membership.role as UserRole;
+
+    const subscription = found.organizationId
+      ? await this.subscriptionService.getSubscription(found.organizationId)
+      : null;
+    const permissions = await this.featureService.getUserFeatureMap(found.id, effectiveRole);
+    const rbac = await this.rbacService.getPermissionsMap(effectiveRole);
 
     return {
       user: sanitizeUser(found),
@@ -757,7 +761,7 @@ export class AuthService {
       subscription,
       permissions,
       rbac,
-      homePath: resolveHomePath(found.role),
+      homePath: resolveHomePath(effectiveRole),
       onboarding: toOnboardingSnapshot(found.organization?.onboarding),
       ...extras,
     };
@@ -768,11 +772,12 @@ export class AuthService {
     const found = await this.repo.findById(userId);
     if (!found || !found.isActive) throw new UnauthorizedError('Utilisateur introuvable');
     const me = await this.me(userId);
+    const effectiveRole = (me.membership?.role as UserRole) ?? found.role;
     const tokens = await this.issueTokens(
       found.id,
       found.email,
-      found.role,
-      found.organizationId,
+      effectiveRole,
+      me.membership?.organizationId ?? found.organizationId,
       me.membership?.id,
     );
     return { ...me, ...tokens };

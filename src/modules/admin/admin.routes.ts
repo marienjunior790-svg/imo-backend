@@ -39,7 +39,21 @@ router.post(
         newValue: { email: u.email, role: u.role },
       }),
     );
-    sendSuccess(res, user, 'Utilisateur créé', 201);
+    // P5 / D11 : soft-deprecate — pas de 410 tant que major non décidé
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', 'Sat, 01 Aug 2026 00:00:00 GMT');
+    res.setHeader('Link', '</api/v1/invitations>; rel="successor-version"');
+    sendSuccess(
+      res,
+      {
+        ...user,
+        deprecated: true,
+        prefer: 'POST /api/v1/invitations',
+        message: 'Création avec mot de passe dépréciée — utilisez les invitations',
+      },
+      'Utilisateur créé (deprecated — préférer /invitations)',
+      201,
+    );
   }),
 );
 

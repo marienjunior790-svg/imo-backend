@@ -10,6 +10,10 @@ import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/error
 
 import { sanitizeUser } from '../../shared/utils/response.util.js';
 
+import { AuditService } from '../../shared/services/audit.service.js';
+
+import { AuditAction } from '../../shared/audit/audit-actions.js';
+
 import type { z } from 'zod';
 
 import { createOrgUserSchema, updateOrgUserSchema } from './admin.schema.js';
@@ -56,7 +60,10 @@ const userSelect = {
 
 export class AdminService {
 
-  constructor(@inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @inject(PrismaService) private readonly prisma: PrismaService,
+    @inject(AuditService) private readonly auditService: AuditService,
+  ) {}
 
 
 
@@ -230,6 +237,16 @@ export class AdminService {
       },
     });
 
+    await this.auditService.log({
+      action: AuditAction.MEMBERSHIP_CREATE,
+      userId: user.id,
+      userRole: input.role as UserRole,
+      organizationId,
+      resourceType: 'Membership',
+      resourceId: user.id,
+      newValue: { role: input.role, via: 'admin.createUser.deprecated' },
+    });
+
     return sanitizeUser({ ...user, passwordHash: '' });
 
   }
@@ -289,7 +306,19 @@ export class AdminService {
 
     });
 
-
+    // P5 : dual-write Membership (rôle porté par l'appartenance)
+    if (input.role !== undefined || input.isActive !== undefined) {
+      await this.prisma.membership.updateMany({
+        where: {
+          userId: targetUserId,
+          organizationId: user.organizationId,
+        },
+        data: {
+          ...(input.role !== undefined ? { role: input.role as UserRole } : {}),
+          ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        },
+      });
+    }
 
     return sanitizeUser({ ...user, passwordHash: '' });
 
