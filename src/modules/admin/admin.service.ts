@@ -160,6 +160,10 @@ export class AdminService {
 
     this.assertAdmin(actorRole);
 
+    console.warn(
+      '[deprecated] POST /admin/users with password — prefer POST /invitations (P2)',
+    );
+
 
 
     if (actorRole === UserRole.ORG_ADMIN && !actorOrgId) {
@@ -216,7 +220,15 @@ export class AdminService {
 
     });
 
-
+    await this.prisma.membership.create({
+      data: {
+        userId: user.id,
+        organizationId,
+        role: input.role as UserRole,
+        isActive: true,
+        isPrimary: true,
+      },
+    });
 
     return sanitizeUser({ ...user, passwordHash: '' });
 

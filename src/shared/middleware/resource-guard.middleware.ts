@@ -5,7 +5,7 @@ import { extendedPrisma } from '../utils/extended-prisma.js';
 import { assertSameOrganization } from '../auth/resource-scope.js';
 import { getOrganizationId } from './auth.middleware.js';
 import { asyncHandler } from '../utils/response.util.js';
-import { NotFoundError } from '../errors/app.error.js';
+import { ForbiddenError, NotFoundError } from '../errors/app.error.js';
 
 type OrgScopedModel =
   | 'building'
@@ -17,6 +17,20 @@ type OrgScopedModel =
   | 'rentalApplication'
   | 'document'
   | 'propertyInspection';
+
+/** Décision d’accès pour requireOrgResource (testable sans Express/Prisma). */
+export type OrgResourceGate = 'bypass' | 'deny' | 'check';
+
+/**
+ * SUPER_ADMIN : accès plateforme.
+ * TENANT : refusé ici — utiliser portal / requireApplicationAccess (ownership).
+ * Autres rôles : vérifier organizationId de la ressource.
+ */
+export function orgResourceGateForRole(role: UserRole | undefined): OrgResourceGate {
+  if (role === UserRole.SUPER_ADMIN) return 'bypass';
+  if (role === UserRole.TENANT) return 'deny';
+  return 'check';
+}
 
 async function findOrgId(model: OrgScopedModel, id: string): Promise<string | null> {
   const prisma = container.resolve(PrismaService);
@@ -52,12 +66,16 @@ async function findOrgId(model: OrgScopedModel, id: string): Promise<string | nu
 
 /**
  * Vérifie que la ressource identifiée par :param appartient à l'organisation de l'utilisateur.
- * À placer sur toutes les routes /:id sensibles.
+ * À placer sur toutes les routes /:id sensibles (staff org).
+ * Les locataires passent par /portal ou requireApplicationAccess — pas ce garde.
  */
 export function requireOrgResource(model: OrgScopedModel, param = 'id') {
   return asyncHandler(async (req, res, next) => {
-    if (req.user?.role === UserRole.SUPER_ADMIN) return next();
-    if (req.user?.role === UserRole.TENANT) return next();
+    const gate = orgResourceGateForRole(req.user?.role);
+    if (gate === 'bypass') return next();
+    if (gate === 'deny') {
+      throw new ForbiddenError('Accès refusé — ressource hors périmètre');
+    }
 
     const id = req.params[param];
     if (!id) return next();

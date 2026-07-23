@@ -35,6 +35,7 @@ jobs:
       DEFAULT_CURRENCY: XAF
       DEFAULT_CITY: Brazzaville
       DEFAULT_COUNTRY: CG
+      RUN_DB_TESTS: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,5 +45,6 @@ jobs:
       - run: npm ci
       - run: npx prisma generate
       - run: npx prisma migrate deploy
-      - run: npm test -- --coverage --coverageReporters=text-summary
+      - run: npx prisma db seed
+      - run: npm test -- --coverage --coverageReporters=text-summary --runInBand
       - run: npm run build

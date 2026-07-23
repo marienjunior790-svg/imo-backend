@@ -64,12 +64,18 @@ export function toPaginationMeta(page: number, limit: number, total: number) {
   };
 }
 
-export function sanitizeUser<T extends { passwordHash?: string }>(user: T): Omit<T, 'passwordHash'> {
-  if (!('passwordHash' in user) || user.passwordHash === undefined) {
-    return user as Omit<T, 'passwordHash'>;
-  }
-  const { passwordHash: _, ...rest } = user;
-  return rest;
+export function sanitizeUser<T extends Record<string, unknown>>(user: T): Omit<T, 'passwordHash' | 'mfaSecret' | 'mfaRecoveryHashes'> {
+  const {
+    passwordHash: _p,
+    mfaSecret: _s,
+    mfaRecoveryHashes: _r,
+    ...rest
+  } = user as T & {
+    passwordHash?: string;
+    mfaSecret?: string | null;
+    mfaRecoveryHashes?: string[];
+  };
+  return rest as Omit<T, 'passwordHash' | 'mfaSecret' | 'mfaRecoveryHashes'>;
 }
 
 export function decimalToNumber(value: { toNumber?: () => number } | number | null | undefined): number {

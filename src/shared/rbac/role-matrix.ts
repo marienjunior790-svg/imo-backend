@@ -1,3 +1,7 @@
+/**
+ * P3 — héritage RBAC.
+ * Règle d'or : ORG_ADMIN ⊇ MANAGER ⊇ AGENT (capacités opérationnelles).
+ */
 import { ALL_PERMISSION_KEYS } from './permission-catalog.js';
 
 export const SYSTEM_ROLES = [
@@ -16,29 +20,16 @@ export const SYSTEM_ROLES = [
 
 export type SystemRole = (typeof SYSTEM_ROLES)[number];
 
-const OWNER: string[] = [
-  'DASHBOARD_VIEW',
-  'BUILDING_VIEW',
-  'APARTMENT_VIEW',
+function uniq(keys: string[]): string[] {
+  return [...new Set(keys)];
+}
+
+/** Capacités admin org (users, audit, abonnement, exports). */
+const OWNER_ADMIN: string[] = [
   'REVENUE_VIEW',
   'REVENUE_EXPORT',
-  'PAYMENT_VIEW',
   'PAYMENT_EXPORT',
-  'PAYMENT_EXPORT_PDF',
   'PAYMENT_EXPORT_EXCEL',
-  'REPORT_VIEW',
-  'REPORT_EXPORT',
-  'MAINTENANCE_VIEW',
-  'LEASE_VIEW',
-  'LEASE_RENEW',
-  'LEASE_TERMINATE',
-  'TENANT_VIEW',
-  'NOTIFICATION_VIEW',
-  'NOTIFICATION_CENTER_VIEW',
-  'MESSAGE_VIEW',
-  'REMINDER_VIEW',
-  'TASK_VIEW',
-  'SETTINGS_VIEW',
   'SUBSCRIPTION_MANAGE',
   'AUDIT_VIEW',
   'AUDIT_EXPORT',
@@ -46,11 +37,9 @@ const OWNER: string[] = [
   'USER_CREATE',
   'USER_EDIT',
   'USER_DELETE',
-  'AI_USE',
-  'AI_CHAT',
-  'AI_ANALYZE',
 ];
 
+/** Agent — opérations immobilières quotidiennes. */
 const AGENT: string[] = [
   'DASHBOARD_VIEW',
   'BUILDING_VIEW',
@@ -109,10 +98,23 @@ const AGENT: string[] = [
   'SETTINGS_VIEW',
 ];
 
+/** Manager = Agent sans DELETE + pilotage léger. */
+const MANAGER = uniq([
+  ...AGENT.filter((k) => !k.includes('DELETE')),
+  'REVENUE_VIEW',
+  'SUBSCRIPTION_MANAGE',
+  'AUDIT_VIEW',
+  'USER_VIEW',
+  'USER_CREATE',
+]);
+
+/** Owner / ORG_ADMIN = Manager ∪ Agent ∪ admin org (héritage strict). */
+const ORG_ADMIN = uniq([...OWNER_ADMIN, ...MANAGER, ...AGENT]);
+
 export const ROLE_PERMISSION_MATRIX: Record<SystemRole, string[] | 'ALL'> = {
   SUPER_ADMIN: 'ALL',
-  ORG_ADMIN: OWNER,
-  AGENT: AGENT,
+  ORG_ADMIN,
+  AGENT,
   TENANT: [
     'PORTAL_HOME_VIEW',
     'PORTAL_HOMES_VIEW',
@@ -158,7 +160,7 @@ export const ROLE_PERMISSION_MATRIX: Record<SystemRole, string[] | 'ALL'> = {
     'NOTIFICATION_CENTER_VIEW',
     'SETTINGS_VIEW',
   ],
-  MANAGER: [...AGENT.filter((k) => !k.includes('DELETE')), 'REVENUE_VIEW', 'SUBSCRIPTION_MANAGE', 'AUDIT_VIEW'],
+  MANAGER,
   MAINTENANCE_LEAD: [
     'DASHBOARD_VIEW',
     'MAINTENANCE_VIEW',
@@ -190,4 +192,19 @@ export function resolveRolePermissions(role: string): string[] {
   if (!entry) return [];
   if (entry === 'ALL') return [...ALL_PERMISSION_KEYS];
   return entry;
+}
+
+/** Vérifie Owner ⊇ Manager ⊇ Agent (tests / invariants). */
+export function assertOrgHierarchy(): { ok: boolean; missing: string[] } {
+  const owner = new Set(resolveRolePermissions('ORG_ADMIN'));
+  const manager = resolveRolePermissions('MANAGER');
+  const agent = resolveRolePermissions('AGENT');
+  const missing: string[] = [];
+  for (const k of manager) if (!owner.has(k)) missing.push(`ORG_ADMIN missing MANAGER:${k}`);
+  for (const k of agent) if (!owner.has(k)) missing.push(`ORG_ADMIN missing AGENT:${k}`);
+  const managerSet = new Set(manager);
+  for (const k of agent.filter((x) => !x.includes('DELETE'))) {
+    if (!managerSet.has(k)) missing.push(`MANAGER missing AGENT:${k}`);
+  }
+  return { ok: missing.length === 0, missing };
 }

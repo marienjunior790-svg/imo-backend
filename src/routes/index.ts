@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { container } from 'tsyringe';
 import authRoutes from '../modules/auth/auth.routes.js';
+import onboardingRoutes from '../modules/onboarding/onboarding.routes.js';
+import invitationRoutes from '../modules/invitations/invitation.routes.js';
 import buildingRoutes from '../modules/buildings/building.routes.js';
 import apartmentRoutes from '../modules/apartments/apartment.routes.js';
 import tenantRoutes from '../modules/tenants/tenant.routes.js';
@@ -80,6 +82,8 @@ router.get('/', (_req, res) => {
 });
 
 router.use('/auth', authRoutes);
+router.use('/onboarding', onboardingRoutes);
+router.use('/invitations', invitationRoutes);
 router.use('/subscription', subscriptionRoutes);
 router.use('/automation', automationRoutes);
 router.use('/ai', aiRoutes);

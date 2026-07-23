@@ -12,3 +12,16 @@ export const authRateLimit = rateLimit({
     code: 'RATE_LIMIT',
   },
 });
+
+/** Plus strict pour forgot-password / MFA / refresh. */
+export const authStrictRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Trop de tentatives. Réessayez dans 15 minutes.',
+    code: 'RATE_LIMIT',
+  },
+});

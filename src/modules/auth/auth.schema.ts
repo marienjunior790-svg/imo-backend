@@ -30,6 +30,7 @@ export const registerSchema = z.object({
 export const loginSchema = z.object({
   email: z.string().email('Email invalide'),
   password: z.string().min(1, 'Mot de passe requis'),
+  mfaCode: z.string().min(6).max(64).optional(),
 });
 
 export const refreshSchema = z.object({
@@ -51,4 +52,25 @@ export const changePasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().email('Email invalide'),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(20),
+  newPassword: passwordSchema,
+});
+
+export const mfaVerifySchema = z.object({
+  code: z.string().regex(/^\d{6}$/, 'Code à 6 chiffres'),
+});
+
+export const mfaDisableSchema = z.object({
+  password: z.string().min(1),
+  code: z.string().regex(/^\d{6}$/),
+});
+
 export type OnboardingInput = z.infer<typeof onboardingSchema>;
+export type LoginInput = z.infer<typeof loginSchema>;
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

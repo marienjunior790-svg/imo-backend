@@ -17,7 +17,7 @@
     "test": "jest --config jest.config.cjs",
     "test:watch": "jest --config jest.config.cjs --watch",
     "test:coverage": "jest --config jest.config.cjs --coverage",
-    "test:integration": "cross-env RUN_DB_TESTS=true jest --config jest.config.cjs tests/integration/auth.db.test.ts",
+    "test:integration": "cross-env RUN_DB_TESTS=true jest --config jest.config.cjs --runInBand tests/integration/auth.db.test.ts tests/integration/auth.signup.test.ts tests/integration/isolation.test.ts tests/integration/membership.db.test.ts",
     "lint": "tsc --noEmit"
   },
   "prisma": {

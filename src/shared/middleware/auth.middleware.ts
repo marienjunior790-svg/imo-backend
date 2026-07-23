@@ -10,6 +10,8 @@ export interface JwtAccessPayload {
   email: string;
   role: UserRole;
   organizationId: string | null;
+  /** P3 — membership active (optionnel, dual-compat) */
+  mid?: string;
 }
 
 export function signAccessToken(payload: JwtAccessPayload): string {
@@ -46,6 +48,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
       email: payload.email,
       role: payload.role,
       organizationId: payload.organizationId,
+      membershipId: payload.mid,
     };
     next();
   } catch (err) {

@@ -48,7 +48,10 @@ export class TenantRepository {
       include: {
         leases: {
           orderBy: { createdAt: 'desc' },
-          include: { apartment: true, payments: { take: 3, orderBy: { dueDate: 'desc' } } },
+          include: {
+            apartment: { include: { building: { select: { id: true, name: true } } } },
+            payments: { take: 3, orderBy: { dueDate: 'desc' } },
+          },
         },
       },
     });

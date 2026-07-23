@@ -31,9 +31,15 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().optional(),
   // URL publique affichée au démarrage (Railway : https://xxx.up.railway.app)
   PUBLIC_API_URL: z.string().url().optional(),
+  // URL app web/mobile deep-link pour invitations (P2)
+  PUBLIC_APP_URL: z.string().url().optional(),
+  INVITE_TTL_HOURS: z.coerce.number().default(72),
   // Premier super-admin (une seule fois, si aucun SUPER_ADMIN en base)
   BOOTSTRAP_SUPER_ADMIN_EMAIL: z.string().email().optional(),
   BOOTSTRAP_SUPER_ADMIN_PASSWORD: z.string().min(8).optional(),
+  PASSWORD_RESET_TTL_HOURS: z.coerce.number().default(1),
+  AUTH_LOCKOUT_THRESHOLD: z.coerce.number().default(5),
+  AUTH_LOCKOUT_MINUTES: z.coerce.number().default(15),
   // Monitoring (optionnel)
   SENTRY_DSN: z.string().url().optional(),
   // Cache IA (ms)

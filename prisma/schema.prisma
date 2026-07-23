@@ -142,6 +142,9 @@ model Organization {
   isActive  Boolean          @default(true)
   isValidated Boolean        @default(true) // false = agence en attente validation admin plateforme
 
+  /// P1 — moteur d'onboarding org (JSON : steps + completedAt). null = org legacy (considérée complète).
+  onboarding Json?
+
   // Abonnement SaaS (cache dénormalisé pour accès rapide)
   subscriptionId        String?            @unique
   subscriptionStatus    SubscriptionStatus @default(ACTIVE)
@@ -154,6 +157,8 @@ model Organization {
   activeSubscription Subscription?  @relation("ActiveSubscription", fields: [subscriptionId], references: [id], onDelete: SetNull)
   subscriptions      Subscription[] @relation("OrganizationSubscriptions")
   users       User[]
+  invitations Invitation[]
+  memberships Membership[]
   buildings   Building[]
   apartments  Apartment[]
   tenants     Tenant[]
@@ -215,12 +220,18 @@ model User {
   isActive       Boolean  @default(true)
   proAccessEnabled Boolean @default(false) // Accès option Pro (décision admin)
   lastLoginAt    DateTime?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  mfaEnabled          Boolean   @default(false)
+  mfaSecret           String?
+  mfaRecoveryHashes   String[]  @default([])
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   organization        Organization?           @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   tenantProfile       Tenant?
   refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
   featurePermissions  UserFeaturePermission[]
   notifications       Notification[]
   reportedTickets     MaintenanceTicket[] @relation("ReportedTickets")
@@ -232,10 +243,60 @@ model User {
   receivedMessages     Message[]           @relation("ReceivedMessages")
   assignedTasks        StaffTask[]         @relation("AssignedTasks")
   createdTasks         StaffTask[]         @relation("CreatedTasks")
+  invitationsSent      Invitation[]        @relation("InvitationsSent")
+  memberships          Membership[]        @relation("UserMemberships")
 
   @@index([organizationId])
   @@index([role])
   @@map("users")
+}
+
+// ─── Membership (P3 Identity) — rôle porté par l'appartenance org ─────────────
+
+model Membership {
+  id             String    @id @default(cuid())
+  userId         String
+  organizationId String?
+  role           UserRole
+  isActive       Boolean   @default(true)
+  isPrimary      Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user         User          @relation("UserMemberships", fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+  @@index([role])
+  @@map("memberships")
+}
+
+// ─── Invitations collaborateurs (P2) ─────────────────────────────────────────
+
+model Invitation {
+  id             String    @id @default(cuid())
+  organizationId String
+  email          String
+  role           UserRole
+  firstName      String
+  lastName       String
+  phone          String?
+  tokenHash      String    @unique
+  invitedById    String
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("InvitationsSent", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([organizationId])
+  @@index([expiresAt])
+  @@map("invitations")
 }
 
 // ─── Contrôle d'accès aux fonctionnalités (feature flags par utilisateur) ───
@@ -274,20 +335,42 @@ model UserFeaturePermission {
 }
 
 model RefreshToken {
-  id             String   @id @default(cuid())
-  userId         String
-  organizationId String?
-  tokenHash      String   @unique
-  expiresAt      DateTime
-  revokedAt      DateTime?
-  createdAt      DateTime @default(now())
+  id                String    @id @default(cuid())
+  userId            String
+  organizationId    String?
+  tokenHash         String    @unique
+  familyId          String
+  userAgent         String?
+  ipAddress         String?
+  lastUsedAt        DateTime?
+  replacedByTokenId String?
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  createdAt         DateTime  @default(now())
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([familyId])
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+/// P4 — reset password (token hashé, TTL court, single-use)
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 // ─── Biens immobiliers ───────────────────────────────────────────────────────

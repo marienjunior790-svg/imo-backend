@@ -9,6 +9,7 @@ const passwordSchema = z
 
 export const createOrgUserSchema = z.object({
   email: z.string().email('Email invalide'),
+  /** @deprecated P2 — préférer POST /invitations (le collaborateur définit son mot de passe). */
   password: passwordSchema,
   firstName: z.string().min(2),
   lastName: z.string().min(2),
