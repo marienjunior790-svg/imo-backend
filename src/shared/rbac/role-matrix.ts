@@ -37,6 +37,9 @@ const OWNER_ADMIN: string[] = [
   'USER_CREATE',
   'USER_EDIT',
   'USER_DELETE',
+  'TENANT_PORTAL_RESET',
+  'TENANT_PORTAL_SUSPEND',
+  'SETTINGS_EDIT',
 ];
 
 /** Agent — opérations immobilières quotidiennes. */
@@ -96,6 +99,9 @@ const AGENT: string[] = [
   'AI_CHAT',
   'AI_ANALYZE',
   'SETTINGS_VIEW',
+  'TENANT_PORTAL_PROVISION',
+  'TENANT_PORTAL_REGENERATE',
+  'TENANT_PORTAL_VIEW_STATUS',
 ];
 
 /** Manager = Agent sans DELETE + pilotage léger. */
@@ -106,6 +112,8 @@ const MANAGER = uniq([
   'AUDIT_VIEW',
   'USER_VIEW',
   'USER_CREATE',
+  'TENANT_PORTAL_RESET',
+  'TENANT_PORTAL_SUSPEND',
 ]);
 
 /** Owner / ORG_ADMIN = Manager ∪ Agent ∪ admin org (héritage strict). */

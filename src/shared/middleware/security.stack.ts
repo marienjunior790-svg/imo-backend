@@ -4,6 +4,7 @@ import { authMiddleware, requireOrganization, requireRoles } from './auth.middle
 import { validateSessionMiddleware } from './session.middleware.js';
 import { verifyOrganizationActiveMiddleware } from './organization.middleware.js';
 import { verifySubscription } from './subscription.middleware.js';
+import { requirePasswordChangedMiddleware } from './password-change.middleware.js';
 
 /**
  * Pipelines de sécurité standardisés.
@@ -22,16 +23,18 @@ import { verifySubscription } from './subscription.middleware.js';
 export const orgStaffPipeline: RequestHandler[] = [
   authMiddleware,
   validateSessionMiddleware,
+  requirePasswordChangedMiddleware,
   verifyOrganizationActiveMiddleware,
   requireOrganization,
   verifySubscription,
-  requireRoles(UserRole.ORG_ADMIN, UserRole.AGENT),
+  requireRoles(UserRole.ORG_ADMIN, UserRole.MANAGER, UserRole.AGENT, UserRole.ACCOUNTANT),
 ];
 
 /** Locataire — portail & candidatures */
 export const tenantPipeline: RequestHandler[] = [
   authMiddleware,
   validateSessionMiddleware,
+  requirePasswordChangedMiddleware,
   requireRoles(UserRole.TENANT),
 ];
 
@@ -39,6 +42,7 @@ export const tenantPipeline: RequestHandler[] = [
 export const technicianPipeline: RequestHandler[] = [
   authMiddleware,
   validateSessionMiddleware,
+  requirePasswordChangedMiddleware,
   verifyOrganizationActiveMiddleware,
   requireOrganization,
   verifySubscription,
@@ -62,6 +66,7 @@ export const platformAdminPipeline: RequestHandler[] = [
 export const orgAdminPipeline: RequestHandler[] = [
   authMiddleware,
   validateSessionMiddleware,
+  requirePasswordChangedMiddleware,
   verifyOrganizationActiveMiddleware,
   requireOrganization,
   requireRoles(UserRole.ORG_ADMIN),

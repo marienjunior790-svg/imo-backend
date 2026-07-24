@@ -27,11 +27,27 @@ export const registerSchema = z.object({
   onboarding: onboardingSchema.optional(),
 });
 
-export const loginSchema = z.object({
-  email: z.string().email('Email invalide'),
-  password: z.string().min(1, 'Mot de passe requis'),
-  mfaCode: z.string().min(6).max(64).optional(),
-});
+export const loginSchema = z
+  .object({
+    /** @deprecated préférer `identifier` — conservé pour D11 */
+    email: z.string().optional(),
+    identifier: z.string().optional(),
+    password: z.string().min(1, 'Mot de passe requis'),
+    mfaCode: z.string().min(6).max(64).optional(),
+  })
+  .superRefine((val, ctx) => {
+    const id = (val.identifier ?? val.email ?? '').trim();
+    if (!id) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Identifiant requis', path: ['identifier'] });
+    }
+  })
+  .transform((val) => ({
+    identifier: (val.identifier ?? val.email ?? '').trim(),
+    password: val.password,
+    mfaCode: val.mfaCode,
+    /** compat champs legacy */
+    email: (val.identifier ?? val.email ?? '').trim(),
+  }));
 
 export const refreshSchema = z.object({
   refreshToken: z.string().min(1),

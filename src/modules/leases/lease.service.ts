@@ -8,6 +8,7 @@ import { CloudinaryService } from '../../infrastructure/storage/cloudinary.servi
 import { ApartmentRepository } from '../apartments/apartment.service.js';
 import { SubscriptionService } from '../subscriptions/subscription.service.js';
 import { AutomationEmitter } from '../automation/automation.emitter.js';
+import { PortalAccessService } from '../tenants/portal-access.service.js';
 
 export interface LeaseInput {
   apartmentId: string;
@@ -174,6 +175,7 @@ export class LeaseService {
     @inject(PrismaService) private readonly prisma: PrismaService,
     @inject(SubscriptionService) private readonly subscriptionService: SubscriptionService,
     @inject(AutomationEmitter) private readonly automation: AutomationEmitter,
+    @inject(PortalAccessService) private readonly portalAccess: PortalAccessService,
   ) {}
 
   async list(organizationId: string, page: number, limit: number, skip: number, status?: LeaseStatus) {
@@ -212,7 +214,7 @@ export class LeaseService {
     return this.get(organizationId, id);
   }
 
-  async activate(organizationId: string, id: string) {
+  async activate(organizationId: string, id: string, actorUserId?: string) {
     const lease = await this.repo.activate(organizationId, id);
     this.automation.leaseActivated({
       organizationId,
@@ -225,7 +227,19 @@ export class LeaseService {
       startDate: lease.startDate,
       endDate: lease.endDate,
     });
-    return lease;
+    let portalAccess: unknown = null;
+    if (actorUserId) {
+      try {
+        portalAccess = await this.portalAccess.maybeAutoProvisionOnLeaseActive(
+          organizationId,
+          lease.tenantId,
+          actorUserId,
+        );
+      } catch (err) {
+        console.error('[lease] auto portal provision failed (non-blocking)', err);
+      }
+    }
+    return { ...lease, portalAccess };
   }
 
   terminate(organizationId: string, id: string) {

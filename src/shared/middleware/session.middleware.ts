@@ -13,7 +13,7 @@ export async function validateSessionMiddleware(req: Request, _res: Response, ne
     const membershipService = container.resolve(MembershipService);
     const user = await prisma.user.findUnique({
       where: { id: req.user.userId },
-      select: { isActive: true, role: true, organizationId: true, email: true },
+      select: { isActive: true, role: true, organizationId: true, email: true, loginId: true },
     });
     if (!user?.isActive) {
       throw new UnauthorizedError('Compte désactivé ou introuvable');
@@ -55,7 +55,7 @@ export async function validateSessionMiddleware(req: Request, _res: Response, ne
 
     req.user = {
       userId: req.user.userId,
-      email: user.email,
+      email: user.email ?? user.loginId ?? '',
       role,
       organizationId,
       membershipId,

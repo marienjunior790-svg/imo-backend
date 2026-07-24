@@ -7,7 +7,7 @@ const passwordSchema = z
   .regex(/[a-z]/, 'Au moins une minuscule requise')
   .regex(/[0-9]/, 'Au moins un chiffre requis');
 
-export const inviteRoles = ['AGENT', 'TECHNICIAN', 'TENANT', 'MANAGER', 'ACCOUNTANT'] as const;
+export const inviteRoles = ['AGENT', 'TECHNICIAN', 'MANAGER', 'ACCOUNTANT'] as const;
 
 export const createInvitationSchema = z.object({
   email: z.string().email('Email invalide'),

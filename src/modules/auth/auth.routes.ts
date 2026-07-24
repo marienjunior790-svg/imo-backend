@@ -47,8 +47,12 @@ router.post(
   authRateLimit,
   validateBody(registerTenantSchema),
   asyncHandler(async (req, res) => {
+    console.warn('[deprecated] POST /auth/register-tenant — prefer org portal provision (spec v1.0)');
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', 'Sat, 01 Jan 2027 00:00:00 GMT');
+    res.setHeader('Link', '</api/v1/tenants/{id}/portal-access>; rel="successor-version"');
     const result = await authService.registerTenant(req.body);
-    sendSuccess(res, result, 'Compte locataire créé', 201);
+    sendSuccess(res, { ...result, deprecated: true, prefer: 'POST /api/v1/tenants/:id/portal-access' }, 'Compte locataire créé (deprecated)', 201);
   }),
 );
 
@@ -132,13 +136,13 @@ router.post(
   ...authenticatedPipeline,
   validateBody(changePasswordSchema),
   asyncHandler(async (req, res) => {
-    await authService.changePassword(
+    const result = await authService.changePassword(
       req.user!.userId,
       req.body.currentPassword,
       req.body.newPassword,
-      { ipAddress: clientIp(req) },
+      { ipAddress: clientIp(req), userAgent: userAgent(req) },
     );
-    sendSuccess(res, null, 'Mot de passe mis à jour');
+    sendSuccess(res, result, 'Mot de passe mis à jour — nouvelle session émise');
   }),
 );
 

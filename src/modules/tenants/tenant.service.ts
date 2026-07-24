@@ -36,7 +36,20 @@ export class TenantRepository {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: { _count: { select: { leases: true } } },
+        include: {
+          _count: { select: { leases: true } },
+          user: {
+            select: {
+              id: true,
+              email: true,
+              loginId: true,
+              portalStatus: true,
+              lastLoginAt: true,
+              mustChangePassword: true,
+              isActive: true,
+            },
+          },
+        },
       }),
       this.prisma.tenant.count({ where }),
     ]);

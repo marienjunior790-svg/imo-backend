@@ -50,6 +50,20 @@ export class AuthRepository {
     });
   }
 
+  findByIdentifier(identifier: string) {
+    const trimmed = identifier.trim();
+    const lower = trimmed.toLowerCase();
+    return this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: lower },
+          { loginId: { equals: trimmed, mode: 'insensitive' } },
+        ],
+      },
+      include: { organization: true },
+    });
+  }
+
   createOrganizationWithAdmin(data: RegisterInput & { passwordHash: string }) {
     return this.prisma.$transaction(async (tx) => {
       const org = await tx.organization.create({
@@ -268,6 +282,17 @@ export class AuthRepository {
 
   updatePassword(userId: string, passwordHash: string) {
     return this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+  }
+
+  markPasswordActivated(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        mustChangePassword: false,
+        passwordChangedAt: new Date(),
+        portalStatus: 'ACTIVATED',
+      },
+    });
   }
 
   recordFailedLogin(userId: string) {
@@ -534,15 +559,16 @@ export class AuthService {
   }
 
   async login(input: LoginInput, meta?: { ipAddress?: string; userAgent?: string }) {
-    const user = await this.repo.findByEmail(input.email);
+    const identifier = input.identifier || input.email;
+    const user = await this.repo.findByIdentifier(identifier);
     if (!user || !user.isActive) {
       await this.auditService.log({
         action: AuditAction.AUTH_LOGIN_FAILED,
         ipAddress: meta?.ipAddress,
-        newValue: { email: input.email.toLowerCase() },
+        newValue: { identifier: identifier.toLowerCase() },
         success: false,
       });
-      throw new UnauthorizedError('Email ou mot de passe incorrect');
+      throw new UnauthorizedError('Identifiant ou mot de passe incorrect');
     }
 
     if (user.lockedUntil && user.lockedUntil > new Date()) {
@@ -581,7 +607,7 @@ export class AuthService {
           success: false,
         });
       }
-      throw new UnauthorizedError('Email ou mot de passe incorrect');
+      throw new UnauthorizedError('Identifiant ou mot de passe incorrect');
     }
 
     if (user.mfaEnabled) {
@@ -621,9 +647,10 @@ export class AuthService {
     await this.repo.clearLoginFailures(user.id);
     const extras = await this.buildSessionExtras(user);
     const effectiveRole = extras.membership.role as UserRole;
+    const tokenEmail = user.email ?? user.loginId ?? '';
     const tokens = await this.issueTokens(
       user.id,
-      user.email,
+      tokenEmail,
       effectiveRole,
       extras.membership.organizationId ?? user.organizationId,
       extras.membership.id,
@@ -652,6 +679,8 @@ export class AuthService {
       rbac,
       homePath: resolveHomePath(effectiveRole),
       onboarding: toOnboardingSnapshot(user.organization?.onboarding),
+      mustChangePassword: user.mustChangePassword,
+      portalStatus: user.portalStatus,
       mfaRequired: false as const,
       ...extras,
       ...tokens,
@@ -763,6 +792,8 @@ export class AuthService {
       rbac,
       homePath: resolveHomePath(effectiveRole),
       onboarding: toOnboardingSnapshot(found.organization?.onboarding),
+      mustChangePassword: found.mustChangePassword,
+      portalStatus: found.portalStatus,
       ...extras,
     };
   }
@@ -783,7 +814,7 @@ export class AuthService {
     return { ...me, ...tokens };
   }
 
-  async changePassword(userId: string, currentPassword: string, newPassword: string, meta?: { ipAddress?: string }) {
+  async changePassword(userId: string, currentPassword: string, newPassword: string, meta?: { ipAddress?: string; userAgent?: string }) {
     const user = await this.repo.findById(userId);
     if (!user) throw new UnauthorizedError('Utilisateur introuvable');
 
@@ -803,6 +834,10 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(newPassword, 12);
     await this.repo.updatePassword(userId, passwordHash);
+    await this.repo.markPasswordActivated(userId);
+
+    // D3 — invalider toutes les sessions (y compris token temporaire) puis nouvelle session
+    await this.repo.revokeAllUserRefreshTokens(userId);
 
     await this.auditService.log({
       action: AuditAction.AUTH_PASSWORD_CHANGE,
@@ -811,6 +846,18 @@ export class AuthService {
       organizationId: user.organizationId,
       ipAddress: meta?.ipAddress,
     });
+
+    const me = await this.me(userId);
+    const effectiveRole = (me.membership?.role as UserRole) ?? user.role;
+    const tokens = await this.issueTokens(
+      user.id,
+      user.email ?? user.loginId,
+      effectiveRole,
+      me.membership?.organizationId ?? user.organizationId,
+      me.membership?.id,
+      { ipAddress: meta?.ipAddress, userAgent: meta?.userAgent },
+    );
+    return { ...me, ...tokens, mustChangePassword: false };
   }
 
   private async buildSessionExtras(user: {
@@ -850,7 +897,7 @@ export class AuthService {
 
   private async issueTokens(
     userId: string,
-    email: string,
+    email: string | null | undefined,
     role: UserRole,
     organizationId: string | null,
     membershipId?: string,
@@ -858,7 +905,7 @@ export class AuthService {
   ) {
     const payload = {
       sub: userId,
-      email,
+      email: email ?? '',
       role,
       organizationId,
       ...(membershipId ? { mid: membershipId } : {}),
@@ -984,7 +1031,7 @@ export class AuthService {
     });
     return {
       secret,
-      otpauthUrl: buildOtpAuthUri({ secret, email: user.email }),
+      otpauthUrl: buildOtpAuthUri({ secret, email: user.email ?? user.loginId ?? '' }),
       recoveryCodes,
       note: 'Confirmez avec POST /auth/mfa/verify (code TOTP). Conservez les codes de récupération.',
     };

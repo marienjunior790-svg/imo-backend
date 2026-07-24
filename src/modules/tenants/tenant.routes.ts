@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { container } from 'tsyringe';
+import { z } from 'zod';
 import { TenantService } from './tenant.service.js';
+import { PortalAccessService } from './portal-access.service.js';
 import { createTenantSchema, tenantListQuerySchema, updateTenantSchema } from './tenant.schema.js';
 import { getOrganizationId } from '../../shared/middleware/auth.middleware.js';
 import { Permission } from '../../shared/auth/permissions.js';
@@ -14,8 +16,40 @@ import { auditSuccess, withAudit } from '../../shared/audit/audit-request.js';
 
 const router = Router();
 const service = container.resolve(TenantService);
+const portalAccess = container.resolve(PortalAccessService);
+
+const portalSettingsSchema = z.object({
+  autoProvisionOnLeaseActive: z.boolean().optional(),
+  deliveryModes: z.array(z.enum(['IN_APP', 'EMAIL', 'SMS'])).min(1).optional(),
+});
+
+function actor(req: { user?: { userId: string; role: import('@prisma/client').UserRole; organizationId: string | null } }) {
+  return {
+    userId: req.user!.userId,
+    role: req.user!.role,
+    organizationId: getOrganizationId(req as never),
+  };
+}
 
 router.use(...orgStaffPipeline);
+
+router.get(
+  '/portal-access-settings',
+  requirePermission(Permission.SETTINGS_VIEW),
+  asyncHandler(async (req, res) => {
+    sendSuccess(res, await portalAccess.getOrgSettingsByOrgId(getOrganizationId(req)));
+  }),
+);
+
+router.patch(
+  '/portal-access-settings',
+  requirePermission(Permission.SETTINGS_EDIT),
+  validateBody(portalSettingsSchema),
+  asyncHandler(async (req, res) => {
+    const settings = await portalAccess.updateOrgSettings(actor(req), req.body);
+    sendSuccess(res, settings, 'Paramètres portail mis à jour');
+  }),
+);
 
 router.get(
   '/',
@@ -27,6 +61,72 @@ router.get(
     const { search } = req.query as { search?: string };
     const { items, total } = await service.list(orgId, page, limit, skip, search);
     sendSuccess(res, items, undefined, 200, toPaginationMeta(page, limit, total));
+  }),
+);
+
+router.get(
+  '/:id/portal-access',
+  requirePermission(Permission.TENANT_PORTAL_VIEW_STATUS),
+  requireOrgResource('tenant'),
+  asyncHandler(async (req, res) => {
+    sendSuccess(res, await portalAccess.getStatus(actor(req), req.params.id));
+  }),
+);
+
+router.post(
+  '/:id/portal-access',
+  requirePermission(Permission.TENANT_PORTAL_PROVISION),
+  requireOrgResource('tenant'),
+  asyncHandler(async (req, res) => {
+    const result = await portalAccess.provision(actor(req), req.params.id);
+    sendSuccess(res, result, result.message, 201);
+  }),
+);
+
+router.post(
+  '/:id/portal-access/regenerate',
+  requirePermission(Permission.TENANT_PORTAL_REGENERATE),
+  requireOrgResource('tenant'),
+  asyncHandler(async (req, res) => {
+    const result = await portalAccess.regenerate(actor(req), req.params.id);
+    sendSuccess(res, result, 'Mot de passe temporaire régénéré');
+  }),
+);
+
+router.post(
+  '/:id/portal-access/reset',
+  requirePermission(Permission.TENANT_PORTAL_RESET),
+  requireOrgResource('tenant'),
+  asyncHandler(async (req, res) => {
+    const result = await portalAccess.reset(actor(req), req.params.id);
+    sendSuccess(res, result, 'Compte portail réinitialisé');
+  }),
+);
+
+router.post(
+  '/:id/portal-access/suspend',
+  requirePermission(Permission.TENANT_PORTAL_SUSPEND),
+  requireOrgResource('tenant'),
+  asyncHandler(async (req, res) => {
+    sendSuccess(res, await portalAccess.suspend(actor(req), req.params.id), 'Accès suspendu');
+  }),
+);
+
+router.post(
+  '/:id/portal-access/reactivate',
+  requirePermission(Permission.TENANT_PORTAL_SUSPEND),
+  requireOrgResource('tenant'),
+  asyncHandler(async (req, res) => {
+    sendSuccess(res, await portalAccess.reactivate(actor(req), req.params.id), 'Accès réactivé');
+  }),
+);
+
+router.post(
+  '/:id/portal-access/archive',
+  requirePermission(Permission.TENANT_PORTAL_SUSPEND),
+  requireOrgResource('tenant'),
+  asyncHandler(async (req, res) => {
+    sendSuccess(res, await portalAccess.archive(actor(req), req.params.id), 'Accès archivé');
   }),
 );
 

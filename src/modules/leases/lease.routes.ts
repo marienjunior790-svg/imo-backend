@@ -82,7 +82,7 @@ router.post(
     const activated = await withAudit(
       req,
       AuditAction.LEASE_SIGN,
-      () => service.activate(getOrganizationId(req), req.params.id),
+      () => service.activate(getOrganizationId(req), req.params.id, req.user!.userId),
       (r) => ({ resourceType: 'Lease', resourceId: r.id, newValue: { status: r.status } }),
     );
     sendSuccess(res, activated, 'Contrat activé');
