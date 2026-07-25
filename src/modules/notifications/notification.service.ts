@@ -1,6 +1,7 @@
 import { inject, injectable } from 'tsyringe';
-import { NotificationType, RentFollowUpType, UserRole, Prisma } from '@prisma/client';
+import { NotificationType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
+import { ORG_NOTIFY_ROLES } from '../../shared/auth/roles.js';
 
 export interface CreateNotificationInput {
   organizationId: string;
@@ -11,6 +12,13 @@ export interface CreateNotificationInput {
   data?: Record<string, unknown>;
 }
 
+/**
+ * Limite modèle Notification : un seul `readAt` partagé.
+ * Les lignes broadcast (userId=null) restent listables pour le staff, mais
+ * markRead/markAllRead ne les touchent plus — éviter un « lu » global pour tous.
+ * Un suivi lu par utilisateur sur broadcast nécessiterait une table de réception
+ * (migration hors scope).
+ */
 @injectable()
 export class NotificationService {
   constructor(@inject(PrismaService) private readonly prisma: PrismaService) {}
@@ -30,10 +38,14 @@ export class NotificationService {
     });
   }
 
-  /** Notifications personnelles (locataire sans organisation liée). */
-  async listPersonal(userId: string, filter?: 'unread' | 'read') {
+  /**
+   * Notifications strictement personnelles — locataires et agents de maintenance.
+   * Double scope obligatoire : organizationId + userId (exclut les broadcasts).
+   */
+  async listPersonal(organizationId: string, userId: string, filter?: 'unread' | 'read') {
     return this.prisma.notification.findMany({
       where: {
+        organizationId,
         userId,
         ...(filter === 'unread' ? { readAt: null } : {}),
         ...(filter === 'read' ? { readAt: { not: null } } : {}),
@@ -43,28 +55,43 @@ export class NotificationService {
     });
   }
 
-  async markRead(organizationId: string, userId: string, id: string) {
-    const notification = await this.prisma.notification.findFirst({
-      where: {
-        id,
-        organizationId,
-        OR: [{ userId }, { userId: null }],
-      },
-    });
-    if (!notification) return null;
-
-    return this.prisma.notification.update({
-      where: { id },
+  /** Marque lue uniquement une notif personnelle exacte (userId + org) — jamais broadcast. */
+  async markOwnRead(organizationId: string, userId: string, id: string) {
+    const result = await this.prisma.notification.updateMany({
+      where: { id, organizationId, userId, readAt: null },
       data: { readAt: new Date() },
     });
+    if (result.count === 0) return null;
+    return this.prisma.notification.findFirst({ where: { id, organizationId, userId } });
+  }
+
+  async markAllOwnRead(organizationId: string, userId: string) {
+    const result = await this.prisma.notification.updateMany({
+      where: { organizationId, userId, readAt: null },
+      data: { readAt: new Date() },
+    });
+    return result.count;
+  }
+
+  /**
+   * Staff : marque lue uniquement les notifs personnelles (userId exact).
+   * Les broadcasts (userId=null) ne sont pas mises à jour — pas de read state per-user.
+   */
+  async markRead(organizationId: string, userId: string, id: string) {
+    const result = await this.prisma.notification.updateMany({
+      where: { id, organizationId, userId, readAt: null },
+      data: { readAt: new Date() },
+    });
+    if (result.count === 0) return null;
+    return this.prisma.notification.findFirst({ where: { id, organizationId, userId } });
   }
 
   async markAllRead(organizationId: string, userId: string) {
     const result = await this.prisma.notification.updateMany({
       where: {
         organizationId,
+        userId,
         readAt: null,
-        OR: [{ userId }, { userId: null }],
       },
       data: { readAt: new Date() },
     });
@@ -84,13 +111,18 @@ export class NotificationService {
     });
   }
 
-  /** Notifie tous les admins/agents actifs de l'organisation */
+  /** Notification personnelle ciblée (ex. assignation agent). */
+  async notifyUser(input: CreateNotificationInput & { userId: string }) {
+    return this.create({ ...input, userId: input.userId });
+  }
+
+  /** Notifie le propriétaire et les gestionnaires actifs de l'organisation */
   async notifyOrganizationStaff(input: Omit<CreateNotificationInput, 'userId'>) {
     const staff = await this.prisma.user.findMany({
       where: {
         organizationId: input.organizationId,
         isActive: true,
-        role: { in: [UserRole.ORG_ADMIN, UserRole.AGENT] },
+        role: { in: ORG_NOTIFY_ROLES },
       },
       select: { id: true },
     });

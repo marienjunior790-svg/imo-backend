@@ -1,7 +1,9 @@
 /**
  * D4 — Si mustChangePassword=true :
  * ALLOW  : change-password, logout, me (+ capabilities/modules lecture)
- * DENY   : tout pipeline métier (orgStaff, tenant/portal, technician, …)
+ *          → via authenticatedStack (auth.stack.ts) sur les routes auth
+ * DENY   : pipelines métier (orgStaff, tenant, maintenanceAgent, authenticatedPipeline,
+ *          platformAdmin, adminUsers, owner, …)
  *
  * Appliqué via security.stack pipelines — pas uniquement Flutter.
  */

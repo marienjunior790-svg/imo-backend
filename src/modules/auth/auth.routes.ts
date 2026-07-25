@@ -14,9 +14,15 @@ import {
   mfaDisableSchema,
 } from './auth.schema.js';
 import { authenticatedPipeline } from '../../shared/middleware/security.stack.js';
+import { authenticatedStack } from '../../shared/middleware/auth.stack.js';
 import { authRateLimit, authStrictRateLimit } from '../../shared/middleware/auth-rate-limit.middleware.js';
 import { validateBody } from '../../shared/middleware/validate.middleware.js';
 import { asyncHandler, sendSuccess } from '../../shared/utils/response.util.js';
+
+/** Routes autorisées même si mustChangePassword=true (me, change-password, logout, lecture caps). */
+const authGateExempt = authenticatedStack;
+/** Sessions / MFA / security-events — password gate via authenticatedPipeline. */
+const authGated = authenticatedPipeline;
 
 const router = Router();
 const authService = container.resolve(AuthService);
@@ -89,7 +95,7 @@ router.post(
 router.post(
   '/logout',
   validateBody(logoutSchema),
-  ...authenticatedPipeline,
+  ...authGateExempt,
   asyncHandler(async (req, res) => {
     await authService.logout(req.body.refreshToken, {
       userId: req.user?.userId,
@@ -103,7 +109,7 @@ router.post(
 
 router.get(
   '/me',
-  ...authenticatedPipeline,
+  ...authGateExempt,
   asyncHandler(async (req, res) => {
     const result = await authService.me(req.user!.userId);
     sendSuccess(res, result);
@@ -112,7 +118,7 @@ router.get(
 
 router.get(
   '/me/capabilities',
-  ...authenticatedPipeline,
+  ...authGateExempt,
   asyncHandler(async (req, res) => {
     const result = await authService.me(req.user!.userId);
     sendSuccess(res, {
@@ -124,7 +130,7 @@ router.get(
 
 router.get(
   '/me/modules',
-  ...authenticatedPipeline,
+  ...authGateExempt,
   asyncHandler(async (req, res) => {
     const result = await authService.me(req.user!.userId);
     sendSuccess(res, { modules: result.modules });
@@ -133,7 +139,7 @@ router.get(
 
 router.post(
   '/change-password',
-  ...authenticatedPipeline,
+  ...authGateExempt,
   validateBody(changePasswordSchema),
   asyncHandler(async (req, res) => {
     const result = await authService.changePassword(
@@ -172,7 +178,7 @@ router.post(
 
 router.get(
   '/sessions',
-  ...authenticatedPipeline,
+  ...authGated,
   asyncHandler(async (req, res) => {
     const refreshHeader = req.headers['x-refresh-token'];
     const current =
@@ -188,7 +194,7 @@ router.get(
 
 router.delete(
   '/sessions/:id',
-  ...authenticatedPipeline,
+  ...authGated,
   asyncHandler(async (req, res) => {
     const result = await authService.revokeSession(req.user!.userId, req.params.id!, {
       ipAddress: clientIp(req),
@@ -201,7 +207,7 @@ router.delete(
 
 router.delete(
   '/sessions',
-  ...authenticatedPipeline,
+  ...authGated,
   asyncHandler(async (req, res) => {
     const result = await authService.revokeAllSessions(req.user!.userId, {
       ipAddress: clientIp(req),
@@ -214,7 +220,7 @@ router.delete(
 
 router.post(
   '/mfa/setup',
-  ...authenticatedPipeline,
+  ...authGated,
   asyncHandler(async (req, res) => {
     const result = await authService.mfaSetup(req.user!.userId);
     sendSuccess(res, result, 'Configurez votre application TOTP');
@@ -223,7 +229,7 @@ router.post(
 
 router.post(
   '/mfa/verify',
-  ...authenticatedPipeline,
+  ...authGated,
   validateBody(mfaVerifySchema),
   asyncHandler(async (req, res) => {
     const result = await authService.mfaVerifyEnable(req.user!.userId, req.body.code);
@@ -233,7 +239,7 @@ router.post(
 
 router.post(
   '/mfa/disable',
-  ...authenticatedPipeline,
+  ...authGated,
   validateBody(mfaDisableSchema),
   asyncHandler(async (req, res) => {
     const result = await authService.mfaDisable(req.user!.userId, req.body.password, req.body.code, {
@@ -245,7 +251,7 @@ router.post(
 
 router.get(
   '/security-events',
-  ...authenticatedPipeline,
+  ...authGated,
   asyncHandler(async (req, res) => {
     const limit = Number(req.query.limit) || 50;
     const events = await authService.listSecurityEvents(req.user!.userId, limit);

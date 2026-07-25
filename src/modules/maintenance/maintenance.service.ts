@@ -10,9 +10,18 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { NotFoundError, ValidationError } from '../../shared/errors/app.error.js';
+import { isMaintenanceAgent } from '../../shared/auth/roles.js';
 import { NotificationService } from '../notifications/notification.service.js';
 import { N8nWebhookService } from '../../infrastructure/automation/n8n.service.js';
 import { AutomationEvent } from '../../infrastructure/automation/automation.events.js';
+import { appendTicketPhoto, type PhotoPhase, type PhotoRef } from './maintenance.photos.js';
+import {
+  assertAgentAcceptStatus,
+  assertAgentCloseStatus,
+  assertAgentCompleteStatus,
+  assertAgentRefuseStatus,
+  assertAgentStartStatus,
+} from './maintenance.transitions.js';
 
 const URGENT_KEYWORDS = ['urgent', 'fuite', 'gaz', 'électri', 'electri', 'incendie', 'inondation', 'panne'];
 const LOW_KEYWORDS = ['peinture', 'nettoyage', 'porte', 'ampoule', 'cosmétique'];
@@ -149,7 +158,54 @@ export class MaintenanceService {
       data: payload,
     });
 
+    // Assignation automatique si un agent de maintenance est disponible (least-busy).
+    try {
+      const auto = await this.tryAutoAssign(organizationId, ticket.id, actor);
+      if (auto) return auto;
+    } catch (err) {
+      console.error('[maintenance] auto-assign failed (non-blocking)', err);
+    }
+
     return this.get(organizationId, ticket.id);
+  }
+
+  /**
+   * Choisit l'agent actif avec le moins de tickets ouverts (OPEN/ASSIGNED/IN_PROGRESS).
+   * No-op s'il n'y a aucun agent.
+   */
+  async tryAutoAssign(
+    organizationId: string,
+    ticketId: string,
+    actor?: { userId: string; name: string },
+  ) {
+    const agents = await this.listMaintenanceAgents(organizationId);
+    if (agents.length === 0) return null;
+
+    const openStatuses = [
+      MaintenanceTicketStatus.OPEN,
+      MaintenanceTicketStatus.ASSIGNED,
+      MaintenanceTicketStatus.IN_PROGRESS,
+    ];
+    const loads = await Promise.all(
+      agents.map(async (a) => {
+        const count = await this.prisma.maintenanceTicket.count({
+          where: { organizationId, assignedToId: a.id, status: { in: openStatuses } },
+        });
+        return { agent: a, count };
+      }),
+    );
+    loads.sort((a, b) => a.count - b.count || a.agent.lastName.localeCompare(b.agent.lastName));
+    const chosen = loads[0]!.agent;
+
+    return this.assign(
+      organizationId,
+      ticketId,
+      {
+        assignedToId: chosen.id,
+        note: 'Assignation automatique (charge la plus faible)',
+      },
+      actor ?? { userId: 'system', name: 'Système' },
+    );
   }
 
   async assign(
@@ -169,6 +225,9 @@ export class MaintenanceService {
         where: { id: data.assignedToId, organizationId, isActive: true },
       });
       if (!user) throw new NotFoundError('Technicien introuvable');
+      if (!isMaintenanceAgent(user.role)) {
+        throw new ValidationError('L\'assigné doit être un agent de maintenance actif');
+      }
       assigneeName = `${user.firstName} ${user.lastName}`;
     }
 
@@ -218,6 +277,17 @@ export class MaintenanceService {
       data: payload,
     });
 
+    if (data.assignedToId) {
+      await this.notifications.notifyUser({
+        organizationId,
+        userId: data.assignedToId,
+        type: NotificationType.MAINTENANCE_ASSIGNED,
+        title: 'Nouvelle intervention assignée',
+        message: updated.title,
+        data: payload,
+      });
+    }
+
     return updated;
   }
 
@@ -234,9 +304,23 @@ export class MaintenanceService {
       organizationId,
       type: NotificationType.MAINTENANCE_COMPLETED,
       title: 'Intervention terminée',
-      message: updated.title,
+      message: `${updated.title} — en attente de confirmation locataire`,
       data: payload,
     });
+
+    const tenantUserId =
+      (updated.tenant as { userId?: string | null } | null)?.userId ?? updated.reportedById ?? null;
+    if (tenantUserId) {
+      await this.notifications.notifyUser({
+        organizationId,
+        userId: tenantUserId,
+        type: NotificationType.MAINTENANCE_COMPLETED,
+        title: 'Intervention terminée — confirmez la résolution',
+        message: `L'agent a terminé « ${updated.title} ». Merci de confirmer que le problème est résolu.`,
+        data: { ticketId: id, ...payload },
+      });
+    }
+
     return updated;
   }
 
@@ -369,7 +453,10 @@ export class MaintenanceService {
     return this.get(organizationId, id);
   }
 
-  async listForTechnician(
+  // ─── Portail agent de maintenance ──────────────────────────────────────────
+
+  /** Interventions assignées à l'agent connecté (double scope org + assignation). */
+  async listForAgent(
     organizationId: string,
     userId: string,
     skip: number,
@@ -400,7 +487,7 @@ export class MaintenanceService {
     return { items, total };
   }
 
-  async getForTechnician(organizationId: string, userId: string, id: string) {
+  async getForAgent(organizationId: string, userId: string, id: string) {
     const ticket = await this.prisma.maintenanceTicket.findFirst({
       where: { id, organizationId, assignedToId: userId },
       include: ticketInclude,
@@ -410,11 +497,206 @@ export class MaintenanceService {
   }
 
   async acceptJob(organizationId: string, id: string, actor: { userId: string; name: string }) {
-    const ticket = await this.getForTechnician(organizationId, actor.userId, id);
-    if (ticket.status !== MaintenanceTicketStatus.OPEN && ticket.status !== MaintenanceTicketStatus.ASSIGNED) {
-      throw new ValidationError('Cette mission ne peut plus être acceptée');
+    const ticket = await this.getForAgent(organizationId, actor.userId, id);
+    assertAgentAcceptStatus(ticket.status);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.maintenanceTicket.update({
+        where: { id },
+        data: {
+          status: MaintenanceTicketStatus.ASSIGNED,
+          assignedToId: actor.userId,
+          assignedToName: actor.name,
+        },
+      });
+      await tx.maintenanceTicketEvent.create({
+        data: {
+          ticketId: id,
+          organizationId,
+          type: MaintenanceEventType.STATUS_CHANGED,
+          message: 'Mission acceptée par l\'agent',
+          actorId: actor.userId,
+          actorName: actor.name,
+        },
+      });
+    });
+
+    return this.getForAgent(organizationId, actor.userId, id);
+  }
+
+  /**
+   * Refus de mission : libère l'assignation (retour OPEN) pour réaffectation.
+   * Visible dans l'historique ; le ticket n'appartient plus à l'agent.
+   */
+  async refuseJob(
+    organizationId: string,
+    id: string,
+    actor: { userId: string; name: string },
+    reason?: string,
+  ) {
+    const ticket = await this.getForAgent(organizationId, actor.userId, id);
+    assertAgentRefuseStatus(ticket.status);
+
+    const message = reason?.trim()
+      ? `Mission refusée par l'agent : ${reason.trim()}`
+      : 'Mission refusée par l\'agent';
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.maintenanceTicket.update({
+        where: { id },
+        data: {
+          status: MaintenanceTicketStatus.OPEN,
+          assignedToId: null,
+          assignedToName: null,
+        },
+      });
+      await tx.maintenanceTicketEvent.create({
+        data: {
+          ticketId: id,
+          organizationId,
+          type: MaintenanceEventType.STATUS_CHANGED,
+          message,
+          actorId: actor.userId,
+          actorName: actor.name,
+        },
+      });
+    });
+
+    await this.notifications.notifyOrganizationStaff({
+      organizationId,
+      type: NotificationType.MAINTENANCE_ASSIGNED,
+      title: 'Mission refusée',
+      message: `${ticket.title} — à réassigner`,
+      data: { ticketId: id },
+    });
+
+    return this.get(organizationId, id);
+  }
+
+  /** Transitions et commentaires de l'agent — refusés si l'intervention ne lui est pas assignée. */
+  async startForAgent(organizationId: string, id: string, actor: { userId: string; name: string }) {
+    const ticket = await this.getForAgent(organizationId, actor.userId, id);
+    assertAgentStartStatus(ticket.status);
+    return this.start(organizationId, id, actor);
+  }
+
+  async completeForAgent(organizationId: string, id: string, actor: { userId: string; name: string }) {
+    const ticket = await this.getForAgent(organizationId, actor.userId, id);
+    assertAgentCompleteStatus(ticket.status);
+    return this.complete(organizationId, id, actor);
+  }
+
+  async closeForAgent(organizationId: string, id: string, actor: { userId: string; name: string }) {
+    const ticket = await this.getForAgent(organizationId, actor.userId, id);
+    assertAgentCloseStatus(ticket.status);
+    if (ticket.status === MaintenanceTicketStatus.IN_PROGRESS) {
+      await this.complete(organizationId, id, actor);
     }
-    return this.transition(organizationId, id, MaintenanceTicketStatus.ASSIGNED, 'Mission acceptée par le technicien', actor);
+    return this.close(organizationId, id, actor);
+  }
+
+  async addAgentNote(organizationId: string, id: string, message: string, actor: { userId: string; name: string }) {
+    await this.getForAgent(organizationId, actor.userId, id);
+    return this.addNote(organizationId, id, message, actor);
+  }
+
+  /** Agents de maintenance actifs de l'organisation (pour assignation propriétaire). */
+  async listMaintenanceAgents(organizationId: string) {
+    const users = await this.prisma.user.findMany({
+      where: {
+        organizationId,
+        isActive: true,
+        role: { in: ['AGENT', 'TECHNICIAN', 'MAINTENANCE_LEAD'] },
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        role: true,
+      },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+    return users.filter((u) => isMaintenanceAgent(u.role));
+  }
+
+  /** Photo avant / après. `scopeToAssignee` restreint l'action à l'agent assigné. */
+  async attachPhoto(
+    organizationId: string,
+    id: string,
+    phase: PhotoPhase,
+    photo: PhotoRef,
+    actor: { userId: string; name: string },
+    opts?: { scopeToAssignee?: boolean },
+  ) {
+    const ticket = opts?.scopeToAssignee
+      ? await this.getForAgent(organizationId, actor.userId, id)
+      : await this.get(organizationId, id);
+    if (ticket.status === MaintenanceTicketStatus.CLOSED) {
+      throw new ValidationError('Ticket clôturé');
+    }
+
+    const photos = appendTicketPhoto(ticket.photos, phase, photo);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.maintenanceTicket.update({
+        where: { id },
+        data: { photos: photos as unknown as Prisma.InputJsonValue },
+      });
+      await tx.maintenanceTicketEvent.create({
+        data: {
+          ticketId: id,
+          organizationId,
+          type: MaintenanceEventType.PHOTO_ADDED,
+          message: phase === 'BEFORE' ? 'Photo avant intervention ajoutée' : 'Photo après intervention ajoutée',
+          actorId: actor.userId,
+          actorName: actor.name,
+        },
+      });
+    });
+
+    return this.getForAgent(organizationId, actor.userId, id).catch(() => this.get(organizationId, id));
+  }
+
+  /** Compteurs du tableau de bord agent. */
+  async agentStats(organizationId: string, userId: string) {
+    const base = { organizationId, assignedToId: userId };
+    const [assigned, inProgress, completed, closed, urgent] = await Promise.all([
+      this.prisma.maintenanceTicket.count({
+        where: { ...base, status: { in: [MaintenanceTicketStatus.OPEN, MaintenanceTicketStatus.ASSIGNED] } },
+      }),
+      this.prisma.maintenanceTicket.count({ where: { ...base, status: MaintenanceTicketStatus.IN_PROGRESS } }),
+      this.prisma.maintenanceTicket.count({ where: { ...base, status: MaintenanceTicketStatus.COMPLETED } }),
+      this.prisma.maintenanceTicket.count({ where: { ...base, status: MaintenanceTicketStatus.CLOSED } }),
+      this.prisma.maintenanceTicket.count({
+        where: {
+          ...base,
+          priority: { in: [MaintenancePriority.HIGH, MaintenancePriority.CRITICAL] },
+          status: { notIn: [MaintenanceTicketStatus.CLOSED, MaintenanceTicketStatus.CANCELLED] },
+        },
+      }),
+    ]);
+
+    const next = await this.prisma.maintenanceTicket.findMany({
+      where: {
+        ...base,
+        status: { notIn: [MaintenanceTicketStatus.CLOSED, MaintenanceTicketStatus.CANCELLED, MaintenanceTicketStatus.COMPLETED] },
+      },
+      orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+      take: 5,
+      include: { apartment: { include: { building: true } }, tenant: true },
+    });
+
+    return {
+      assigned,
+      inProgress,
+      completed,
+      closed,
+      urgent,
+      openTotal: assigned + inProgress,
+      upcoming: next,
+    };
   }
 
   private toWebhookPayload(

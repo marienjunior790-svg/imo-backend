@@ -19,13 +19,15 @@ enum OrganizationType {
 
 enum UserRole {
   SUPER_ADMIN
+  OWNER       // Propriétaire / agence — pilotage complet de l'organisation
+  MANAGER     // Gestion locative (baux, paiements, candidatures)
+  AGENT       // Agent de maintenance — interventions terrain uniquement
+  TENANT      // Locataire — portail personnel
+  ACCOUNTANT
+  // Legacy — alias conservés : ORG_ADMIN → OWNER, TECHNICIAN → AGENT (voir shared/auth/roles.ts)
   ORG_ADMIN
-  AGENT
-  TENANT
   TECHNICIAN
   // Rôles futurs (matrice RBAC préparée)
-  ACCOUNTANT
-  MANAGER
   MAINTENANCE_LEAD
   VISITOR
   SUPPORT
@@ -96,6 +98,7 @@ enum MaintenanceEventType {
   ASSIGNED
   STATUS_CHANGED
   NOTE_ADDED
+  PHOTO_ADDED
   CLOSED
 }
 
@@ -231,7 +234,8 @@ model User {
   firstName      String
   lastName       String
   phone          String?
-  role           UserRole @default(AGENT)
+  /// Défaut au privilège minimal : tout rôle opérationnel est attribué explicitement.
+  role           UserRole @default(TENANT)
   isActive       Boolean  @default(true)
   proAccessEnabled Boolean @default(false) // Accès option Pro (décision admin)
   lastLoginAt    DateTime?
@@ -712,6 +716,8 @@ model MaintenanceTicket {
   assignedToId     String?
   assignedToName   String?
   reportedById     String?
+  /// Photos d'intervention — { before: PhotoRef[], after: PhotoRef[] } (voir maintenance.photos.ts)
+  photos           Json?
   closedAt         DateTime?
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt

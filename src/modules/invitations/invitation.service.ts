@@ -12,6 +12,7 @@ import {
   ValidationError,
 } from '../../shared/errors/app.error.js';
 import { env } from '../../config/env.js';
+import { isOrgAdminLevel } from '../../shared/auth/roles.js';
 import {
   buildInviteUrl,
   generateInviteToken,
@@ -222,8 +223,8 @@ export class InvitationService {
   }
 
   private assertCanInvite(role: UserRole) {
-    if (role !== UserRole.ORG_ADMIN && role !== UserRole.SUPER_ADMIN) {
-      throw new ForbiddenError('Seuls les administrateurs peuvent inviter');
+    if (!isOrgAdminLevel(role)) {
+      throw new ForbiddenError('Seul le propriétaire peut inviter des collaborateurs');
     }
   }
 

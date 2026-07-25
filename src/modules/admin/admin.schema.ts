@@ -7,6 +7,9 @@ const passwordSchema = z
   .regex(/[a-z]/, 'Au moins une minuscule requise')
   .regex(/[0-9]/, 'Au moins un chiffre requis');
 
+/** Rôles qu'un propriétaire peut attribuer dans son organisation (OWNER exclu). */
+export const orgAssignableRoles = ['MANAGER', 'AGENT', 'ACCOUNTANT', 'TENANT'] as const;
+
 export const createOrgUserSchema = z.object({
   email: z.string().email('Email invalide'),
   /** @deprecated P2 — préférer POST /invitations (le collaborateur définit son mot de passe). */
@@ -14,11 +17,11 @@ export const createOrgUserSchema = z.object({
   firstName: z.string().min(2),
   lastName: z.string().min(2),
   phone: z.string().optional(),
-  role: z.enum(['AGENT', 'TENANT', 'TECHNICIAN']).default('AGENT'),
+  role: z.enum(orgAssignableRoles).default('MANAGER'),
 });
 
 export const updateOrgUserSchema = z.object({
   isActive: z.boolean().optional(),
-  role: z.enum(['AGENT', 'TENANT', 'TECHNICIAN']).optional(),
+  role: z.enum(orgAssignableRoles).optional(),
   proAccessEnabled: z.boolean().optional(),
 });

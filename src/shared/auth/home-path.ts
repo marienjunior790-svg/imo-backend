@@ -1,4 +1,5 @@
 import { UserRole } from '@prisma/client';
+import { normalizeRole } from './roles.js';
 
 /**
  * Canonical post-auth home path (P0 unified login).
@@ -6,17 +7,16 @@ import { UserRole } from '@prisma/client';
  * Paths match the mobile GoRouter today; web maps them onto its shell.
  */
 export function resolveHomePath(role: UserRole | string): string {
-  switch (String(role).toUpperCase()) {
+  switch (normalizeRole(role)) {
     case UserRole.SUPER_ADMIN:
       return '/admin/dashboard';
-    case UserRole.ORG_ADMIN:
-    case UserRole.AGENT:
+    case UserRole.OWNER:
     case UserRole.MANAGER:
     case UserRole.ACCOUNTANT:
       return '/dashboard';
-    case UserRole.TECHNICIAN:
+    case UserRole.AGENT:
     case UserRole.MAINTENANCE_LEAD:
-      return '/technician';
+      return '/agent';
     case UserRole.TENANT:
       return '/tenant';
     default:

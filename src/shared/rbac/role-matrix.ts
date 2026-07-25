@@ -1,17 +1,20 @@
 /**
- * P3 — héritage RBAC.
- * Règle d'or : ORG_ADMIN ⊇ MANAGER ⊇ AGENT (capacités opérationnelles).
+ * P6 — héritage RBAC.
+ * Règle d'or côté locatif : OWNER ⊇ MANAGER ⊇ LETTING_OPS.
+ * AGENT est un rôle terrain disjoint (maintenance uniquement), TENANT un rôle portail.
  */
 import { ALL_PERMISSION_KEYS } from './permission-catalog.js';
 
 export const SYSTEM_ROLES = [
   'SUPER_ADMIN',
-  'ORG_ADMIN',
+  'OWNER',
+  'MANAGER',
   'AGENT',
   'TENANT',
-  'TECHNICIAN',
   'ACCOUNTANT',
-  'MANAGER',
+  // Alias legacy — même matrice que leur rôle canonique (cf. shared/auth/roles.ts)
+  'ORG_ADMIN',
+  'TECHNICIAN',
   'MAINTENANCE_LEAD',
   'VISITOR',
   'SUPPORT',
@@ -42,8 +45,8 @@ const OWNER_ADMIN: string[] = [
   'SETTINGS_EDIT',
 ];
 
-/** Agent — opérations immobilières quotidiennes. */
-const AGENT: string[] = [
+/** Opérations locatives quotidiennes (socle MANAGER / OWNER). */
+const LETTING_OPS: string[] = [
   'DASHBOARD_VIEW',
   'BUILDING_VIEW',
   'BUILDING_CREATE',
@@ -104,9 +107,9 @@ const AGENT: string[] = [
   'TENANT_PORTAL_VIEW_STATUS',
 ];
 
-/** Manager = Agent sans DELETE + pilotage léger. */
+/** Manager = opérations locatives sans suppression + pilotage léger. */
 const MANAGER = uniq([
-  ...AGENT.filter((k) => !k.includes('DELETE')),
+  ...LETTING_OPS.filter((k) => !k.includes('DELETE')),
   'REVENUE_VIEW',
   'SUBSCRIPTION_MANAGE',
   'AUDIT_VIEW',
@@ -116,44 +119,57 @@ const MANAGER = uniq([
   'TENANT_PORTAL_SUSPEND',
 ]);
 
-/** Owner / ORG_ADMIN = Manager ∪ Agent ∪ admin org (héritage strict). */
-const ORG_ADMIN = uniq([...OWNER_ADMIN, ...MANAGER, ...AGENT]);
+/** Owner = Manager ∪ opérations locatives ∪ admin org (héritage strict). */
+const OWNER = uniq([...OWNER_ADMIN, ...MANAGER, ...LETTING_OPS]);
+
+/**
+ * Agent de maintenance — interventions qui lui sont assignées.
+ * Aucun accès loyers / contrats / immeubles / finances.
+ */
+const MAINTENANCE_AGENT: string[] = [
+  'TECH_HOME_VIEW',
+  'TECH_JOBS_VIEW',
+  'TECH_JOBS_MANAGE',
+  'TECH_JOBS_COMMENT',
+  'TECH_PHOTO_UPLOAD',
+  'TECH_CALENDAR_VIEW',
+  'TECH_HISTORY_VIEW',
+  'MAINTENANCE_VIEW',
+  'MAINTENANCE_CLOSE',
+  'NOTIFICATION_VIEW',
+  'NOTIFICATION_CENTER_VIEW',
+  'MESSAGE_VIEW',
+  'SETTINGS_VIEW',
+  'PROFILE_VIEW',
+];
+
+/** Locataire — portail personnel uniquement. */
+const TENANT: string[] = [
+  'PORTAL_HOME_VIEW',
+  'PORTAL_HOMES_VIEW',
+  'PORTAL_LEASE_VIEW',
+  'PORTAL_PAYMENTS_VIEW',
+  'PORTAL_MAINTENANCE_VIEW',
+  'PORTAL_MAINTENANCE_CREATE',
+  'APPLICATION_SUBMIT',
+  'APPLICATION_WITHDRAW',
+  'APPLICATION_VIEW',
+  'LISTING_VIEW',
+  'NOTIFICATION_VIEW',
+  'NOTIFICATION_CENTER_VIEW',
+  'MESSAGE_VIEW',
+  'SETTINGS_VIEW',
+  'PROFILE_VIEW',
+  'AI_USE',
+  'AI_CHAT',
+];
 
 export const ROLE_PERMISSION_MATRIX: Record<SystemRole, string[] | 'ALL'> = {
   SUPER_ADMIN: 'ALL',
-  ORG_ADMIN,
-  AGENT,
-  TENANT: [
-    'PORTAL_HOME_VIEW',
-    'PORTAL_HOMES_VIEW',
-    'PORTAL_LEASE_VIEW',
-    'PORTAL_PAYMENTS_VIEW',
-    'PORTAL_MAINTENANCE_VIEW',
-    'PORTAL_MAINTENANCE_CREATE',
-    'APPLICATION_SUBMIT',
-    'APPLICATION_WITHDRAW',
-    'APPLICATION_VIEW',
-    'LISTING_VIEW',
-    'NOTIFICATION_VIEW',
-    'NOTIFICATION_CENTER_VIEW',
-    'MESSAGE_VIEW',
-    'SETTINGS_VIEW',
-    'AI_USE',
-    'AI_CHAT',
-  ],
-  TECHNICIAN: [
-    'TECH_HOME_VIEW',
-    'TECH_JOBS_VIEW',
-    'TECH_JOBS_MANAGE',
-    'TECH_CALENDAR_VIEW',
-    'TECH_HISTORY_VIEW',
-    'MAINTENANCE_VIEW',
-    'MAINTENANCE_CLOSE',
-    'NOTIFICATION_VIEW',
-    'NOTIFICATION_CENTER_VIEW',
-    'MESSAGE_VIEW',
-    'SETTINGS_VIEW',
-  ],
+  OWNER,
+  MANAGER,
+  AGENT: MAINTENANCE_AGENT,
+  TENANT,
   ACCOUNTANT: [
     'DASHBOARD_VIEW',
     'PAYMENT_VIEW',
@@ -168,7 +184,8 @@ export const ROLE_PERMISSION_MATRIX: Record<SystemRole, string[] | 'ALL'> = {
     'NOTIFICATION_CENTER_VIEW',
     'SETTINGS_VIEW',
   ],
-  MANAGER,
+  ORG_ADMIN: OWNER,
+  TECHNICIAN: MAINTENANCE_AGENT,
   MAINTENANCE_LEAD: [
     'DASHBOARD_VIEW',
     'MAINTENANCE_VIEW',
@@ -176,7 +193,12 @@ export const ROLE_PERMISSION_MATRIX: Record<SystemRole, string[] | 'ALL'> = {
     'MAINTENANCE_EDIT',
     'MAINTENANCE_ASSIGN',
     'MAINTENANCE_CLOSE',
+    'TECH_HOME_VIEW',
     'TECH_JOBS_VIEW',
+    'TECH_JOBS_MANAGE',
+    'TECH_JOBS_COMMENT',
+    'TECH_PHOTO_UPLOAD',
+    'TECH_HISTORY_VIEW',
     'INSPECTION_VIEW',
     'INSPECTION_CREATE',
     'NOTIFICATION_CENTER_VIEW',
@@ -202,17 +224,28 @@ export function resolveRolePermissions(role: string): string[] {
   return entry;
 }
 
-/** Vérifie Owner ⊇ Manager ⊇ Agent (tests / invariants). */
+/** Vérifie Owner ⊇ Manager ⊇ opérations locatives (tests / invariants). */
 export function assertOrgHierarchy(): { ok: boolean; missing: string[] } {
-  const owner = new Set(resolveRolePermissions('ORG_ADMIN'));
+  const owner = new Set(resolveRolePermissions('OWNER'));
   const manager = resolveRolePermissions('MANAGER');
-  const agent = resolveRolePermissions('AGENT');
   const missing: string[] = [];
-  for (const k of manager) if (!owner.has(k)) missing.push(`ORG_ADMIN missing MANAGER:${k}`);
-  for (const k of agent) if (!owner.has(k)) missing.push(`ORG_ADMIN missing AGENT:${k}`);
+  for (const k of manager) if (!owner.has(k)) missing.push(`OWNER missing MANAGER:${k}`);
+  for (const k of LETTING_OPS) if (!owner.has(k)) missing.push(`OWNER missing LETTING:${k}`);
   const managerSet = new Set(manager);
-  for (const k of agent.filter((x) => !x.includes('DELETE'))) {
-    if (!managerSet.has(k)) missing.push(`MANAGER missing AGENT:${k}`);
+  for (const k of LETTING_OPS.filter((x) => !x.includes('DELETE'))) {
+    if (!managerSet.has(k)) missing.push(`MANAGER missing LETTING:${k}`);
   }
   return { ok: missing.length === 0, missing };
+}
+
+/**
+ * Cloisonnement métier : l'agent de maintenance ne doit porter aucune permission
+ * loyers / contrats / immeubles / finances.
+ */
+export function assertMaintenanceIsolation(): { ok: boolean; leaked: string[] } {
+  const forbiddenPrefixes = ['PAYMENT_', 'LEASE_', 'BUILDING_', 'APARTMENT_', 'REVENUE_', 'REPORT_', 'TENANT_', 'BILLING_', 'SUBSCRIPTION_'];
+  const leaked = resolveRolePermissions('AGENT').filter((k) =>
+    forbiddenPrefixes.some((p) => k.startsWith(p)),
+  );
+  return { ok: leaked.length === 0, leaked };
 }

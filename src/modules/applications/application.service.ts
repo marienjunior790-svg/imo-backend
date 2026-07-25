@@ -9,6 +9,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors/app.error.js';
+import { ORG_NOTIFY_ROLES, isPlatformAdmin, isTenant } from '../../shared/auth/roles.js';
 import { NotificationService } from '../notifications/notification.service.js';
 import { ApplicationScoringService } from './application-scoring.service.js';
 
@@ -197,7 +198,7 @@ export class ApplicationService {
     const admins = await this.prisma.user.findMany({
       where: {
         organizationId: app.organizationId,
-        role: { in: [UserRole.ORG_ADMIN, UserRole.AGENT] },
+        role: { in: ORG_NOTIFY_ROLES },
         isActive: true,
       },
       select: { id: true },
@@ -314,10 +315,10 @@ export class ApplicationService {
     });
     if (!app) throw new NotFoundError('Demande introuvable');
 
-    if (role === UserRole.TENANT && app.applicantUserId !== userId) {
+    if (isTenant(role) && app.applicantUserId !== userId) {
       throw new ForbiddenError('Accès refusé');
     }
-    if (role !== UserRole.SUPER_ADMIN && role !== UserRole.TENANT && app.organizationId !== organizationId) {
+    if (!isPlatformAdmin(role) && !isTenant(role) && app.organizationId !== organizationId) {
       throw new ForbiddenError('Accès refusé');
     }
 

@@ -7,14 +7,19 @@ const passwordSchema = z
   .regex(/[a-z]/, 'Au moins une minuscule requise')
   .regex(/[0-9]/, 'Au moins un chiffre requis');
 
-export const inviteRoles = ['AGENT', 'TECHNICIAN', 'MANAGER', 'ACCOUNTANT'] as const;
+/**
+ * Rôles invitables par le propriétaire.
+ * MANAGER = gestion locative, AGENT = maintenance, ACCOUNTANT = finance.
+ * Les locataires ne sont pas invités ici : voir POST /tenants/:id/portal-access.
+ */
+export const inviteRoles = ['MANAGER', 'AGENT', 'ACCOUNTANT'] as const;
 
 export const createInvitationSchema = z.object({
   email: z.string().email('Email invalide'),
   firstName: z.string().min(2),
   lastName: z.string().min(2),
   phone: z.string().optional(),
-  role: z.enum(inviteRoles).default('AGENT'),
+  role: z.enum(inviteRoles).default('MANAGER'),
 });
 
 export const acceptInvitationSchema = z.object({

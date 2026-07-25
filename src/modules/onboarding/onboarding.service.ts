@@ -2,6 +2,7 @@ import { inject, injectable } from 'tsyringe';
 import { ApartmentStatus, Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors/app.error.js';
+import { isOwner } from '../../shared/auth/roles.js';
 import type {
   CompleteStepBody,
   FirstPropertyBody,
@@ -68,7 +69,7 @@ export class OnboardingService {
   constructor(@inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async getForUser(userId: string, role: UserRole, organizationId: string | null) {
-    if (role !== UserRole.ORG_ADMIN || !organizationId) {
+    if (!isOwner(role) || !organizationId) {
       return { onboarding: null as ReturnType<typeof toOnboardingSnapshot> };
     }
     const org = await this.prisma.organization.findUnique({
@@ -170,8 +171,8 @@ export class OnboardingService {
   }
 
   private assertOrgAdmin(role: UserRole, organizationId: string | null) {
-    if (role !== UserRole.ORG_ADMIN || !organizationId) {
-      throw new ForbiddenError('Onboarding réservé à l\'administrateur de l\'organisation');
+    if (!isOwner(role) || !organizationId) {
+      throw new ForbiddenError('Onboarding réservé au propriétaire de l\'organisation');
     }
   }
 

@@ -2,6 +2,7 @@ import { inject, injectable } from 'tsyringe';
 import { UserRole } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { ForbiddenError } from '../errors/app.error.js';
+import { normalizeRole } from '../auth/roles.js';
 import { PERMISSION_CATALOG } from './permission-catalog.js';
 import { ROLE_PERMISSION_MATRIX, resolveRolePermissions } from './role-matrix.js';
 
@@ -36,11 +37,17 @@ export class RbacService {
           create: { role, permissionKey: key },
         });
       }
+      // Réconciliation : un rôle qui change de métier (P6 : AGENT → maintenance)
+      // doit perdre ses anciens octrois, sinon la matrice en base reste permissive.
+      await this.prisma.rbacRolePermission.deleteMany({
+        where: { role, permissionKey: { notIn: keys } },
+      });
     }
     this.cache.clear();
   }
 
-  async getPermissionsForRole(role: string): Promise<string[]> {
+  async getPermissionsForRole(roleInput: string): Promise<string[]> {
+    const role = normalizeRole(roleInput);
     if (role === UserRole.SUPER_ADMIN) return PERMISSION_CATALOG.map((p) => p.key);
 
     const cached = this.cache.get(role);
@@ -65,7 +72,7 @@ export class RbacService {
   }
 
   async hasPermission(role: string, permission: string): Promise<boolean> {
-    if (role === UserRole.SUPER_ADMIN) return true;
+    if (normalizeRole(role) === UserRole.SUPER_ADMIN) return true;
     const keys = await this.getPermissionsForRole(role);
     return keys.includes(permission);
   }

@@ -3,6 +3,7 @@ import { container } from 'tsyringe';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { extendedPrisma } from '../utils/extended-prisma.js';
 import { assertSameOrganization } from '../auth/resource-scope.js';
+import { isPlatformAdmin, isTenant } from '../auth/roles.js';
 import { getOrganizationId } from './auth.middleware.js';
 import { asyncHandler } from '../utils/response.util.js';
 import { ForbiddenError, NotFoundError } from '../errors/app.error.js';
@@ -27,8 +28,8 @@ export type OrgResourceGate = 'bypass' | 'deny' | 'check';
  * Autres rôles : vérifier organizationId de la ressource.
  */
 export function orgResourceGateForRole(role: UserRole | undefined): OrgResourceGate {
-  if (role === UserRole.SUPER_ADMIN) return 'bypass';
-  if (role === UserRole.TENANT) return 'deny';
+  if (isPlatformAdmin(role)) return 'bypass';
+  if (isTenant(role)) return 'deny';
   return 'check';
 }
 
@@ -104,11 +105,11 @@ export function requireApplicationAccess() {
     });
     if (!app) throw new NotFoundError('Demande introuvable');
 
-    if (u.role === UserRole.TENANT) {
+    if (isTenant(u.role)) {
       if (app.applicantUserId !== u.userId) throw new NotFoundError('Demande introuvable');
       return next();
     }
-    if (u.role !== UserRole.SUPER_ADMIN) {
+    if (!isPlatformAdmin(u.role)) {
       assertSameOrganization(app.organizationId, u.organizationId);
     }
     next();

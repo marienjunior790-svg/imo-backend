@@ -237,9 +237,29 @@ export class LeaseService {
         );
       } catch (err) {
         console.error('[lease] auto portal provision failed (non-blocking)', err);
+        const message = err instanceof Error ? err.message : 'Échec de la création du compte locataire';
+        portalAccess = {
+          provisioned: false,
+          error: true,
+          message,
+        };
       }
     }
-    return { ...lease, portalAccess };
+    return {
+      ...lease,
+      portalAccess,
+      /** Raccourcis utiles à l'UI propriétaire (association contrat / bien / org). */
+      portalContext: {
+        leaseId: lease.id,
+        apartmentId: lease.apartmentId,
+        apartmentLabel: lease.apartment?.label ?? null,
+        tenantId: lease.tenantId,
+        tenantName: lease.tenant
+          ? `${lease.tenant.firstName} ${lease.tenant.lastName}`
+          : null,
+        organizationId,
+      },
+    };
   }
 
   terminate(organizationId: string, id: string) {

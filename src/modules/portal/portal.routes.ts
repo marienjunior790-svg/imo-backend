@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { container } from 'tsyringe';
 import { PortalService } from './portal.service.js';
-import { portalMaintenanceSchema } from './portal.schema.js';
+import { portalMaintenanceSchema, portalMaintenanceCommentSchema } from './portal.schema.js';
 import { Permission } from '../../shared/auth/permissions.js';
 import { tenantPipeline } from '../../shared/middleware/security.stack.js';
 import { requirePermission } from '../../shared/middleware/permission.middleware.js';
@@ -14,6 +14,14 @@ const router = Router();
 const service = container.resolve(PortalService);
 
 router.use(...tenantPipeline);
+
+router.get(
+  '/dashboard',
+  requirePermission(Permission.PORTAL_HOME_VIEW),
+  asyncHandler(async (req, res) => {
+    sendSuccess(res, await service.dashboard(req.user!.userId));
+  }),
+);
 
 router.get(
   '/homes',
@@ -73,6 +81,39 @@ router.post(
       }),
     );
     sendSuccess(res, ticket, 'Demande de maintenance envoyée', 201);
+  }),
+);
+
+router.post(
+  '/maintenance/:id/comment',
+  requirePermission(Permission.PORTAL_MAINTENANCE_CREATE),
+  validateBody(portalMaintenanceCommentSchema),
+  asyncHandler(async (req, res) => {
+    const u = req.user!;
+    const actor = { userId: u.userId, name: u.email };
+    const ticket = await withAudit(
+      req,
+      AuditAction.PORTAL_MAINTENANCE_CREATE,
+      () => service.addMaintenanceComment(u.userId, req.params.id, req.body.message, actor),
+      (t) => ({ resourceType: 'MaintenanceTicket', resourceId: t.id }),
+    );
+    sendSuccess(res, ticket, 'Message envoyé', 201);
+  }),
+);
+
+router.post(
+  '/maintenance/:id/confirm',
+  requirePermission(Permission.PORTAL_MAINTENANCE_CREATE),
+  asyncHandler(async (req, res) => {
+    const u = req.user!;
+    const actor = { userId: u.userId, name: u.email };
+    const ticket = await withAudit(
+      req,
+      AuditAction.PORTAL_MAINTENANCE_CREATE,
+      () => service.confirmMaintenanceResolved(u.userId, req.params.id, actor),
+      (t) => ({ resourceType: 'MaintenanceTicket', resourceId: t.id, newValue: { status: t.status } }),
+    );
+    sendSuccess(res, ticket, 'Résolution confirmée — merci');
   }),
 );
 

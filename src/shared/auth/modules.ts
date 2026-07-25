@@ -1,5 +1,7 @@
 import { SubscriptionPlan } from '@prisma/client';
 
+import { isMaintenanceAgent, isPlatformAdmin, isTenant, normalizeRole } from './roles.js';
+
 /** Catalogue modules produit (P3) — activés selon le plan. */
 export type ModuleKey = 'core' | 'payments' | 'maintenance' | 'accounting' | 'portal' | 'platform';
 
@@ -33,12 +35,19 @@ export function resolveModulesForRole(
   role: string,
   plan: SubscriptionPlan | string | null | undefined,
 ): Array<ModuleDef & { enabled: boolean }> {
+  const canonical = normalizeRole(role);
   const enabled = new Set(resolveModulesForPlan(plan));
-  if (role === 'SUPER_ADMIN') enabled.add('platform');
-  if (role === 'TENANT') {
+  if (isPlatformAdmin(canonical)) enabled.add('platform');
+  if (isTenant(canonical)) {
     return MODULE_CATALOG.map((m) => ({
       ...m,
       enabled: m.key === 'portal',
+    }));
+  }
+  if (isMaintenanceAgent(canonical)) {
+    return MODULE_CATALOG.map((m) => ({
+      ...m,
+      enabled: m.key === 'maintenance' && enabled.has('maintenance'),
     }));
   }
   return MODULE_CATALOG.map((m) => ({

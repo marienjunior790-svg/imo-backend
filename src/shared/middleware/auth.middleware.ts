@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { UserRole } from '@prisma/client';
 import { env } from '../../config/env.js';
 import { UnauthorizedError, ForbiddenError } from '../errors/app.error.js';
+import { normalizeRole } from '../auth/roles.js';
 import { AuthUser } from '../types/express.js';
 
 export interface JwtAccessPayload {
@@ -46,7 +47,9 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
     req.user = {
       userId: payload.sub,
       email: payload.email,
-      role: payload.role,
+      // Point de normalisation unique : les JWT legacy (ORG_ADMIN / TECHNICIAN)
+      // deviennent OWNER / AGENT pour tout le reste de la chaîne.
+      role: normalizeRole(payload.role),
       organizationId: payload.organizationId,
       membershipId: payload.mid,
     };
@@ -58,7 +61,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
 
 export function requireOrganization(req: Request, _res: Response, next: NextFunction): void {
   try {
-    if (!req.user?.organizationId && req.user?.role !== UserRole.SUPER_ADMIN) {
+    if (!req.user?.organizationId && normalizeRole(req.user?.role) !== UserRole.SUPER_ADMIN) {
       throw new UnauthorizedError('Organisation requise');
     }
     next();
@@ -68,11 +71,13 @@ export function requireOrganization(req: Request, _res: Response, next: NextFunc
 }
 
 export function requireRoles(...roles: UserRole[]) {
+  const allowed = new Set(roles.map(normalizeRole));
   return (req: Request, _res: Response, next: NextFunction): void => {
     try {
       if (!req.user) throw new UnauthorizedError();
-      if (req.user.role === UserRole.SUPER_ADMIN) return next();
-      if (!roles.includes(req.user.role)) {
+      const role = normalizeRole(req.user.role);
+      if (role === UserRole.SUPER_ADMIN) return next();
+      if (!allowed.has(role)) {
         throw new ForbiddenError('Permissions insuffisantes');
       }
       next();

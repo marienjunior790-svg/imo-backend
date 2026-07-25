@@ -15,6 +15,7 @@ import {
   type DeliveryMode,
   type PortalAccessSettings,
 } from '../../shared/auth/portal-access-settings.js';
+import { isLettingManager, isOrgAdminLevel } from '../../shared/auth/roles.js';
 import { generateLoginId, generateTemporaryPassword } from '../../shared/auth/credential-crypto.js';
 import bcrypt from 'bcrypt';
 
@@ -96,12 +97,12 @@ export class PortalAccessService {
 
   /**
    * Provisionne Identity + Membership TENANT + lien CRM.
-   * Retourne temporaryPassword one-shot si Mode A activé.
+   * Retourne temporaryPassword one-shot si Mode A (IN_APP) ou `revealTemporaryPassword`.
    */
   async provision(
     actor: PortalActor,
     tenantId: string,
-    opts?: { forceRegenerate?: boolean },
+    opts?: { forceRegenerate?: boolean; revealTemporaryPassword?: boolean },
   ) {
     this.assertCanProvision(actor);
     const organizationId = actor.organizationId!;
@@ -115,6 +116,7 @@ export class PortalAccessService {
         ...this.statusPayload(tenant.id, existing),
         temporaryPassword: undefined as string | undefined,
         delivery: [] as DeliveryMode[],
+        alreadyProvisioned: true,
         message: 'Accès portail déjà provisionné',
       };
     }
@@ -240,11 +242,13 @@ export class PortalAccessService {
       },
     });
 
-    const showPassword = settings.deliveryModes.includes('IN_APP');
+    const showPassword =
+      opts?.revealTemporaryPassword === true || settings.deliveryModes.includes('IN_APP');
     return {
       ...this.statusPayload(tenant.id, { ...user, portalStatus }),
       temporaryPassword: showPassword ? tempPassword : undefined,
       delivery,
+      alreadyProvisioned: false,
       message: opts?.forceRegenerate ? 'Mot de passe temporaire régénéré' : 'Accès portail provisionné',
     };
   }
@@ -350,23 +354,45 @@ export class PortalAccessService {
     return { tenantId: tenant.id, portalStatus: PortalAccessStatus.ARCHIVED };
   }
 
-  /** Hook bail ACTIVE — no-op si setting off ou déjà provisionné. */
+  /**
+   * Hook bail ACTIVE — crée le compte TENANT s'il n'existe pas.
+   * Produit : toujours provisionner à l'activation (setting `autoProvisionOnLeaseActive`
+   * conservé pour désactivation explicite par org).
+   * Identifiants one-shot toujours révélés au propriétaire (IN_APP) pour copie / téléchargement.
+   */
   async maybeAutoProvisionOnLeaseActive(organizationId: string, tenantId: string, actorUserId: string) {
     const org = await this.prisma.organization.findUnique({ where: { id: organizationId } });
     if (!org) return null;
     const settings = parsePortalAccessSettings(org.portalAccess);
-    if (!settings.autoProvisionOnLeaseActive) return null;
+    if (!settings.autoProvisionOnLeaseActive) {
+      return {
+        skipped: true,
+        reason: 'AUTO_PROVISION_DISABLED',
+        message: 'Provision automatique désactivée pour cette organisation',
+      };
+    }
     const tenant = await this.prisma.tenant.findFirst({
       where: { id: tenantId, organizationId },
       include: { user: true },
     });
     if (!tenant) return null;
+
+    const actorUser = await this.prisma.user.findUnique({ where: { id: actorUserId } });
+    const actorRole = (actorUser?.role ?? UserRole.OWNER) as UserRole;
+
     if (tenant.userId && tenant.user && tenant.user.portalStatus !== PortalAccessStatus.ARCHIVED) {
-      return null;
+      return {
+        ...this.statusPayload(tenant.id, tenant.user),
+        temporaryPassword: undefined as string | undefined,
+        alreadyProvisioned: true,
+        message: 'Compte locataire déjà existant — aucun nouveau mot de passe généré',
+      };
     }
+
     return this.provision(
-      { userId: actorUserId, role: UserRole.ORG_ADMIN, organizationId },
+      { userId: actorUserId, role: actorRole, organizationId },
       tenantId,
+      { revealTemporaryPassword: true },
     );
   }
 
@@ -454,18 +480,13 @@ export class PortalAccessService {
   }
 
   private assertOrgAdmin(actor: PortalActor) {
-    if (actor.role !== UserRole.ORG_ADMIN && actor.role !== UserRole.SUPER_ADMIN) {
-      throw new ForbiddenError('Réservé à l\'administrateur organisation');
+    if (!isOrgAdminLevel(actor.role)) {
+      throw new ForbiddenError('Réservé au propriétaire de l\'organisation');
     }
   }
 
   private assertCanView(actor: PortalActor) {
-    if (
-      actor.role !== UserRole.ORG_ADMIN &&
-      actor.role !== UserRole.MANAGER &&
-      actor.role !== UserRole.AGENT &&
-      actor.role !== UserRole.SUPER_ADMIN
-    ) {
+    if (!isLettingManager(actor.role)) {
       throw new ForbiddenError('Permission refusée');
     }
   }
@@ -475,12 +496,8 @@ export class PortalAccessService {
   }
 
   private assertCanSuspend(actor: PortalActor) {
-    if (
-      actor.role !== UserRole.ORG_ADMIN &&
-      actor.role !== UserRole.MANAGER &&
-      actor.role !== UserRole.SUPER_ADMIN
-    ) {
-      throw new ForbiddenError('Seuls ORG_ADMIN et MANAGER peuvent suspendre / réinitialiser');
+    if (!isLettingManager(actor.role)) {
+      throw new ForbiddenError('Seuls le propriétaire et le gestionnaire peuvent suspendre / réinitialiser');
     }
   }
 }

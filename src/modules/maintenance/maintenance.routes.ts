@@ -45,6 +45,15 @@ router.get(
   }),
 );
 
+/** Liste des agents assignables — AVANT /:id pour éviter le conflit de route. */
+router.get(
+  '/agents',
+  requirePermission(Permission.MAINTENANCE_ASSIGN),
+  asyncHandler(async (req, res) => {
+    sendSuccess(res, await service.listMaintenanceAgents(getOrganizationId(req)));
+  }),
+);
+
 router.get(
   '/:id',
   requirePermission(Permission.MAINTENANCE_VIEW),

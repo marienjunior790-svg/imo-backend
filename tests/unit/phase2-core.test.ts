@@ -44,10 +44,16 @@ describe('RBAC role-matrix', () => {
     expect(keys).not.toContain('BUILDING_CREATE');
   });
 
-  it('AGENT a INSPECTION et TENANT_VIEW', () => {
+  it('AGENT est limité aux interventions de maintenance', () => {
     const keys = resolveRolePermissions('AGENT');
-    expect(keys).toContain('INSPECTION_VIEW');
-    expect(keys).toContain('TENANT_VIEW');
+    expect(keys).toContain('TECH_JOBS_VIEW');
+    expect(keys).toContain('TECH_JOBS_MANAGE');
+    expect(keys).toContain('TECH_JOBS_COMMENT');
+    expect(keys).toContain('TECH_PHOTO_UPLOAD');
+    expect(keys).not.toContain('INSPECTION_VIEW');
+    expect(keys).not.toContain('TENANT_VIEW');
+    expect(keys).not.toContain('PAYMENT_VIEW');
+    expect(keys).not.toContain('LEASE_VIEW');
   });
 
   it('SUPER_ADMIN = ALL', () => {

@@ -5,7 +5,7 @@ import { changePlanSchema, reactivateSchema } from './subscription.schema.js';
 import { PLAN_LIMITS } from '../../shared/constants/plan-limits.js';
 import { getOrganizationId } from '../../shared/middleware/auth.middleware.js';
 import { Permission } from '../../shared/auth/permissions.js';
-import { orgAdminPipeline } from '../../shared/middleware/security.stack.js';
+import { ownerPipeline } from '../../shared/middleware/security.stack.js';
 import { requirePermission } from '../../shared/middleware/permission.middleware.js';
 import { validateBody } from '../../shared/middleware/validate.middleware.js';
 import { asyncHandler, sendSuccess } from '../../shared/utils/response.util.js';
@@ -15,7 +15,7 @@ import { withAudit } from '../../shared/audit/audit-request.js';
 const router = Router();
 const service = container.resolve(SubscriptionService);
 
-router.use(...orgAdminPipeline);
+router.use(...ownerPipeline);
 
 router.get(
   '/',

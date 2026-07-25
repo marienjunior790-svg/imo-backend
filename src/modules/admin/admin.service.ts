@@ -14,6 +14,8 @@ import { AuditService } from '../../shared/services/audit.service.js';
 
 import { AuditAction } from '../../shared/audit/audit-actions.js';
 
+import { isOrgAdminLevel, isOwner, isPlatformAdmin } from '../../shared/auth/roles.js';
+
 import type { z } from 'zod';
 
 import { createOrgUserSchema, updateOrgUserSchema } from './admin.schema.js';
@@ -69,9 +71,9 @@ export class AdminService {
 
   private assertAdmin(actorRole: UserRole) {
 
-    if (actorRole !== UserRole.SUPER_ADMIN && actorRole !== UserRole.ORG_ADMIN) {
+    if (!isOrgAdminLevel(actorRole)) {
 
-      throw new ForbiddenError('Accès réservé aux administrateurs');
+      throw new ForbiddenError('Accès réservé au propriétaire de l\'organisation');
 
     }
 
@@ -173,7 +175,7 @@ export class AdminService {
 
 
 
-    if (actorRole === UserRole.ORG_ADMIN && !actorOrgId) {
+    if (isOwner(actorRole) && !actorOrgId) {
 
       throw new ForbiddenError('Organisation requise');
 
@@ -274,9 +276,9 @@ export class AdminService {
 
 
 
-    if (target.role === UserRole.ORG_ADMIN && actorRole !== UserRole.SUPER_ADMIN) {
+    if (isOwner(target.role) && !isPlatformAdmin(actorRole)) {
 
-      throw new ForbiddenError('Impossible de modifier un autre administrateur');
+      throw new ForbiddenError('Impossible de modifier un autre propriétaire');
 
     }
 
@@ -329,8 +331,8 @@ export class AdminService {
     if (actorUserId === targetUserId) throw new ForbiddenError('Impossible de supprimer votre propre compte');
 
     const target = await this.assertTargetInOrg(actorRole, actorOrgId, targetUserId);
-    if (target.role === UserRole.ORG_ADMIN && actorRole !== UserRole.SUPER_ADMIN) {
-      throw new ForbiddenError('Impossible de supprimer un administrateur organisation');
+    if (isOwner(target.role) && !isPlatformAdmin(actorRole)) {
+      throw new ForbiddenError('Impossible de supprimer le propriétaire de l\'organisation');
     }
 
     await this.prisma.refreshToken.updateMany({

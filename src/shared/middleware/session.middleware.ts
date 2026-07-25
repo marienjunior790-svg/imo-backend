@@ -3,6 +3,7 @@ import { container } from 'tsyringe';
 import { UserRole } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { UnauthorizedError } from '../errors/app.error.js';
+import { normalizeRole } from '../auth/roles.js';
 import { MembershipService } from '../auth/membership.service.js';
 
 /** Revalide le compte en base (actif, rôle, organisation, membership) — évite les JWT obsolètes. */
@@ -56,7 +57,7 @@ export async function validateSessionMiddleware(req: Request, _res: Response, ne
     req.user = {
       userId: req.user.userId,
       email: user.email ?? user.loginId ?? '',
-      role,
+      role: normalizeRole(role),
       organizationId,
       membershipId,
     };

@@ -3,6 +3,7 @@ import { UserRole } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { ALL_FEATURE_KEYS, FEATURE_CATALOG, FeatureKeyType } from '../../shared/constants/feature-keys.js';
 import { ForbiddenError, NotFoundError } from '../../shared/errors/app.error.js';
+import { isOwner } from '../../shared/auth/roles.js';
 
 interface CacheEntry {
   map: Record<string, boolean>;
@@ -125,8 +126,8 @@ export class FeatureService {
 
     if (actorRole === UserRole.SUPER_ADMIN) return target;
 
-    if (actorRole !== UserRole.ORG_ADMIN) {
-      throw new ForbiddenError('Seuls les administrateurs peuvent gérer les permissions');
+    if (!isOwner(actorRole)) {
+      throw new ForbiddenError('Seul le propriétaire peut gérer les permissions');
     }
 
     if (target.role === UserRole.SUPER_ADMIN) {

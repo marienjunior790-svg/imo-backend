@@ -9,6 +9,7 @@ import {
   GRACE_PERIOD_DAYS,
 } from '../../shared/constants/plan-limits.js';
 import { SubscriptionContext } from '../../shared/types/subscription.d.js';
+import { isOrgAdminLevel } from '../../shared/auth/roles.js';
 import { AutomationEmitter } from '../automation/automation.emitter.js';
 
 export interface SubscriptionDto {
@@ -283,13 +284,13 @@ export class SubscriptionService {
     }
   }
 
-  /** Vérifie que l'utilisateur a l'option Pro activée par l'administrateur */
+  /** Vérifie que l'utilisateur a l'option Pro activée par le propriétaire */
   async assertUserProAccess(
     userId: string,
     organizationId: string,
     role: UserRole,
   ): Promise<void> {
-    if (role === UserRole.SUPER_ADMIN || role === UserRole.ORG_ADMIN) return;
+    if (isOrgAdminLevel(role)) return;
 
     const ctx = await this.resolveAccessContext(organizationId);
     if (!ctx.limits.aiAssistant && !ctx.limits.analytics) {

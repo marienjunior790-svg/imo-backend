@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { container } from 'tsyringe';
 import { z } from 'zod';
-import { UserRole } from '@prisma/client';
 import { AuditService } from '../../shared/services/audit.service.js';
 import { Permission } from '../../shared/auth/permissions.js';
 import { authenticatedPipeline, orgStaffPipeline } from '../../shared/middleware/security.stack.js';
@@ -11,6 +10,7 @@ import { validateQuery } from '../../shared/middleware/validate.middleware.js';
 import { asyncHandler, sendSuccess } from '../../shared/utils/response.util.js';
 import { AuditAction } from '../../shared/audit/audit-actions.js';
 import { auditSuccess } from '../../shared/audit/audit-request.js';
+import { isOrgAdminLevel } from '../../shared/auth/roles.js';
 import { ForbiddenError } from '../../shared/errors/app.error.js';
 
 const router = Router();
@@ -48,8 +48,8 @@ router.get(
   requirePermission(Permission.AUDIT_VIEW),
   validateQuery(listQuerySchema),
   asyncHandler(async (req, res) => {
-    if (req.user!.role !== UserRole.ORG_ADMIN && req.user!.role !== UserRole.SUPER_ADMIN) {
-      throw new ForbiddenError('Réservé aux administrateurs');
+    if (!isOrgAdminLevel(req.user!.role)) {
+      throw new ForbiddenError('Réservé au propriétaire de l\'organisation');
     }
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 50;

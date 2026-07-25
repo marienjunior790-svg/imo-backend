@@ -14,6 +14,7 @@ import { sanitizeUser } from '../../shared/utils/response.util.js';
 import { resolveHomePath } from '../../shared/auth/home-path.js';
 import { MembershipService } from '../../shared/auth/membership.service.js';
 import { resolveModulesForRole } from '../../shared/auth/modules.js';
+import { isOwner, normalizeRole } from '../../shared/auth/roles.js';
 import {
   buildOtpAuthUri,
   generateRecoveryCodes,
@@ -87,7 +88,7 @@ export class AuthRepository {
           firstName: data.firstName,
           lastName: data.lastName,
           phone: data.phone,
-          role: UserRole.ORG_ADMIN,
+          role: UserRole.OWNER,
           organizationId: org.id,
           proAccessEnabled: false,
         },
@@ -98,7 +99,7 @@ export class AuthRepository {
         data: {
           userId: user.id,
           organizationId: org.id,
-          role: UserRole.ORG_ADMIN,
+          role: UserRole.OWNER,
           isActive: true,
           isPrimary: true,
         },
@@ -888,7 +889,7 @@ export class AuthService {
         role: membership.role,
         organizationId: membership.organizationId,
         isPrimary: membership.isPrimary,
-        productRole: membership.role === UserRole.ORG_ADMIN ? 'ORG_OWNER' : membership.role,
+        productRole: isOwner(membership.role) ? 'ORG_OWNER' : normalizeRole(membership.role),
       },
       capabilities,
       modules,

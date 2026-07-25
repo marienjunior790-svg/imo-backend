@@ -142,6 +142,8 @@ export const PERMISSION_CATALOG: PermissionDef[] = [
   { key: 'TECH_HOME_VIEW', label: 'Accueil technicien', category: 'tech', module: 'TECH' },
   { key: 'TECH_JOBS_VIEW', label: 'Interventions', category: 'tech', module: 'TECH' },
   { key: 'TECH_JOBS_MANAGE', label: 'Gérer interventions', category: 'tech', module: 'TECH' },
+  { key: 'TECH_JOBS_COMMENT', label: 'Commenter une intervention', category: 'tech', module: 'TECH' },
+  { key: 'TECH_PHOTO_UPLOAD', label: 'Joindre photos avant / après', category: 'tech', module: 'TECH' },
   { key: 'TECH_CALENDAR_VIEW', label: 'Calendrier', category: 'tech', module: 'TECH' },
   { key: 'TECH_HISTORY_VIEW', label: 'Historique', category: 'tech', module: 'TECH' },
 ];
