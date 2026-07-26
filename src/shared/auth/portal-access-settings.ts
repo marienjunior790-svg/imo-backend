@@ -12,7 +12,7 @@ export type PortalAccessSettings = {
 
 export const DEFAULT_PORTAL_ACCESS: PortalAccessSettings = {
   autoProvisionOnLeaseActive: true,
-  deliveryModes: ['IN_APP', 'EMAIL'],
+  deliveryModes: ['IN_APP'],
 };
 
 export function parsePortalAccessSettings(raw: unknown): PortalAccessSettings {
