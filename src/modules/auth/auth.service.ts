@@ -282,7 +282,30 @@ export class AuthRepository {
   }
 
   updatePassword(userId: string, passwordHash: string) {
-    return this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash,
+        mustChangePassword: false,
+        passwordChangedAt: new Date(),
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      },
+    });
+  }
+
+  /** Invalide les tokens reset non utilisés (single active token par user). */
+  invalidateUnusedPasswordResetTokens(userId: string) {
+    return this.prisma.passwordResetToken.updateMany({
+      where: { userId, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+  }
+
+  createPasswordResetToken(userId: string, tokenHash: string, expiresAt: Date) {
+    return this.prisma.passwordResetToken.create({
+      data: { userId, tokenHash, expiresAt },
+    });
   }
 
   markPasswordActivated(userId: string) {
@@ -320,12 +343,6 @@ export class AuthRepository {
     return this.prisma.user.update({
       where: { id: userId },
       data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
-    });
-  }
-
-  createPasswordResetToken(userId: string, tokenHash: string, expiresAt: Date) {
-    return this.prisma.passwordResetToken.create({
-      data: { userId, tokenHash, expiresAt },
     });
   }
 
@@ -935,10 +952,14 @@ export class AuthService {
       const raw = randomBytes(32).toString('hex');
       const tokenHash = createHash('sha256').update(raw).digest('hex');
       const expiresAt = new Date(Date.now() + env.PASSWORD_RESET_TTL_HOURS * 3600_000);
+      await this.repo.invalidateUnusedPasswordResetTokens(user.id);
       await this.repo.createPasswordResetToken(user.id, tokenHash, expiresAt);
       const base = env.PUBLIC_APP_URL ?? 'https://app.itc.cg';
       const resetUrl = `${base.replace(/\/$/, '')}/reset-password?token=${raw}`;
+      const appDeepLink = `itc://reset-password?token=${raw}`;
+      // Stub mailer — brancher un provider SMTP/Resend en prod.
       console.log('[auth] Password reset link (stub mail):', resetUrl);
+      console.log('[auth] Password reset deep link:', appDeepLink);
       await this.auditService.log({
         action: AuditAction.AUTH_PASSWORD_RESET_REQUEST,
         userId: user.id,
