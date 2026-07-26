@@ -40,6 +40,15 @@ const envSchema = z.object({
   PASSWORD_RESET_TTL_HOURS: z.coerce.number().default(1),
   AUTH_LOCKOUT_THRESHOLD: z.coerce.number().default(5),
   AUTH_LOCKOUT_MINUTES: z.coerce.number().default(15),
+  // Mail — Resend (prioritaire) ou SMTP (Brevo / SendGrid / Mailgun…)
+  RESEND_API_KEY: z.string().min(10).optional(),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
+  SMTP_SECURE: z.coerce.boolean().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  /** Expéditeur vérifié, ex. ITC <noreply@votredomaine.com> */
+  MAIL_FROM: z.string().optional(),
   // Monitoring (optionnel)
   SENTRY_DSN: z.string().url().optional(),
   // Cache IA (ms)
@@ -67,6 +76,11 @@ export const isAutomationApiConfigured = Boolean(env.N8N_API_KEY);
 
 export const isOpenAiConfigured = Boolean(env.OPENAI_API_KEY);
 
+export const isMailerConfigured = Boolean(
+  (env.RESEND_API_KEY && env.MAIL_FROM) ||
+    (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS && env.MAIL_FROM),
+);
+
 export const corsOrigins = env.CORS_ORIGINS
   ? env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
   : undefined;
@@ -90,5 +104,10 @@ if (env.NODE_ENV === 'production') {
   }
   if (!env.DATABASE_URL.includes('sslmode=') && !env.DATABASE_URL.includes('ssl=true')) {
     console.warn('⚠️  DATABASE_URL sans SSL explicite — Neon/Railway/Supabase recommandent ?sslmode=require');
+  }
+  if (!isMailerConfigured) {
+    console.error(
+      '⚠️  Mailer non configuré (RESEND_API_KEY+MAIL_FROM ou SMTP_*+MAIL_FROM). Les e-mails de reset / invitation ne seront PAS envoyés.',
+    );
   }
 }

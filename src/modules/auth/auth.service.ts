@@ -21,7 +21,9 @@ import {
   generateTotpSecret,
   verifyTotpCode,
 } from '../../shared/auth/totp.js';
-import { env } from '../../config/env.js';
+import { env, isMailerConfigured } from '../../config/env.js';
+import { AppError } from '../../shared/errors/app.error.js';
+import { buildPasswordResetEmail, sendMail } from '../../shared/mail/mail.service.js';
 import {
   createInitialOnboarding,
   toOnboardingSnapshot,
@@ -946,20 +948,53 @@ export class AuthService {
   // ─── P4 Identity & Security ─────────────────────────────────────────────
 
   async forgotPassword(email: string, meta?: { ipAddress?: string }) {
+    // Échec explicite si aucun provider mail — évite le faux succès ({ sent: true } sans e-mail).
+    if (!isMailerConfigured) {
+      throw new AppError(
+        503,
+        'Service e-mail temporairement indisponible. Contactez le support.',
+        'MAILER_UNAVAILABLE',
+      );
+    }
+
     const user = await this.repo.findByEmail(email);
-    // Toujours succès (pas d'énumération de comptes)
+    // Toujours succès si le compte n'existe pas (anti-énumération)
     if (user?.isActive) {
       const raw = randomBytes(32).toString('hex');
       const tokenHash = createHash('sha256').update(raw).digest('hex');
       const expiresAt = new Date(Date.now() + env.PASSWORD_RESET_TTL_HOURS * 3600_000);
       await this.repo.invalidateUnusedPasswordResetTokens(user.id);
       await this.repo.createPasswordResetToken(user.id, tokenHash, expiresAt);
-      const base = env.PUBLIC_APP_URL ?? 'https://app.itc.cg';
-      const resetUrl = `${base.replace(/\/$/, '')}/reset-password?token=${raw}`;
+
+      // Lien HTTPS → page API qui ouvre le deep link mobile (PUBLIC_APP_URL peut ne pas résoudre).
+      const apiBase = (env.PUBLIC_API_URL ?? `http://localhost:${env.PORT}`).replace(/\/$/, '');
+      const resetUrl = `${apiBase}/reset-password?token=${raw}`;
       const appDeepLink = `itc://reset-password?token=${raw}`;
-      // Stub mailer — brancher un provider SMTP/Resend en prod.
-      console.log('[auth] Password reset link (stub mail):', resetUrl);
-      console.log('[auth] Password reset deep link:', appDeepLink);
+
+      try {
+        const mail = await sendMail(
+          buildPasswordResetEmail({
+            to: user.email ?? email,
+            firstName: user.firstName?.trim() || 'utilisateur',
+            resetUrl,
+            appDeepLink,
+            expiresAt,
+          }),
+        );
+        console.info('[auth] Password reset email sent', {
+          to: user.email,
+          provider: mail.provider,
+          messageId: mail.messageId,
+        });
+      } catch (err) {
+        console.error('[auth] Password reset email FAILED', err);
+        throw new AppError(
+          503,
+          "Impossible d'envoyer l'e-mail de réinitialisation. Réessayez plus tard.",
+          'MAIL_SEND_FAILED',
+        );
+      }
+
       await this.auditService.log({
         action: AuditAction.AUTH_PASSWORD_RESET_REQUEST,
         userId: user.id,

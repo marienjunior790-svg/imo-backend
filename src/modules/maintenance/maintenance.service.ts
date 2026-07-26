@@ -317,7 +317,7 @@ export class MaintenanceService {
         type: NotificationType.MAINTENANCE_COMPLETED,
         title: 'Intervention terminée — confirmez la résolution',
         message: `L'agent a terminé « ${updated.title} ». Merci de confirmer que le problème est résolu.`,
-        data: { ticketId: id, ...payload },
+        data: { ...payload, ticketId: id },
       });
     }
 

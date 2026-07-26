@@ -6,6 +6,7 @@ import { AuthService } from '../auth/auth.service.js';
 import { AuditService } from '../../shared/services/audit.service.js';
 import { AuditAction } from '../../shared/audit/audit-actions.js';
 import {
+  AppError,
   ConflictError,
   ForbiddenError,
   NotFoundError,
@@ -74,14 +75,23 @@ export class InvitationService {
     });
 
     const inviteUrl = buildInviteUrl(rawToken);
-    sendInvitationEmail({
-      to: email,
-      firstName: input.firstName,
-      organizationName: org.name,
-      role: input.role,
-      inviteUrl,
-      expiresAt,
-    });
+    try {
+      await sendInvitationEmail({
+        to: email,
+        firstName: input.firstName,
+        organizationName: org.name,
+        role: input.role,
+        inviteUrl,
+        expiresAt,
+      });
+    } catch (err) {
+      console.error('[invite] email send FAILED', err);
+      throw new AppError(
+        503,
+        "Impossible d'envoyer l'e-mail d'invitation. Vérifiez la configuration mailer.",
+        'MAIL_SEND_FAILED',
+      );
+    }
 
     await this.auditService.log({
       action: AuditAction.INVITE_CREATE,
