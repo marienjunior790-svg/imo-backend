@@ -25,7 +25,21 @@ export class BuildingRepository {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: { _count: { select: { apartments: true } } },
+        include: {
+          _count: { select: { apartments: true } },
+          apartments: {
+            take: 8,
+            orderBy: { createdAt: 'asc' },
+            include: {
+              documents: {
+                where: { type: 'APARTMENT_PHOTO' },
+                take: 1,
+                orderBy: { createdAt: 'asc' },
+                select: { cloudinaryUrl: true },
+              },
+            },
+          },
+        },
       }),
       this.prisma.building.count({ where: { organizationId } }),
     ]);
@@ -65,7 +79,19 @@ export class BuildingService {
   ) {}
 
   async list(organizationId: string, page: number, limit: number, skip: number) {
-    const [items, total] = await this.repo.findMany(organizationId, skip, limit);
+    const [raw, total] = await this.repo.findMany(organizationId, skip, limit);
+    const items = raw.map((b) => {
+      const coverUrl =
+        b.apartments
+          .flatMap((a) => a.documents.map((d) => d.cloudinaryUrl))
+          .find((url) => !!url) ?? null;
+      const { apartments, ...rest } = b;
+      return {
+        ...rest,
+        coverUrl,
+        apartmentsCount: b._count.apartments,
+      };
+    });
     return { items, total };
   }
 
@@ -138,9 +164,18 @@ export class BuildingService {
           where: { status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS'] } },
           select: { id: true, title: true, status: true, priority: true },
         },
+        documents: {
+          where: { type: 'APARTMENT_PHOTO' },
+          take: 1,
+          orderBy: { createdAt: 'asc' },
+          select: { cloudinaryUrl: true },
+        },
         _count: { select: { leases: true } },
       },
     });
+
+    const coverUrl =
+      apartments.flatMap((a) => a.documents.map((d) => d.cloudinaryUrl)).find((url) => !!url) ?? null;
 
     const apartmentIds = apartments.map((a) => a.id);
     const now = new Date();
@@ -288,7 +323,7 @@ export class BuildingService {
           : 0;
 
     return {
-      building,
+      building: { ...building, coverUrl },
       summary: {
         apartmentsTotal: total,
         occupied,
