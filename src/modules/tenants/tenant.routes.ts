@@ -111,7 +111,9 @@ router.post(
   requirePermission(Permission.TENANT_PORTAL_PROVISION),
   requireOrgResource('tenant'),
   asyncHandler(async (req, res) => {
-    const result = await portalAccess.provision(actor(req), req.params.id);
+    const result = await portalAccess.provision(actor(req), req.params.id, {
+      revealTemporaryPassword: true,
+    });
     sendSuccess(res, result, result.message, 201);
   }),
 );
@@ -121,7 +123,10 @@ router.post(
   requirePermission(Permission.TENANT_PORTAL_REGENERATE),
   requireOrgResource('tenant'),
   asyncHandler(async (req, res) => {
-    const result = await portalAccess.regenerate(actor(req), req.params.id);
+    const result = await portalAccess.provision(actor(req), req.params.id, {
+      forceRegenerate: true,
+      revealTemporaryPassword: true,
+    });
     sendSuccess(res, result, 'Mot de passe temporaire régénéré');
   }),
 );

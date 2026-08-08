@@ -17,7 +17,14 @@ type LeaseWithRelations = {
     surface?: { toNumber?: () => number } | number | null;
     building?: { name: string; address: string } | null;
   };
-  tenant: { firstName: string; lastName: string; phone: string; email?: string | null };
+  tenant: {
+    firstName: string;
+    lastName: string;
+    phone: string;
+    email?: string | null;
+    idNumber?: string | null;
+    address?: string | null;
+  };
   organization?: {
     name: string;
     address?: string | null;
@@ -67,6 +74,55 @@ function bufferFromPdf(doc: PDFKit.PDFDocument): Promise<Buffer> {
 
 function formatMoney(amount: number, currency: string): string {
   return `${amount.toLocaleString('fr-FR')} ${currency || 'XAF'}`;
+}
+
+function amountInWordsFr(amount: number, currency: string): string {
+  const n = Math.round(amount);
+  if (!Number.isFinite(n) || n < 0) return formatMoney(amount, currency);
+  const units = ['zéro', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf'];
+  const teens = ['dix', 'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize', 'dix-sept', 'dix-huit', 'dix-neuf'];
+  const tens = ['', 'dix', 'vingt', 'trente', 'quarante', 'cinquante', 'soixante', 'soixante', 'quatre-vingt', 'quatre-vingt'];
+
+  function underThousand(x: number): string {
+    if (x < 10) return units[x];
+    if (x < 20) return teens[x - 10];
+    if (x < 100) {
+      const t = Math.floor(x / 10);
+      const u = x % 10;
+      if (t === 7 || t === 9) {
+        const base = t === 7 ? 60 : 80;
+        const rest = x - base;
+        const head = t === 7 ? 'soixante' : 'quatre-vingt';
+        if (rest === 0) return t === 9 ? 'quatre-vingts' : head;
+        if (rest < 10) return `${head}-${units[rest]}`;
+        return `${head}-${teens[rest - 10]}`;
+      }
+      if (u === 0) return t === 8 ? 'quatre-vingts' : tens[t];
+      const link = u === 1 && t !== 8 ? ' et ' : '-';
+      return `${tens[t]}${link}${units[u]}`;
+    }
+    const h = Math.floor(x / 100);
+    const r = x % 100;
+    const head = h === 1 ? 'cent' : `${units[h]} cent${h > 1 && r === 0 ? 's' : ''}`;
+    return r === 0 ? head : `${head} ${underThousand(r)}`;
+  }
+
+  function toWords(x: number): string {
+    if (x < 1000) return underThousand(x);
+    if (x < 1_000_000) {
+      const m = Math.floor(x / 1000);
+      const r = x % 1000;
+      const head = m === 1 ? 'mille' : `${underThousand(m)} mille`;
+      return r === 0 ? head : `${head} ${underThousand(r)}`;
+    }
+    const m = Math.floor(x / 1_000_000);
+    const r = x % 1_000_000;
+    const head = m === 1 ? 'un million' : `${toWords(m)} millions`;
+    return r === 0 ? head : `${head} ${toWords(r)}`;
+  }
+
+  const cur = (currency || 'XAF').toUpperCase() === 'XAF' ? 'francs CFA' : currency;
+  return `${toWords(n)} ${cur}`;
 }
 
 function formatDate(date: Date): string {
@@ -140,6 +196,12 @@ export class PdfService {
     doc.fontSize(11).text('LE LOCATAIRE', { underline: true });
     doc.moveDown(0.3);
     doc.text(`${lease.tenant.firstName} ${lease.tenant.lastName}`);
+    if (lease.tenant.idNumber?.trim()) {
+      doc.text(`Pièce d’identité (N°) : ${lease.tenant.idNumber.trim()}`);
+    }
+    if (lease.tenant.address?.trim()) {
+      doc.text(`Domicile déclaré : ${lease.tenant.address.trim()}`);
+    }
     doc.text(`Téléphone : ${lease.tenant.phone}`);
     if (lease.tenant.email) doc.text(`Email : ${lease.tenant.email}`);
     doc.text(`Ci-après dénommé « le Locataire ».`);
@@ -188,12 +250,17 @@ export class PdfService {
     doc.moveDown(0.8);
 
     this.article(doc, '3', 'Loyer et modalités de paiement');
-    doc.text(`Le loyer mensuel est fixé à ${formatMoney(rent, currency)}, hors charges éventuelles.`);
     doc.text(
-      'Le loyer est payable d’avance, au plus tard le 5 de chaque mois, selon le mode convenu avec le Bailleur (espèces, mobile money, virement ou autre moyen accepté).',
+      `Le loyer mensuel est fixé à ${formatMoney(rent, currency)} ` +
+        `(soit ${amountInWordsFr(rent, currency)}), hors charges éventuelles.`,
     );
     doc.text(
-      'Tout retard de paiement pourra entraîner des rappels, des pénalités contractuelles éventuelles et, le cas échéant, la résiliation du bail selon les voies légales.',
+      'Le loyer est payable d’avance, au plus tard le 5 de chaque mois, selon le mode convenu avec le Bailleur ' +
+        '(espèces, Mobile Money, virement bancaire ou tout autre moyen accepté).',
+    );
+    doc.text(
+      'En cas de retard de plus de quinze (15) jours, le Bailleur pourra adresser une mise en demeure. ' +
+        'Les impayés répétés pourront entraîner la résiliation du bail selon les voies légales applicables en République du Congo.',
     );
     doc.moveDown(0.8);
 
@@ -238,10 +305,14 @@ export class PdfService {
     }
     doc.moveDown(0.8);
 
-    this.article(doc, '8', 'Résiliation');
+    this.article(doc, '8', 'Résiliation et préavis');
     doc.text(
-      'Chaque partie peut mettre fin au bail dans le respect du préavis et des formes prévues par la loi applicable et/ou les usages locaux. ' +
-        'En cas de manquement grave (impayés répétés, troubles de jouissance, dégradations), le Bailleur pourra engager la résiliation selon les voies légales.',
+      'Sauf usage contraire convenu par écrit, chaque partie peut résilier le bail moyennant un préavis d’un (1) mois ' +
+        'notifié par écrit (lettre, message écrit ou tout moyen permettant d’en établir la date).',
+    );
+    doc.text(
+      'En cas de manquement grave (impayés répétés, troubles de jouissance, dégradations importantes), le Bailleur pourra ' +
+        'engager la résiliation selon les voies légales, après mise en demeure restée infructueuse.',
     );
     doc.moveDown(0.8);
 
@@ -252,10 +323,14 @@ export class PdfService {
     );
     doc.moveDown(0.8);
 
-    this.article(doc, '10', 'Droit applicable');
+    this.article(doc, '10', 'Droit applicable et litiges');
     doc.text(
-      `Le présent contrat est soumis au droit en vigueur dans le pays du bien loué (${org?.country ?? 'CG'}). ` +
-        'Tout litige relatif à son interprétation ou son exécution sera prioritairement tenté d’être résolu à l’amiable, puis porté devant les juridictions compétentes.',
+      `Le présent contrat est régi par le droit en vigueur en République du Congo (${org?.country ?? 'CG'}), ` +
+        `et notamment les usages locatifs applicables à ${city}.`,
+    );
+    doc.text(
+      'Tout litige relatif à son interprétation ou à son exécution sera prioritairement tenté d’être résolu à l’amiable. ' +
+        `À défaut, les tribunaux compétents de ${city} seront saisis.`,
     );
     doc.moveDown(0.8);
 
@@ -266,14 +341,18 @@ export class PdfService {
     }
 
     doc.fontSize(10).fillColor('#444444').text(
-      'Les parties reconnaissent avoir pris connaissance de l’intégralité des clauses et les accepter sans réserve. ' +
-        'Document généré via ITC IMMO • TEC • CONSEIL — à faire signer par les parties (et le cas échéant l’agent).',
+      'Les parties reconnaissent avoir pris connaissance de l’intégralité des clauses et les accepter. ' +
+        'Le présent document constitue un contrat de location établi via ITC. Il doit être signé par les parties ' +
+        '(et le cas échéant l’agent) pour produire ses effets. Conservez un exemplaire signé.',
       { align: 'justify' },
     );
     doc.fillColor('#000000');
     doc.moveDown(1.5);
 
-    doc.fontSize(11).text(`Fait à ${city}, le ${formatDate(new Date())}, en autant d’exemplaires que de parties.`);
+    doc.fontSize(11).text(
+      `Fait à ${city}, le ${formatDate(new Date())}, en deux (2) exemplaires originaux, dont un pour chaque partie` +
+        `${agentName ? ' (et un pour l’agent le cas échéant)' : ''}.`,
+    );
     doc.moveDown(2);
 
     const y = doc.y;
