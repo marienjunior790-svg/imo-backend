@@ -2,7 +2,14 @@ import { Router } from 'express';
 import multer from 'multer';
 import { container } from 'tsyringe';
 import { AiService } from './ai.service.js';
-import { aiChatSchema, aiAnalyzeSchema, aiContractSchema, aiNormalizeSchema } from './ai.schema.js';
+import {
+  aiChatSchema,
+  aiAnalyzeSchema,
+  aiContractSchema,
+  aiNormalizeSchema,
+  aiActionConfirmSchema,
+  aiSpeakSchema,
+} from './ai.schema.js';
 import { getOrganizationId } from '../../shared/middleware/auth.middleware.js';
 import { Permission } from '../../shared/auth/permissions.js';
 import { orgStaffPipeline } from '../../shared/middleware/security.stack.js';
@@ -25,13 +32,23 @@ const mediaUpload = multer({
     const ok =
       file.mimetype.startsWith('image/') ||
       file.mimetype.startsWith('audio/') ||
-      file.mimetype === 'video/mp4' || // parfois les enregistrements Android
-      file.mimetype === 'application/octet-stream';
+      file.mimetype === 'video/mp4' ||
+      file.mimetype === 'application/octet-stream' ||
+      file.mimetype === 'application/pdf';
     cb(null, ok);
   },
 });
 
 router.use(...orgStaffPipeline);
+
+/** GET /ai/status — mode openai | local (jamais de secret exposé) */
+router.get(
+  '/status',
+  requirePermission(Permission.AI_USE),
+  asyncHandler(async (_req, res) => {
+    sendSuccess(res, service.getStatus());
+  }),
+);
 
 /** GET /ai/suggestions — questions suggérées (contextuelles si org dispo) */
 router.get(
@@ -64,7 +81,7 @@ router.get(
   }),
 );
 
-/** POST /ai/chat — assistant conversationnel ITC */
+/** POST /ai/chat — assistant conversationnel ITC (+ outils données réelles) */
 router.post(
   '/chat',
   requirePermission(Permission.AI_USE),
@@ -73,9 +90,16 @@ router.post(
   asyncHandler(async (req, res) => {
     const result = await withAudit(
       req,
-      AuditAction.AI_USE,
+      AuditAction.AI_CHAT,
       () => service.chat(getOrganizationId(req), req.user!.userId, req.user!.role, req.body),
-      () => ({ resourceType: 'AiChat', newValue: { mode: 'chat' } }),
+      (r) => ({
+        resourceType: 'AiChat',
+        newValue: {
+          mode: r.poweredBy,
+          toolsUsed: r.toolsUsed ?? [],
+          pendingActionId: r.pendingAction?.id ?? null,
+        },
+      }),
     );
     sendSuccess(res, result);
   }),
@@ -166,7 +190,7 @@ router.post(
   }),
 );
 
-/** POST /ai/contract — génère un contrat PDF pro (bailleur / locataire / agent) */
+/** POST /ai/contract — propose un contrat (confirmation obligatoire ensuite) */
 router.post(
   '/contract',
   requirePermission(Permission.AI_USE),
@@ -175,17 +199,93 @@ router.post(
   asyncHandler(async (req, res) => {
     const result = await withAudit(
       req,
-      AuditAction.AI_USE,
+      AuditAction.AI_CONTRACT_PROPOSE,
       () =>
-        service.generateContract(
+        service.proposeLeasePdf(
           getOrganizationId(req),
           req.user!.userId,
           req.user!.role,
-          req.body,
+          req.body.leaseId,
         ),
-      () => ({ resourceType: 'AiContract', newValue: { leaseId: req.body.leaseId ?? null } }),
+      (r) => ({
+        resourceType: 'AiContract',
+        newValue: { leaseId: req.body.leaseId ?? null, pendingActionId: r.pendingAction?.id ?? null },
+      }),
     );
     sendSuccess(res, result);
+  }),
+);
+
+/** POST /ai/actions/confirm — exécute une action sensible après confirmation */
+router.post(
+  '/actions/confirm',
+  requirePermission(Permission.AI_USE),
+  requireFeature(FeatureKey.ACCESS_AI),
+  validateBody(aiActionConfirmSchema),
+  asyncHandler(async (req, res) => {
+    const result = await withAudit(
+      req,
+      AuditAction.AI_CONTRACT_CONFIRM,
+      () =>
+        service.confirmAction(
+          getOrganizationId(req),
+          req.user!.userId,
+          req.user!.role,
+          req.body.actionId,
+        ),
+      (r) => ({
+        resourceType: 'AiAction',
+        resourceId: req.body.actionId,
+        newValue: { documentUrl: r.documentUrl ?? null, status: 'CONFIRMED' },
+      }),
+    );
+    sendSuccess(res, result);
+  }),
+);
+
+/** POST /ai/actions/cancel */
+router.post(
+  '/actions/cancel',
+  requirePermission(Permission.AI_USE),
+  requireFeature(FeatureKey.ACCESS_AI),
+  validateBody(aiActionConfirmSchema),
+  asyncHandler(async (req, res) => {
+    const result = await withAudit(
+      req,
+      AuditAction.AI_ACTION_CANCEL,
+      () =>
+        service.cancelAction(
+          getOrganizationId(req),
+          req.user!.userId,
+          req.user!.role,
+          req.body.actionId,
+        ),
+      () => ({
+        resourceType: 'AiAction',
+        resourceId: req.body.actionId,
+        newValue: { status: 'CANCELLED' },
+      }),
+    );
+    sendSuccess(res, result);
+  }),
+);
+
+/** POST /ai/speak — TTS (mp3 binaire) */
+router.post(
+  '/speak',
+  requirePermission(Permission.AI_USE),
+  requireFeature(FeatureKey.ACCESS_AI),
+  validateBody(aiSpeakSchema),
+  asyncHandler(async (req, res) => {
+    const audio = await withAudit(
+      req,
+      AuditAction.AI_TTS,
+      () => service.speak(getOrganizationId(req), req.user!.userId, req.user!.role, req.body.text),
+      () => ({ resourceType: 'AiTts', newValue: { chars: String(req.body.text).length } }),
+    );
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Length', String(audio.length));
+    res.status(200).send(audio);
   }),
 );
 
@@ -200,7 +300,7 @@ router.post(
       req,
       AuditAction.AI_USE,
       () => service.analyze(getOrganizationId(req), req.user!.userId, req.user!.role, req.body),
-      () => ({ resourceType: 'AiAnalysis', newValue: { type: req.body.type } }),
+      () => ({ resourceType: 'AiAnalysis', newValue: { type: req.body.analysisType } }),
     );
     sendSuccess(res, result);
   }),

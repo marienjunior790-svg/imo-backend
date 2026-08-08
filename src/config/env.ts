@@ -22,10 +22,15 @@ const envSchema = z.object({
   N8N_ENABLED: z.coerce.boolean().default(false),
   N8N_WEBHOOK_BASE_URL: z.string().url().optional(),
   N8N_API_KEY: z.string().min(16).optional(),
-  // OpenAI
+  // OpenAI / Intelligence ITC (secrets backend uniquement — jamais Flutter)
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default('gpt-4o'),
+  AI_PROVIDER: z.enum(['openai', 'none']).default('openai'),
+  AI_MODEL: z.string().optional(),
+  STT_PROVIDER: z.enum(['openai', 'none']).default('openai'),
+  TTS_PROVIDER: z.enum(['openai', 'none']).default('openai'),
   AI_MAX_HISTORY: z.coerce.number().default(10),
+  AI_PENDING_ACTION_TTL_MS: z.coerce.number().default(15 * 60_000),
   // CORS (production) — origines séparées par des virgules (obligatoire si frontend web)
   // CORS_ORIGINS=https://app.example.com,https://admin.example.com
   CORS_ORIGINS: z.string().optional(),

@@ -27,7 +27,17 @@ export const aiNormalizeSchema = z.object({
   text: z.string().min(1).max(4000),
 });
 
+export const aiActionConfirmSchema = z.object({
+  actionId: z.string().uuid(),
+});
+
+export const aiSpeakSchema = z.object({
+  text: z.string().min(1).max(3500),
+});
+
 export type AiChatDto = z.infer<typeof aiChatSchema>;
 export type AiAnalyzeDto = z.infer<typeof aiAnalyzeSchema>;
 export type AiContractDto = z.infer<typeof aiContractSchema>;
 export type AiNormalizeDto = z.infer<typeof aiNormalizeSchema>;
+export type AiActionConfirmDto = z.infer<typeof aiActionConfirmSchema>;
+export type AiSpeakDto = z.infer<typeof aiSpeakSchema>;

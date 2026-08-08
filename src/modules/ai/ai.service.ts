@@ -10,11 +10,31 @@ import {
   resolveChatActions,
   type AiActionHint,
 } from './ai.fallback.js';
+import {
+  AiToolsService,
+  OPENAI_TOOL_DEFINITIONS,
+  formatToolResultForLocalReply,
+} from './ai.tools.js';
+import {
+  cancelPendingAction,
+  consumePendingAction,
+  createPendingAction,
+  type PendingActionPayload,
+} from './ai.pending-actions.js';
+import { listDocumentCapabilities } from './ai.documents.js';
 import { SubscriptionService } from '../subscriptions/subscription.service.js';
 import { LeaseService } from '../leases/lease.service.js';
 import { PlanLimitError } from '../../shared/errors/subscription.error.js';
 import { ValidationError } from '../../shared/errors/app.error.js';
 import type { AiAnalyzeDto, AiChatInput, AiContractInput } from './ai.types.js';
+
+export interface AiPendingActionHint {
+  id: string;
+  type: string;
+  title: string;
+  summary: string;
+  payload: PendingActionPayload;
+}
 
 export interface AiChatResponse {
   reply: string;
@@ -25,6 +45,17 @@ export interface AiChatResponse {
   /** Transcription ou texte normalisé le cas échéant */
   transcript?: string;
   documentUrl?: string;
+  pendingAction?: AiPendingActionHint;
+  toolsUsed?: string[];
+}
+
+export interface AiStatusResponse {
+  mode: 'openai' | 'local';
+  provider: string;
+  model: string | null;
+  multimodal: { vision: boolean; stt: boolean; tts: boolean };
+  documents: ReturnType<typeof listDocumentCapabilities>;
+  message: string;
 }
 
 export interface AiAnalysisMetric {
@@ -54,13 +85,11 @@ export interface AiForecastResponse {
 const ASSISTANT_PROMPT = `Tu es Intelligence ITC, copilote immobilier premium (ITC IMMO • TEC • CONSEIL).
 
 Règles de réponse :
-- Français clair, pro, humain. Salutations → réponds naturellement (bonjour/bonsoir), puis 2–4 indicateurs utiles du contexte, puis propose 2 actions concrètes. Ne dump pas un résumé froid pour un simple « bonjour ».
-- 3 à 8 phrases max, sauf listes courte utiles.
-- Appuie-toi UNIQUEMENT sur le contexte JSON — n'invente jamais de chiffres. Monnaie : XAF. Si une info manque, dis-le.
-- Tu aides aussi sur le parcours app : ajouter/retirer un locataire, générer un contrat PDF, voir impayés/vacants.
-- Pour retirer un locataire : fiche Locataires → « Retirer le locataire » (motif : départ, décision propriétaire, fin de bail, impayés…).
-- Français approximatif OK (fautes, dictée, abréviations).
-- Termine souvent par une suggestion d'action concrète.`;
+- Français clair, pro, humain. Salutations → réponds naturellement, puis 2–4 indicateurs utiles, puis 2 actions. Pas de dump froid pour « bonjour ».
+- Utilise les outils pour les données ITC réelles. N'invente JAMAIS de chiffres. Monnaie : XAF.
+- Pour générer un contrat PDF : appelle proposeGenerateLeasePdf puis explique que l'utilisateur doit CONFIRMER dans l'app. Ne prétends jamais que le PDF est déjà créé.
+- Retirer un locataire : oriente vers fiche Locataires → « Retirer le locataire ».
+- 3 à 8 phrases max sauf listes utiles.`;
 
 const LIA_ANALYSIS_PROMPT = `Tu es LIA (Logiciel d'Intelligence Analytique) pour ITC.
 Tu produis des analyses immobilières structurées en français.
@@ -83,6 +112,7 @@ export class AiService {
     @inject(SubscriptionService) private readonly subscriptionService: SubscriptionService,
     @inject(LeaseService) private readonly leaseService: LeaseService,
     @inject(PrismaService) private readonly prisma: PrismaService,
+    @inject(AiToolsService) private readonly tools: AiToolsService,
   ) {}
 
   getSuggestions(): string[] {
@@ -105,6 +135,24 @@ export class AiService {
     ];
   }
 
+  getStatus(): AiStatusResponse {
+    const online = this.openai.isAvailable();
+    return {
+      mode: online ? 'openai' : 'local',
+      provider: env.AI_PROVIDER,
+      model: online ? env.AI_MODEL || env.OPENAI_MODEL : null,
+      multimodal: {
+        vision: online,
+        stt: this.openai.isSttAvailable(),
+        tts: this.openai.isTtsAvailable(),
+      },
+      documents: listDocumentCapabilities(),
+      message: online
+        ? 'IA connectée — modèle multimodal via backend.'
+        : 'Mode local — données ITC réelles via outils métier. Ajoutez OPENAI_API_KEY sur Railway pour GPT / voix / images / TTS.',
+    };
+  }
+
   async chat(
     organizationId: string,
     userId: string,
@@ -122,20 +170,37 @@ export class AiService {
       }
     }
 
-    // Intent contrat PDF
+    // Contrats : proposition + confirmation obligatoire (jamais de PDF auto).
     if (this.isContractIntent(message)) {
-      const contract = await this.generateContract(organizationId, userId, role, {
-        leaseId: this.extractLeaseId(message),
-      });
-      return contract;
+      return this.proposeLeasePdf(organizationId, userId, role, this.extractLeaseId(message));
     }
 
     const ctx = await this.contextService.buildContext(organizationId);
-    const contextJson = this.contextService.toPromptContext(ctx);
     const suggestions = buildContextualSuggestions(ctx);
     const actions = resolveChatActions(message);
 
     if (!this.openai.isAvailable()) {
+      return this.chatLocalWithTools(organizationId, userId, message, ctx, suggestions, actions);
+    }
+
+    try {
+      return await this.chatWithOpenAiTools(organizationId, userId, message, input.history, ctx, suggestions, actions);
+    } catch (err) {
+      console.error('[ai.chat] OpenAI failed, falling back to local:', err instanceof Error ? err.message : err);
+      return this.chatLocalWithTools(organizationId, userId, message, ctx, suggestions, actions);
+    }
+  }
+
+  private async chatLocalWithTools(
+    organizationId: string,
+    userId: string,
+    message: string,
+    ctx: AiOrganizationContext,
+    suggestions: string[],
+    actions: AiActionHint[],
+  ): Promise<AiChatResponse> {
+    const intents = this.tools.resolveLocalToolIntents(message);
+    if (intents.length === 0) {
       return {
         reply: buildLocalFallbackReply(message, ctx),
         suggestions,
@@ -145,33 +210,134 @@ export class AiService {
       };
     }
 
-    const history = (input.history ?? []).slice(-env.AI_MAX_HISTORY);
+    const toolsUsed: string[] = [];
+    const parts: string[] = [];
+    let pendingAction: AiPendingActionHint | undefined;
+
+    for (const name of intents) {
+      const result = await this.tools.execute(organizationId, name, {});
+      toolsUsed.push(name);
+      parts.push(formatToolResultForLocalReply(name, result));
+
+      if (name === 'proposeGenerateLeasePdf') {
+        const leaseId = this.extractLeaseId(message);
+        const proposed = await this.proposeLeasePdf(organizationId, userId, UserRole.OWNER, leaseId);
+        if (proposed.pendingAction) pendingAction = proposed.pendingAction;
+        if (proposed.actions.length) actions = [...actions, ...proposed.actions];
+        parts[parts.length - 1] = proposed.reply;
+      }
+    }
+
+    return {
+      reply: parts.join('\n\n'),
+      suggestions,
+      actions: this.dedupeActions(actions),
+      poweredBy: 'local',
+      contextUsed: true,
+      pendingAction,
+      toolsUsed,
+    };
+  }
+
+  private async chatWithOpenAiTools(
+    organizationId: string,
+    userId: string,
+    message: string,
+    history: AiChatInput['history'],
+    ctx: AiOrganizationContext,
+    suggestions: string[],
+    actions: AiActionHint[],
+  ): Promise<AiChatResponse> {
+    const contextJson = this.contextService.toPromptContext(ctx);
     const messages: ChatMessage[] = [
       { role: 'system', content: ASSISTANT_PROMPT },
       { role: 'system', content: `Contexte organisation (JSON):\n${contextJson}` },
-      ...history.map((h) => ({ role: h.role, content: h.content }) as ChatMessage),
+      ...(history ?? []).slice(-env.AI_MAX_HISTORY).map((h) => ({ role: h.role, content: h.content }) as ChatMessage),
       { role: 'user', content: message },
     ];
 
-    try {
-      const reply = await this.openai.chat(messages);
-      return {
-        reply,
-        suggestions,
-        actions,
-        poweredBy: 'openai',
-        contextUsed: true,
-      };
-    } catch (err) {
-      console.error('[ai.chat] OpenAI failed, falling back to local:', err instanceof Error ? err.message : err);
-      return {
-        reply: buildLocalFallbackReply(message, ctx),
-        suggestions,
-        actions,
-        poweredBy: 'local',
-        contextUsed: true,
-      };
+    const toolsUsed: string[] = [];
+    let pendingAction: AiPendingActionHint | undefined;
+    const maxRounds = 4;
+
+    for (let round = 0; round < maxRounds; round++) {
+      const msg = await this.openai.chatWithTools(messages, OPENAI_TOOL_DEFINITIONS);
+      const toolCalls = msg.tool_calls ?? [];
+
+      if (!toolCalls.length) {
+        return {
+          reply: (msg.content ?? '').trim() || buildLocalFallbackReply(message, ctx),
+          suggestions,
+          actions: this.dedupeActions(actions),
+          poweredBy: 'openai',
+          contextUsed: true,
+          pendingAction,
+          toolsUsed,
+        };
+      }
+
+      messages.push({
+        role: 'assistant',
+        content: msg.content,
+        tool_calls: toolCalls,
+      });
+
+      for (const call of toolCalls) {
+        if (call.type !== 'function') continue;
+        const name = call.function.name;
+        const args = call.function.arguments;
+        toolsUsed.push(name);
+        const result = await this.tools.execute(organizationId, name, args);
+
+        if (name === 'proposeGenerateLeasePdf') {
+          let leaseId: string | undefined;
+          try {
+            const parsed = JSON.parse(args || '{}') as { leaseId?: string };
+            leaseId = parsed.leaseId || this.extractLeaseId(message);
+          } catch {
+            leaseId = this.extractLeaseId(message);
+          }
+          const proposed = await this.proposeLeasePdf(organizationId, userId, UserRole.OWNER, leaseId);
+          pendingAction = proposed.pendingAction;
+          actions = [...actions, ...proposed.actions];
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: JSON.stringify({
+              ...((typeof result === 'object' && result) || {}),
+              pendingActionId: proposed.pendingAction?.id,
+              note: 'PDF non généré — confirmation utilisateur obligatoire.',
+            }),
+          });
+        } else {
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: JSON.stringify(result),
+          });
+        }
+      }
     }
+
+    return {
+      reply: buildLocalFallbackReply(message, ctx),
+      suggestions,
+      actions: this.dedupeActions(actions),
+      poweredBy: 'openai',
+      contextUsed: true,
+      pendingAction,
+      toolsUsed,
+    };
+  }
+
+  private dedupeActions(actions: AiActionHint[]): AiActionHint[] {
+    const seen = new Set<string>();
+    return actions.filter((a) => {
+      const key = a.url ?? a.route ?? a.label;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 6);
   }
 
   /** Audio → transcription → chat immobilier */
@@ -183,8 +349,10 @@ export class AiService {
     history?: AiChatInput['history'],
   ): Promise<AiChatResponse> {
     await this.assertAiAccess(organizationId, userId, role);
-    if (!this.openai.isAvailable()) {
-      throw new ValidationError('Transcription audio indisponible : OPENAI_API_KEY manquante');
+    if (!this.openai.isSttAvailable()) {
+      throw new ValidationError(
+        'Transcription vocale indisponible en mode local. Ajoutez OPENAI_API_KEY (STT) sur Railway.',
+      );
     }
 
     const transcript = await this.openai.transcribe(
@@ -213,7 +381,16 @@ export class AiService {
   ): Promise<AiChatResponse> {
     await this.assertAiAccess(organizationId, userId, role);
     if (!this.openai.isAvailable()) {
-      throw new ValidationError('Lecture d’image indisponible : OPENAI_API_KEY manquante');
+      const ctxLocal = await this.contextService.buildContext(organizationId);
+      return {
+        reply:
+          'Mode local : l’analyse d’image nécessite OPENAI_API_KEY sur Railway. ' +
+          'En attendant, posez une question texte (impayés, patrimoine, contrats) — les données ITC restent disponibles.',
+        suggestions: buildContextualSuggestions(ctxLocal),
+        actions: resolveChatActions(userPrompt || 'image'),
+        poweredBy: 'local',
+        contextUsed: true,
+      };
     }
 
     const ctx = await this.contextService.buildContext(organizationId);
@@ -258,22 +435,28 @@ export class AiService {
     return { original: text, corrected, poweredBy: 'openai' };
   }
 
-  /** Génère un PDF de contrat pro (signatures bailleur / locataire / agent). */
+  /**
+   * Propose un contrat PDF — ne génère rien tant que l’utilisateur n’a pas confirmé.
+   * @deprecated prefer proposeLeasePdf + confirmAction
+   */
   async generateContract(
     organizationId: string,
     userId: string,
     role: UserRole,
     input: AiContractInput,
   ): Promise<AiChatResponse> {
-    await this.assertAiAccess(organizationId, userId, role);
+    return this.proposeLeasePdf(organizationId, userId, role, input.leaseId);
+  }
 
-    const agent = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { firstName: true, lastName: true, role: true },
-    });
-    const agentName = agent ? `${agent.firstName} ${agent.lastName}`.trim() : null;
+  async proposeLeasePdf(
+    organizationId: string,
+    userId: string,
+    _role: UserRole,
+    leaseId?: string,
+  ): Promise<AiChatResponse> {
+    await this.assertAiAccess(organizationId, userId, _role);
 
-    if (!input.leaseId) {
+    if (!leaseId) {
       const leases = await this.prisma.lease.findMany({
         where: {
           organizationId,
@@ -290,10 +473,10 @@ export class AiService {
       if (leases.length === 0) {
         return {
           reply:
-            'Aucun bail trouvé pour générer un contrat. Créez d’abord un contrat (locataire + logement), puis redemandez-moi de générer le PDF.',
+            'Aucun bail trouvé. Créez d’abord un contrat (locataire + logement), puis redemandez la génération PDF.',
           suggestions: ['Comment ajouter un locataire ?', 'Voir les contrats'],
           actions: [{ label: 'Créer / voir les contrats', route: '/leases' }],
-          poweredBy: 'local',
+          poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
           contextUsed: true,
         };
       }
@@ -307,23 +490,91 @@ export class AiService {
 
       return {
         reply:
-          `Je peux générer un contrat PDF professionnel (bailleur, locataire${agentName ? ', agent' : ''}).\n` +
-          `Indiquez le bail, par ex. « génère le contrat ${leases[0]!.id} », ou choisissez dans Contrats.\n\n${list}`,
+          `Voici les baux disponibles pour un contrat PDF professionnel.\n` +
+          `Demandez « génère le contrat <id> » ou ouvrez Contrats.\n\n${list}\n\n` +
+          `La génération PDF exigera votre confirmation explicite.`,
         suggestions: leases.slice(0, 3).map((l) => `Génère le contrat ${l.id}`),
-        actions: [
-          { label: 'Ouvrir les contrats', route: '/leases' },
-          ...leases.slice(0, 2).map((l) => ({
-            label: `PDF · ${l.tenant.lastName}`,
-            route: `/leases?generate=${l.id}`,
-          })),
-        ],
+        actions: [{ label: 'Ouvrir les contrats', route: '/leases' }],
+        poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+        contextUsed: true,
+      };
+    }
+
+    const lease = await this.prisma.lease.findFirst({
+      where: { id: leaseId, organizationId },
+      include: {
+        tenant: { select: { firstName: true, lastName: true } },
+        apartment: { select: { label: true } },
+      },
+    });
+
+    if (!lease) {
+      return {
+        reply: 'Bail introuvable dans votre organisation.',
+        suggestions: ['Voir les contrats'],
+        actions: [{ label: 'Voir les contrats', route: '/leases' }],
         poweredBy: 'local',
         contextUsed: true,
       };
     }
 
+    const tenantName = `${lease.tenant.firstName} ${lease.tenant.lastName}`;
+    const apartmentLabel = lease.apartment.label;
+    const pending = createPendingAction({
+      organizationId,
+      userId,
+      type: 'GENERATE_LEASE_PDF',
+      payload: {
+        leaseId: lease.id,
+        tenantName,
+        apartmentLabel,
+        summary: `Contrat PDF pour ${tenantName} — ${apartmentLabel}`,
+      },
+    });
+
+    return {
+      reply:
+        `Voici les informations du contrat proposé :\n` +
+        `• Locataire : ${tenantName}\n` +
+        `• Logement : ${apartmentLabel}\n` +
+        `• Bail : ${lease.id}\n` +
+        `• Statut : ${lease.status}\n\n` +
+        `Confirmez pour générer le PDF professionnel (signatures bailleur / locataire / agent), ou annulez.`,
+      suggestions: ['Voir les contrats', 'Résumer mon patrimoine'],
+      actions: [{ label: 'Voir les contrats', route: '/leases' }],
+      poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+      contextUsed: true,
+      pendingAction: {
+        id: pending.id,
+        type: pending.type,
+        title: 'Créer le contrat PDF',
+        summary: pending.payload.summary ?? '',
+        payload: pending.payload,
+      },
+    };
+  }
+
+  async confirmAction(
+    organizationId: string,
+    userId: string,
+    role: UserRole,
+    actionId: string,
+  ): Promise<AiChatResponse> {
+    await this.assertAiAccess(organizationId, userId, role);
+    const action = consumePendingAction(actionId, organizationId, userId);
+
+    if (action.type !== 'GENERATE_LEASE_PDF' || !action.payload.leaseId) {
+      throw new ValidationError('Type d’action non supporté');
+    }
+
+    const agent = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true },
+    });
+    const agentName = agent ? `${agent.firstName} ${agent.lastName}`.trim() : null;
+
     try {
-      const pdf = await this.leaseService.generateContractPdf(organizationId, input.leaseId, {
+      const pdf = await this.leaseService.generateContractPdf(organizationId, action.payload.leaseId, {
         agentName,
         agentRole: role === UserRole.OWNER ? 'Propriétaire / Bailleur' : 'Agent immobilier / Gestionnaire',
       });
@@ -331,13 +582,13 @@ export class AiService {
       return {
         reply:
           `Contrat de location généré pour ${pdf.tenantName} (${pdf.apartmentLabel}).\n` +
-          `Le PDF inclut les blocs de signature Bailleur, Locataire et Agent. Vérifiez les clauses avant signature.`,
+          `Le PDF inclut les blocs de signature. Vérifiez les clauses avant signature.`,
         suggestions: ['Voir les impayés', 'Quels contrats arrivent à échéance ?'],
         actions: [
           { label: 'Ouvrir le PDF', url: pdf.url },
           { label: 'Voir les contrats', route: '/leases' },
         ],
-        poweredBy: 'local',
+        poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
         contextUsed: true,
         documentUrl: pdf.url,
       };
@@ -345,12 +596,33 @@ export class AiService {
       const msg = err instanceof Error ? err.message : 'Génération impossible';
       return {
         reply: `Impossible de générer le contrat : ${msg}`,
-        suggestions: ['Voir les contrats', 'Générer un contrat de location'],
+        suggestions: ['Voir les contrats'],
         actions: [{ label: 'Voir les contrats', route: '/leases' }],
         poweredBy: 'local',
         contextUsed: true,
       };
     }
+  }
+
+  async cancelAction(organizationId: string, userId: string, role: UserRole, actionId: string) {
+    await this.assertAiAccess(organizationId, userId, role);
+    cancelPendingAction(actionId, organizationId, userId);
+    return { cancelled: true, actionId };
+  }
+
+  async speak(
+    organizationId: string,
+    userId: string,
+    role: UserRole,
+    text: string,
+  ): Promise<Buffer> {
+    await this.assertAiAccess(organizationId, userId, role);
+    if (!this.openai.isTtsAvailable()) {
+      throw new ValidationError(
+        'Lecture vocale indisponible en mode local. Ajoutez OPENAI_API_KEY (TTS) sur Railway.',
+      );
+    }
+    return this.openai.speak(text);
   }
 
   async analyze(

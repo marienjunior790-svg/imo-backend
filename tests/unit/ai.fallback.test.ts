@@ -4,6 +4,7 @@ import type { AiOrganizationContext } from '../../src/modules/ai/ai.context.serv
 const mockContext: AiOrganizationContext = {
   organization: { id: 'org-1', name: 'Agence Test', city: 'Brazzaville', plan: 'PRO' },
   summary: {
+    totalBuildings: 1,
     totalApartments: 5,
     availableApartments: 2,
     occupiedApartments: 3,
@@ -12,7 +13,10 @@ const mockContext: AiOrganizationContext = {
     latePayments: 1,
     pendingPayments: 2,
     collectedThisMonthXaf: 450000,
+    potentialMonthlyRentXaf: 800000,
+    occupancyRate: 60,
   },
+  buildings: [{ name: 'Immeuble A', apartmentCount: 5, occupiedCount: 3, potentialRentXaf: 800000 }],
   latePayments: [
     {
       tenantName: 'Grace Tair',
@@ -44,9 +48,10 @@ describe('AI local fallback', () => {
     expect(reply).toContain('Studio RDC');
   });
 
-  it('fournit un résumé par défaut', () => {
+  it('salue et présente le copilote (pas un dump froid)', () => {
     const reply = buildLocalFallbackReply('Bonjour', mockContext);
+    expect(reply.toLowerCase()).toContain('bonjour');
     expect(reply).toContain('Agence Test');
-    expect(reply).toContain('Brazzaville');
+    expect(reply).toMatch(/impay|vacant|patrimoine|contrat/i);
   });
 });
