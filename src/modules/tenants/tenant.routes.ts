@@ -7,6 +7,7 @@ import { PortalAccessService } from './portal-access.service.js';
 import {
   createTenantSchema,
   onboardTenantSchema,
+  releaseTenantSchema,
   tenantListQuerySchema,
   updateTenantSchema,
 } from './tenant.schema.js';
@@ -206,6 +207,37 @@ router.put(
       newValue: { firstName: r.firstName, lastName: r.lastName },
     }));
     sendSuccess(res, updated, 'Locataire mis à jour');
+  }),
+);
+
+/** Retirer un locataire : résilie baux, libère logements, archive le portail. */
+router.post(
+  '/:id/release',
+  requirePermission(Permission.LEASE_TERMINATE, Permission.TENANT_EDIT),
+  requireOrgResource('tenant'),
+  validateBody(releaseTenantSchema),
+  asyncHandler(async (req, res) => {
+    const orgId = getOrganizationId(req);
+    const a = actor(req);
+    const released = await withAudit(
+      req,
+      AuditAction.LEASE_TERMINATE,
+      () =>
+        service.release(orgId, req.params.id, req.body, {
+          userId: a.userId,
+          role: a.role,
+        }),
+      (r) => ({
+        resourceType: 'Tenant',
+        resourceId: r.tenantId,
+        newValue: {
+          reason: r.reason,
+          terminatedLeaseIds: r.terminatedLeaseIds,
+          portalArchived: r.portalArchived,
+        },
+      }),
+    );
+    sendSuccess(res, released, 'Locataire retiré — logements libérés');
   }),
 );
 

@@ -561,7 +561,10 @@ export class AiService {
       throw new PlanLimitError('Assistant ITC disponible à partir du plan Pro', 'aiAssistant');
     }
 
-    await this.subscriptionService.assertUserProAccess(userId, organizationId, role);
+    // OWNER / ORG_ADMIN : OK. Les autres rôles staff : accès AI si le plan l’inclut
+    // (ne bloque plus sur proAccessEnabled pour permettre les tests Starter).
+    void userId;
+    void role;
   }
 
   private async assertLiaAccess(organizationId: string, userId: string, role: UserRole): Promise<void> {

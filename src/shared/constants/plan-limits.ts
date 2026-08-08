@@ -21,7 +21,8 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
     pdfLeaseContract: true,
     pdfPaymentReceipt: false,
     analytics: false,
-    aiAssistant: false,
+    /** Débloqué pour tests / démonstration (hors gate Pro). */
+    aiAssistant: true,
   },
   PRO: {
     label: 'Pro',

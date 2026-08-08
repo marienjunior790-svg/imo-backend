@@ -63,6 +63,7 @@ const LETTING_OPS: string[] = [
   'TENANT_VIEW',
   'TENANT_CREATE',
   'TENANT_EDIT',
+  'TENANT_DELETE',
   'LEASE_VIEW',
   'LEASE_CREATE',
   'LEASE_EDIT',

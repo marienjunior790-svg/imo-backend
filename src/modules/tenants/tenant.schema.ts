@@ -18,6 +18,20 @@ export const tenantListQuerySchema = z.object({
   search: z.string().optional(),
 });
 
+/** Motifs de départ / retrait d’un locataire (inverse de l’onboarding). */
+export const releaseTenantSchema = z.object({
+  reason: z.enum([
+    'TENANT_LEFT_COUNTRY',
+    'OWNER_DECISION',
+    'END_OF_LEASE',
+    'NON_PAYMENT',
+    'OTHER',
+  ]),
+  note: z.string().max(500).optional(),
+});
+
+export type ReleaseTenantInput = z.infer<typeof releaseTenantSchema>;
+
 const onboardLeaseSchema = z.object({
   apartmentId: z.string().min(1),
   startDate: z.string().min(1),
