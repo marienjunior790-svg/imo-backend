@@ -86,7 +86,37 @@ export const mfaDisableSchema = z.object({
   code: z.string().regex(/^\d{6}$/),
 });
 
+/** Mise à jour profil compte (self-service). E-mail / rôle non modifiables ici. */
+export const updateProfileSchema = z.object({
+  firstName: z.string().min(2, 'Prénom requis (min. 2 caractères)').max(80).optional(),
+  lastName: z.string().min(2, 'Nom requis (min. 2 caractères)').max(80).optional(),
+  phone: z
+    .string()
+    .trim()
+    .max(32)
+    .optional()
+    .nullable()
+    .transform((v) => (v == null || v === '' ? null : v)),
+  address: z
+    .string()
+    .trim()
+    .max(255)
+    .optional()
+    .nullable()
+    .transform((v) => (v == null || v === '' ? null : v)),
+  identityDocument: z
+    .string()
+    .trim()
+    .max(120)
+    .optional()
+    .nullable()
+    .transform((v) => (v == null || v === '' ? null : v)),
+  emailNotificationsEnabled: z.boolean().optional(),
+  pushNotificationsEnabled: z.boolean().optional(),
+});
+
 export type OnboardingInput = z.infer<typeof onboardingSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

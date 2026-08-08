@@ -191,6 +191,26 @@ export class AuthRepository {
     });
   }
 
+  updateProfile(
+    userId: string,
+    data: {
+      firstName?: string;
+      lastName?: string;
+      phone?: string | null;
+      address?: string | null;
+      identityDocument?: string | null;
+      emailNotificationsEnabled?: boolean;
+      pushNotificationsEnabled?: boolean;
+    },
+  ) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      // Cast: champs profil ajoutés en migration 20260808050000
+      data: data as Prisma.UserUpdateInput,
+      include: { organization: true },
+    });
+  }
+
   findRefreshToken(token: string) {
     const tokenHash = createHash('sha256').update(token).digest('hex');
     return this.prisma.refreshToken.findUnique({
@@ -816,6 +836,44 @@ export class AuthService {
       portalStatus: found.portalStatus,
       ...extras,
     };
+  }
+
+  async updateProfile(
+    userId: string,
+    input: {
+      firstName?: string;
+      lastName?: string;
+      phone?: string | null;
+      address?: string | null;
+      identityDocument?: string | null;
+      emailNotificationsEnabled?: boolean;
+      pushNotificationsEnabled?: boolean;
+    },
+  ) {
+    const found = await this.repo.findById(userId);
+    if (!found) throw new UnauthorizedError('Utilisateur introuvable');
+    if (!found.isActive) throw new UnauthorizedError('Compte désactivé');
+
+    const data: Record<string, unknown> = {};
+    if (input.firstName !== undefined) data.firstName = input.firstName.trim();
+    if (input.lastName !== undefined) data.lastName = input.lastName.trim();
+    if (input.phone !== undefined) data.phone = input.phone;
+    if (input.address !== undefined) data.address = input.address;
+    if (input.identityDocument !== undefined) data.identityDocument = input.identityDocument;
+    if (input.emailNotificationsEnabled !== undefined) {
+      data.emailNotificationsEnabled = input.emailNotificationsEnabled;
+    }
+    if (input.pushNotificationsEnabled !== undefined) {
+      data.pushNotificationsEnabled = input.pushNotificationsEnabled;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return this.me(userId);
+    }
+
+    await this.repo.updateProfile(userId, data);
+
+    return this.me(userId);
   }
 
   /** Session complète après acceptation d'invitation (P2). */

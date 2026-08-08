@@ -12,6 +12,7 @@ import {
   resetPasswordSchema,
   mfaVerifySchema,
   mfaDisableSchema,
+  updateProfileSchema,
 } from './auth.schema.js';
 import { authenticatedPipeline } from '../../shared/middleware/security.stack.js';
 import { authenticatedStack } from '../../shared/middleware/auth.stack.js';
@@ -113,6 +114,16 @@ router.get(
   asyncHandler(async (req, res) => {
     const result = await authService.me(req.user!.userId);
     sendSuccess(res, result);
+  }),
+);
+
+router.patch(
+  '/me',
+  ...authGateExempt,
+  validateBody(updateProfileSchema),
+  asyncHandler(async (req, res) => {
+    const result = await authService.updateProfile(req.user!.userId, req.body);
+    sendSuccess(res, result, 'Profil mis à jour');
   }),
 );
 

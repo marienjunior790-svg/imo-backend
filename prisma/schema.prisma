@@ -234,6 +234,13 @@ model User {
   firstName      String
   lastName       String
   phone          String?
+  /// Adresse personnelle (profil compte)
+  address        String?
+  /// Référence pièce d'identité (numéro / type — pas de scan binaire ici)
+  identityDocument String?
+  /// Préférences notifications (paramètres compte)
+  emailNotificationsEnabled Boolean @default(true)
+  pushNotificationsEnabled  Boolean @default(true)
   /// Défaut au privilège minimal : tout rôle opérationnel est attribué explicitement.
   role           UserRole @default(TENANT)
   isActive       Boolean  @default(true)
