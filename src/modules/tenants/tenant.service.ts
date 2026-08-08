@@ -59,6 +59,17 @@ export class TenantRepository {
     return this.prisma.tenant.findFirst({
       where: { id, organizationId },
       include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            loginId: true,
+            portalStatus: true,
+            lastLoginAt: true,
+            mustChangePassword: true,
+            isActive: true,
+          },
+        },
         leases: {
           orderBy: { createdAt: 'desc' },
           include: {

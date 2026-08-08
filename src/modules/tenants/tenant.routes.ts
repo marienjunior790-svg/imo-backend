@@ -2,8 +2,14 @@ import { Router } from 'express';
 import { container } from 'tsyringe';
 import { z } from 'zod';
 import { TenantService } from './tenant.service.js';
+import { TenantOnboardService } from './tenant-onboard.service.js';
 import { PortalAccessService } from './portal-access.service.js';
-import { createTenantSchema, tenantListQuerySchema, updateTenantSchema } from './tenant.schema.js';
+import {
+  createTenantSchema,
+  onboardTenantSchema,
+  tenantListQuerySchema,
+  updateTenantSchema,
+} from './tenant.schema.js';
 import { getOrganizationId } from '../../shared/middleware/auth.middleware.js';
 import { Permission } from '../../shared/auth/permissions.js';
 import { orgStaffPipeline } from '../../shared/middleware/security.stack.js';
@@ -16,6 +22,7 @@ import { auditSuccess, withAudit } from '../../shared/audit/audit-request.js';
 
 const router = Router();
 const service = container.resolve(TenantService);
+const onboardService = container.resolve(TenantOnboardService);
 const portalAccess = container.resolve(PortalAccessService);
 
 const portalSettingsSchema = z.object({
@@ -61,6 +68,32 @@ router.get(
     const { search } = req.query as { search?: string };
     const { items, total } = await service.list(orgId, page, limit, skip, search);
     sendSuccess(res, items, undefined, 200, toPaginationMeta(page, limit, total));
+  }),
+);
+
+/** Onboard atomique — AVANT /:id pour éviter toute collision de route */
+router.post(
+  '/onboard',
+  requirePermission(Permission.TENANT_CREATE),
+  validateBody(onboardTenantSchema),
+  asyncHandler(async (req, res) => {
+    const orgId = getOrganizationId(req);
+    const result = await withAudit(
+      req,
+      AuditAction.TENANT_CREATE,
+      () => onboardService.onboard(orgId, actor(req), req.body),
+      (r) => ({
+        resourceType: 'Tenant',
+        resourceId: r.tenant.id,
+        newValue: {
+          firstName: r.tenant.firstName,
+          lastName: r.tenant.lastName,
+          leaseId: r.lease?.id ?? null,
+          portalProvisioned: Boolean(r.portalAccess?.provisioned),
+        },
+      }),
+    );
+    sendSuccess(res, result, result.message, 201);
   }),
 );
 

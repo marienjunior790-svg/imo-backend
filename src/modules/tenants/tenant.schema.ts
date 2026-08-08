@@ -17,3 +17,19 @@ export const tenantListQuerySchema = z.object({
   limit: z.string().optional(),
   search: z.string().optional(),
 });
+
+const onboardLeaseSchema = z.object({
+  apartmentId: z.string().min(1),
+  startDate: z.string().min(1),
+  endDate: z.string().min(1),
+  monthlyRent: z.coerce.number().int().positive().optional(),
+  depositAmount: z.coerce.number().int().nonnegative().optional(),
+  terms: z.string().optional(),
+  activate: z.boolean().optional(),
+});
+
+/** Création complète : CRM + contrat optionnel + compte portail */
+export const onboardTenantSchema = createTenantSchema.extend({
+  lease: onboardLeaseSchema.optional(),
+  provisionPortal: z.boolean().optional(),
+});
