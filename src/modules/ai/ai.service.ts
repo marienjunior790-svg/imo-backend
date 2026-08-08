@@ -2,8 +2,13 @@ import { inject, injectable } from 'tsyringe';
 import { UserRole } from '@prisma/client';
 import { env } from '../../config/env.js';
 import { OpenAiClient, ChatMessage } from '../../infrastructure/openai/openai.client.js';
-import { AiContextService } from './ai.context.service.js';
-import { buildLocalFallbackReply } from './ai.fallback.js';
+import { AiContextService, type AiOrganizationContext } from './ai.context.service.js';
+import {
+  buildContextualSuggestions,
+  buildLocalFallbackReply,
+  resolveChatActions,
+  type AiActionHint,
+} from './ai.fallback.js';
 import { SubscriptionService } from '../subscriptions/subscription.service.js';
 import { PlanLimitError } from '../../shared/errors/subscription.error.js';
 import type { AiAnalyzeDto, AiChatInput } from './ai.types.js';
@@ -11,6 +16,7 @@ import type { AiAnalyzeDto, AiChatInput } from './ai.types.js';
 export interface AiChatResponse {
   reply: string;
   suggestions: string[];
+  actions: AiActionHint[];
   poweredBy: 'openai' | 'local';
   contextUsed: boolean;
 }
@@ -30,25 +36,34 @@ export interface AiAnalysisResponse {
   poweredBy: 'openai' | 'local';
 }
 
-const ASSISTANT_PROMPT = `Tu es l'assistant ITC (ITC IMMO • TEC • CONSEIL), expert en gestion immobilière à Brazzaville (Congo).
-Tu réponds en français, de manière concise et professionnelle.
-Tu es un assistant conversationnel : aide, conseils, explications — PAS d'analyses statistiques détaillées (renvoie vers LIA pour ça).
-Tu t'appuies UNIQUEMENT sur le contexte JSON fourni — ne invente pas de données.
-Monnaie : XAF (Franc CFA).
-Si une information n'est pas dans le contexte, dis-le clairement.
-Propose des actions concrètes (relancer locataire, renouveler contrat, etc.).`;
-
-const LIA_ANALYSIS_PROMPT = `Tu es LIA (Logiciel d'Intelligence Analytique) pour ITC IMMO • TEC • CONSEIL.
-Tu produis des analyses de données immobilières structurées en français.
-Réponds UNIQUEMENT en JSON valide avec cette structure :
-{
-  "title": "Titre de l'analyse",
-  "summary": "Résumé exécutif en 2-3 phrases",
-  "metrics": [{"label": "...", "value": "...", "trend": "up|down|neutral"}],
-  "insights": ["Point clé 1", "Point clé 2"],
-  "recommendations": ["Action 1", "Action 2"]
+export interface AiForecastResponse {
+  kind: 'estimation';
+  title: string;
+  disclaimer: string;
+  metrics: AiAnalysisMetric[];
+  insights: string[];
+  actions: AiActionHint[];
 }
-Base-toi STRICTEMENT sur le contexte JSON. Monnaie : XAF.`;
+
+const ASSISTANT_PROMPT = `Tu es le copilote immobilier ITC (ITC IMMO • TEC • CONSEIL).
+Tu réponds en français, de façon courte, claire et premium (3 à 8 phrases max).
+Tu t'appuies UNIQUEMENT sur le contexte JSON fourni — n'invente jamais de chiffres.
+Monnaie : XAF. Si une info manque, dis-le franchement.
+Pour les analyses chiffrées lourdes, oriente vers l'onglet Analyses LIA.
+Termine parfois par une suggestion d'action concrète (voir impayés, relancer, etc.).`;
+
+const LIA_ANALYSIS_PROMPT = `Tu es LIA (Logiciel d'Intelligence Analytique) pour ITC.
+Tu produis des analyses immobilières structurées en français.
+Réponds UNIQUEMENT en JSON valide :
+{
+  "title": "Titre",
+  "summary": "Résumé 2-3 phrases",
+  "metrics": [{"label": "...", "value": "...", "trend": "up|down|neutral"}],
+  "insights": ["..."],
+  "recommendations": ["..."]
+}
+Base-toi STRICTEMENT sur le contexte JSON. N'invente aucune statistique. Monnaie : XAF.
+Si les données sont insuffisantes, indique-le dans summary et insights.`;
 
 @injectable()
 export class AiService {
@@ -60,20 +75,21 @@ export class AiService {
 
   getSuggestions(): string[] {
     return [
+      'Résumer mon patrimoine',
+      'Voir mes impayés',
+      'Quels logements sont vacants ?',
+      'Contrats à échéance',
+      'Quels sont les risques actuels ?',
       'Comment ajouter un locataire ?',
-      'Comment enregistrer un paiement de loyer ?',
-      'Quelle est la différence entre Assistant et LIA ?',
-      'Comment créer un contrat de location ?',
-      'Où voir mes biens immobiliers ?',
     ];
   }
 
   getAnalysisTypes(): Array<{ key: string; label: string; description: string }> {
     return [
-      { key: 'overview', label: 'Vue d\'ensemble', description: 'Situation globale du parc immobilier' },
-      { key: 'revenue', label: 'Revenus', description: 'Encaissements et performance financière' },
-      { key: 'occupancy', label: 'Occupation', description: 'Taux d\'occupation et disponibilités' },
-      { key: 'delinquency', label: 'Impayés', description: 'Retards de paiement et risques' },
+      { key: 'overview', label: 'Vue d\'ensemble', description: 'Situation globale du parc' },
+      { key: 'revenue', label: 'Revenus', description: 'Encaissements et performance' },
+      { key: 'occupancy', label: 'Occupation', description: 'Taux d\'occupation et vacance' },
+      { key: 'delinquency', label: 'Impayés', description: 'Retards et risques' },
     ];
   }
 
@@ -87,12 +103,14 @@ export class AiService {
 
     const ctx = await this.contextService.buildContext(organizationId);
     const contextJson = this.contextService.toPromptContext(ctx);
-    const suggestions = this.getSuggestions();
+    const suggestions = buildContextualSuggestions(ctx);
+    const actions = resolveChatActions(input.message);
 
     if (!this.openai.isAvailable()) {
       return {
         reply: buildLocalFallbackReply(input.message, ctx),
         suggestions,
+        actions,
         poweredBy: 'local',
         contextUsed: true,
       };
@@ -106,14 +124,24 @@ export class AiService {
       { role: 'user', content: input.message },
     ];
 
-    const reply = await this.openai.chat(messages);
-
-    return {
-      reply,
-      suggestions,
-      poweredBy: 'openai',
-      contextUsed: true,
-    };
+    try {
+      const reply = await this.openai.chat(messages);
+      return {
+        reply,
+        suggestions,
+        actions,
+        poweredBy: 'openai',
+        contextUsed: true,
+      };
+    } catch {
+      return {
+        reply: buildLocalFallbackReply(input.message, ctx),
+        suggestions,
+        actions,
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
   }
 
   async analyze(
@@ -141,39 +169,112 @@ export class AiService {
       },
     ];
 
-    const raw = await this.openai.chat(messages);
     try {
-      const parsed = JSON.parse(raw) as AiAnalysisResponse;
-      return { ...parsed, poweredBy: 'openai' };
+      const raw = await this.openai.chat(messages);
+      try {
+        const parsed = JSON.parse(raw) as AiAnalysisResponse;
+        return { ...parsed, poweredBy: 'openai' };
+      } catch {
+        return {
+          title: typeLabel,
+          summary: raw.slice(0, 500),
+          metrics: [],
+          insights: [raw],
+          recommendations: [],
+          poweredBy: 'openai',
+        };
+      }
     } catch {
-      return {
-        title: typeLabel,
-        summary: raw.slice(0, 500),
-        metrics: [],
-        insights: [raw],
-        recommendations: [],
-        poweredBy: 'openai',
-      };
+      return this.buildLocalAnalysis(ctx, input.analysisType, typeLabel);
+    }
+  }
+
+  /** Prévisions = estimations déterministes à partir des données org (pas de ML). */
+  async forecast(organizationId: string, userId: string, role: UserRole): Promise<AiForecastResponse> {
+    await this.assertLiaAccess(organizationId, userId, role);
+    const ctx = await this.contextService.buildContext(organizationId);
+    const s = ctx.summary;
+
+    const estimatedNextMonth =
+      s.collectedThisMonthXaf > 0
+        ? s.collectedThisMonthXaf
+        : Math.round(s.potentialMonthlyRentXaf * (s.occupancyRate / 100));
+
+    const insights: string[] = [
+      `Loyers potentiels du parc : ${s.potentialMonthlyRentXaf.toLocaleString('fr-FR')} XAF / mois.`,
+      `Encaissé ce mois : ${s.collectedThisMonthXaf.toLocaleString('fr-FR')} XAF.`,
+      `Estimation encaissement mois suivant (basée sur le mois courant ou l'occupation) : ${estimatedNextMonth.toLocaleString('fr-FR')} XAF.`,
+    ];
+    if (s.latePayments > 0) {
+      insights.push(`${s.latePayments} impayé(s) peuvent réduire l'encaissement réel.`);
+    }
+    if (ctx.expiringLeases.length > 0) {
+      insights.push(`${ctx.expiringLeases.length} contrat(s) arrivent à échéance sous 30 jours.`);
+    }
+    if (s.totalApartments === 0) {
+      insights.length = 0;
+      insights.push('Données insuffisantes : aucun bien enregistré. Ajoutez des immeubles et logements pour des estimations utiles.');
+    }
+
+    const actions: AiActionHint[] = [
+      { label: 'Voir les paiements', route: '/payments' },
+      { label: 'Voir les contrats', route: '/leases' },
+    ];
+    if (s.latePayments > 0) actions.unshift({ label: 'Voir les impayés', route: '/payments?tab=unpaid' });
+
+    return {
+      kind: 'estimation',
+      title: 'Prévisions (estimations)',
+      disclaimer:
+        'Ces projections sont des estimations déterministes calculées à partir de vos données ITC actuelles. Ce n’est pas un modèle prédictif ML.',
+      metrics: [
+        { label: 'Occupation', value: `${s.occupancyRate} %`, trend: s.occupancyRate >= 80 ? 'up' : 'down' },
+        { label: 'Potentiel mensuel', value: `${s.potentialMonthlyRentXaf.toLocaleString('fr-FR')} XAF`, trend: 'neutral' },
+        { label: 'Encaissé (mois)', value: `${s.collectedThisMonthXaf.toLocaleString('fr-FR')} XAF`, trend: 'neutral' },
+        { label: 'Estim. mois+1', value: `${estimatedNextMonth.toLocaleString('fr-FR')} XAF`, trend: 'neutral' },
+        { label: 'Impayés', value: `${s.latePayments}`, trend: s.latePayments > 0 ? 'down' : 'up' },
+        { label: 'Échéances ≤30j', value: `${ctx.expiringLeases.length}`, trend: 'neutral' },
+      ],
+      insights,
+      actions: actions.slice(0, 3),
+    };
+  }
+
+  async contextualSuggestions(organizationId: string): Promise<string[]> {
+    try {
+      const ctx = await this.contextService.buildContext(organizationId);
+      return buildContextualSuggestions(ctx);
+    } catch {
+      return this.getSuggestions();
     }
   }
 
   private buildLocalAnalysis(
-    ctx: Awaited<ReturnType<AiContextService['buildContext']>>,
+    ctx: AiOrganizationContext,
     analysisType: string,
     typeLabel: string,
   ): AiAnalysisResponse {
     const s = ctx.summary;
-    const occupancyRate = s.totalApartments > 0
-      ? Math.round((s.occupiedApartments / s.totalApartments) * 100)
-      : 0;
+    const occupancyRate = s.occupancyRate;
+
+    if (s.totalApartments === 0) {
+      return {
+        title: `Analyse LIA — ${typeLabel}`,
+        summary: 'Données insuffisantes : aucun bien dans le parc. Ajoutez des immeubles et logements.',
+        metrics: [],
+        insights: ['Aucune statistique fiable ne peut être produite sans patrimoine renseigné.'],
+        recommendations: ['Créer un immeuble', 'Ajouter des logements', 'Lier locataires et contrats'],
+        poweredBy: 'local',
+      };
+    }
 
     const metrics: AiAnalysisMetric[] = [
-      { label: 'Appartements', value: `${s.totalApartments}`, trend: 'neutral' },
-      { label: 'Occupés', value: `${s.occupiedApartments}`, trend: 'neutral' },
-      { label: 'Disponibles', value: `${s.availableApartments}`, trend: 'neutral' },
-      { label: 'Taux occupation', value: `${occupancyRate}%`, trend: occupancyRate >= 80 ? 'up' : 'down' },
+      { label: 'Immeubles', value: `${s.totalBuildings}`, trend: 'neutral' },
+      { label: 'Biens', value: `${s.totalApartments}`, trend: 'neutral' },
+      { label: 'Occupation', value: `${occupancyRate}%`, trend: occupancyRate >= 80 ? 'up' : 'down' },
       { label: 'Encaissé ce mois', value: `${s.collectedThisMonthXaf.toLocaleString('fr-FR')} XAF`, trend: 'up' },
       { label: 'Impayés', value: `${s.latePayments}`, trend: s.latePayments > 0 ? 'down' : 'up' },
+      { label: 'Vacants', value: `${s.availableApartments}`, trend: 'neutral' },
     ];
 
     const insights: string[] = [];
@@ -181,21 +282,22 @@ export class AiService {
 
     if (analysisType === 'revenue' || analysisType === 'overview') {
       insights.push(`Encaissements du mois : ${s.collectedThisMonthXaf.toLocaleString('fr-FR')} XAF`);
-      if (s.latePayments > 0) {
-        recommendations.push('Relancer les locataires en retard de paiement');
-      }
+      insights.push(`Potentiel loyer mensuel : ${s.potentialMonthlyRentXaf.toLocaleString('fr-FR')} XAF`);
+      if (s.latePayments > 0) recommendations.push('Relancer les locataires en retard');
     }
     if (analysisType === 'occupancy' || analysisType === 'overview') {
-      insights.push(`Taux d'occupation : ${occupancyRate}% (${s.occupiedApartments}/${s.totalApartments} portes)`);
+      insights.push(`Occupation : ${occupancyRate}% (${s.occupiedApartments}/${s.totalApartments})`);
       if (s.availableApartments > 0) {
-        recommendations.push(`${s.availableApartments} bien(s) disponible(s) — envisager une commercialisation`);
+        recommendations.push(`${s.availableApartments} bien(s) vacant(s) à commercialiser`);
       }
     }
     if (analysisType === 'delinquency' || analysisType === 'overview') {
       insights.push(`${s.latePayments} paiement(s) en retard, ${s.pendingPayments} en attente`);
-      if (s.latePayments > 0) {
-        recommendations.push('Consulter la liste des impayés et envoyer des relances');
-      }
+      if (s.latePayments > 0) recommendations.push('Ouvrir le module Paiements → Impayés');
+    }
+    if (ctx.buildings.length > 0 && (analysisType === 'revenue' || analysisType === 'overview')) {
+      const top = [...ctx.buildings].sort((a, b) => b.potentialRentXaf - a.potentialRentXaf)[0];
+      if (top) insights.push(`Immeuble au plus fort potentiel : ${top.name} (${top.potentialRentXaf.toLocaleString('fr-FR')} XAF/mois)`);
     }
 
     return {
@@ -203,7 +305,9 @@ export class AiService {
       summary: `Situation de ${ctx.organization.name} : ${s.totalApartments} portes, ${occupancyRate}% d'occupation, ${s.latePayments} impayé(s).`,
       metrics,
       insights: insights.length ? insights : ['Données insuffisantes pour une analyse approfondie'],
-      recommendations: recommendations.length ? recommendations : ['Complétez vos biens et locataires pour des analyses plus précises'],
+      recommendations: recommendations.length
+        ? recommendations
+        : ['Complétez biens et locataires pour des analyses plus précises'],
       poweredBy: 'local',
     };
   }

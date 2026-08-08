@@ -9,6 +9,7 @@ import { env } from '../../config/env.js';
 export interface AiOrganizationContext {
   organization: { id: string; name: string; city: string; plan: string };
   summary: {
+    totalBuildings: number;
     totalApartments: number;
     availableApartments: number;
     occupiedApartments: number;
@@ -17,7 +18,15 @@ export interface AiOrganizationContext {
     latePayments: number;
     pendingPayments: number;
     collectedThisMonthXaf: number;
+    potentialMonthlyRentXaf: number;
+    occupancyRate: number;
   };
+  buildings: Array<{
+    name: string;
+    apartmentCount: number;
+    occupiedCount: number;
+    potentialRentXaf: number;
+  }>;
   latePayments: Array<{
     tenantName: string;
     apartmentLabel: string;
@@ -25,7 +34,7 @@ export interface AiOrganizationContext {
     dueDate: string;
     period: string;
   }>;
-  availableApartments: Array<{ label: string; rentXaf: number }>;
+  availableApartments: Array<{ label: string; rentXaf: number; buildingName?: string }>;
   expiringLeases: Array<{ tenantName: string; apartmentLabel: string; endDate: string }>;
 }
 
@@ -63,6 +72,7 @@ export class AiContextService {
     leaseExpiryLimit.setDate(leaseExpiryLimit.getDate() + 30);
 
     const [
+      totalBuildings,
       totalApartments,
       availableApartments,
       occupiedApartments,
@@ -74,7 +84,10 @@ export class AiContextService {
       latePayments,
       availableApts,
       expiringLeases,
+      buildingsRaw,
+      allAptsRent,
     ] = await Promise.all([
+      this.prisma.building.count({ where: { organizationId } }),
       this.prisma.apartment.count({ where: { organizationId } }),
       this.prisma.apartment.count({ where: { organizationId, status: ApartmentStatus.AVAILABLE } }),
       this.prisma.apartment.count({ where: { organizationId, status: ApartmentStatus.OCCUPIED } }),
@@ -103,7 +116,7 @@ export class AiContextService {
       this.prisma.apartment.findMany({
         where: { organizationId, status: ApartmentStatus.AVAILABLE },
         take: 5,
-        select: { label: true, rentAmount: true },
+        select: { label: true, rentAmount: true, building: { select: { name: true } } },
       }),
       this.prisma.lease.findMany({
         where: {
@@ -115,16 +128,46 @@ export class AiContextService {
         orderBy: { endDate: 'asc' },
         include: { tenant: true, apartment: true },
       }),
+      this.prisma.building.findMany({
+        where: { organizationId },
+        take: 8,
+        select: {
+          name: true,
+          apartments: { select: { status: true, rentAmount: true } },
+        },
+      }),
+      this.prisma.apartment.findMany({
+        where: { organizationId },
+        select: { rentAmount: true },
+      }),
     ]);
 
     const collectedThisMonthXaf = collectedPayments.reduce(
       (sum, p) => sum + decimalToNumber(p.amountPaid),
       0,
     );
+    const potentialMonthlyRentXaf = allAptsRent.reduce(
+      (sum, a) => sum + decimalToNumber(a.rentAmount),
+      0,
+    );
+    const occupancyRate =
+      totalApartments > 0 ? Math.round((occupiedApartments / totalApartments) * 100) : 0;
+
+    const buildings = buildingsRaw.map((b) => {
+      const occupiedCount = b.apartments.filter((a) => a.status === ApartmentStatus.OCCUPIED).length;
+      const potentialRentXaf = b.apartments.reduce((s, a) => s + decimalToNumber(a.rentAmount), 0);
+      return {
+        name: b.name,
+        apartmentCount: b.apartments.length,
+        occupiedCount,
+        potentialRentXaf,
+      };
+    });
 
     return {
       organization: { id: org.id, name: org.name, city: org.city, plan: org.plan },
       summary: {
+        totalBuildings,
         totalApartments,
         availableApartments,
         occupiedApartments,
@@ -133,22 +176,26 @@ export class AiContextService {
         latePayments: latePaymentsCount,
         pendingPayments: pendingPaymentsCount,
         collectedThisMonthXaf,
+        potentialMonthlyRentXaf,
+        occupancyRate,
       },
+      buildings,
       latePayments: latePayments.map((p) => ({
         tenantName: `${p.lease.tenant.firstName} ${p.lease.tenant.lastName}`,
         apartmentLabel: p.lease.apartment.label,
         amountXaf: decimalToNumber(p.amount),
-        dueDate: p.dueDate.toISOString().split('T')[0],
+        dueDate: p.dueDate.toISOString().split('T')[0]!,
         period: `${p.periodMonth}/${p.periodYear}`,
       })),
       availableApartments: availableApts.map((a) => ({
         label: a.label,
         rentXaf: decimalToNumber(a.rentAmount),
+        buildingName: a.building?.name,
       })),
       expiringLeases: expiringLeases.map((l) => ({
         tenantName: `${l.tenant.firstName} ${l.tenant.lastName}`,
         apartmentLabel: l.apartment.label,
-        endDate: l.endDate.toISOString().split('T')[0],
+        endDate: l.endDate.toISOString().split('T')[0]!,
       })),
     };
   }

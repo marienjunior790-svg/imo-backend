@@ -18,12 +18,14 @@ const service = container.resolve(AiService);
 
 router.use(...orgStaffPipeline);
 
-/** GET /ai/suggestions — questions suggérées pour l'assistant */
+/** GET /ai/suggestions — questions suggérées (contextuelles si org dispo) */
 router.get(
   '/suggestions',
   requirePermission(Permission.AI_USE),
-  asyncHandler(async (_req, res) => {
-    sendSuccess(res, { suggestions: service.getSuggestions() });
+  asyncHandler(async (req, res) => {
+    const orgId = getOrganizationId(req);
+    const suggestions = await service.contextualSuggestions(orgId);
+    sendSuccess(res, { suggestions });
   }),
 );
 
@@ -33,6 +35,17 @@ router.get(
   requirePermission(Permission.AI_USE),
   asyncHandler(async (_req, res) => {
     sendSuccess(res, { types: service.getAnalysisTypes() });
+  }),
+);
+
+/** GET /ai/forecast — estimations déterministes (pas de ML) */
+router.get(
+  '/forecast',
+  requirePermission(Permission.AI_USE),
+  requireFeature(FeatureKey.ACCESS_LIA),
+  asyncHandler(async (req, res) => {
+    const result = await service.forecast(getOrganizationId(req), req.user!.userId, req.user!.role);
+    sendSuccess(res, result);
   }),
 );
 
