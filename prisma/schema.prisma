@@ -188,6 +188,7 @@ model Organization {
   messages        Message[]
   staffTasks      StaffTask[]
   reminders       Reminder[]
+  buildingExpenses BuildingExpense[]
 
   @@index([type])
   @@index([subscriptionStatus])
@@ -276,6 +277,7 @@ model User {
   createdTasks         StaffTask[]         @relation("CreatedTasks")
   invitationsSent      Invitation[]        @relation("InvitationsSent")
   memberships          Membership[]        @relation("UserMemberships")
+  buildingExpenses     BuildingExpense[]   @relation("ExpenseCreatedBy")
 
   @@index([organizationId])
   @@index([role])
@@ -423,6 +425,7 @@ model Building {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   apartments   Apartment[]
+  expenses     BuildingExpense[]
 
   @@index([organizationId])
   @@index([organizationId, city])
@@ -474,6 +477,7 @@ model Apartment {
   maintenanceTickets MaintenanceTicket[]
   applications RentalApplication[]
   propertyInspections PropertyInspection[]
+  expenses     BuildingExpense[]
 
   @@index([organizationId])
   @@index([organizationId, status])
@@ -710,6 +714,48 @@ model RentFollowUpLog {
 
 // ─── Maintenance (parcours 4) ────────────────────────────────────────────────
 
+enum ExpenseCategory {
+  MAINTENANCE
+  REPAIR
+  ELECTRICITY
+  WATER
+  CLEANING
+  SECURITY
+  INSURANCE
+  TAX
+  WORKS
+  OTHER
+}
+
+/// Dépenses rattachées à un immeuble (et optionnellement un logement / ticket).
+model BuildingExpense {
+  id                   String          @id @default(cuid())
+  organizationId       String
+  buildingId           String
+  apartmentId          String?
+  maintenanceTicketId  String?
+  amount               Decimal         @db.Decimal(12, 0)
+  currency             String          @default("XAF")
+  category             ExpenseCategory @default(OTHER)
+  incurredAt           DateTime        @db.Date
+  description          String?
+  vendor               String?
+  createdById          String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  building          Building           @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  apartment         Apartment?         @relation(fields: [apartmentId], references: [id], onDelete: SetNull)
+  maintenanceTicket MaintenanceTicket? @relation(fields: [maintenanceTicketId], references: [id], onDelete: SetNull)
+  createdBy         User?              @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, buildingId])
+  @@index([organizationId, incurredAt])
+  @@index([buildingId, category])
+  @@map("building_expenses")
+}
+
 model MaintenanceTicket {
   id               String                  @id @default(cuid())
   organizationId   String
@@ -725,6 +771,9 @@ model MaintenanceTicket {
   reportedById     String?
   /// Photos d'intervention — { before: PhotoRef[], after: PhotoRef[] } (voir maintenance.photos.ts)
   photos           Json?
+  /// Coûts d'intervention (XAF)
+  estimatedCost    Decimal?                @db.Decimal(12, 0)
+  actualCost       Decimal?                @db.Decimal(12, 0)
   closedAt         DateTime?
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
@@ -736,6 +785,7 @@ model MaintenanceTicket {
   reportedBy   User?        @relation("ReportedTickets", fields: [reportedById], references: [id], onDelete: SetNull)
   assignedTo   User?        @relation("AssignedTickets", fields: [assignedToId], references: [id], onDelete: SetNull)
   events       MaintenanceTicketEvent[]
+  expenses     BuildingExpense[]
 
   @@index([organizationId, status])
   @@index([organizationId, createdAt])

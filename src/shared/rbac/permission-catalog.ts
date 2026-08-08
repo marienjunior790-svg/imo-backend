@@ -79,6 +79,7 @@ export const PERMISSION_CATALOG: PermissionDef[] = [
   { key: 'REVENUE_VIEW', label: 'Voir revenus', category: 'read', module: 'REVENUE' },
   { key: 'REVENUE_EXPORT', label: 'Exporter revenus', category: 'export', module: 'REVENUE' },
   ...crud('BUILDING', 'immeubles'),
+  ...crud('EXPENSE', 'dépenses immeuble', { export: false }),
   ...crud('APARTMENT', 'appartements'),
   ...crud('TENANT', 'locataires'),
   ...LEASE,

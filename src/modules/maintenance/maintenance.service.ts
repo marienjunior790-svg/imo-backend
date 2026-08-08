@@ -54,13 +54,19 @@ export class MaintenanceService {
     organizationId: string,
     skip: number,
     limit: number,
-    filters: { status?: MaintenanceTicketStatus; priority?: MaintenancePriority; apartmentId?: string },
+    filters: {
+      status?: MaintenanceTicketStatus;
+      priority?: MaintenancePriority;
+      apartmentId?: string;
+      buildingId?: string;
+    },
   ) {
     const where: Prisma.MaintenanceTicketWhereInput = {
       organizationId,
       ...(filters.status && { status: filters.status }),
       ...(filters.priority && { priority: filters.priority }),
       ...(filters.apartmentId && { apartmentId: filters.apartmentId }),
+      ...(filters.buildingId && { apartment: { buildingId: filters.buildingId } }),
     };
 
     const [items, total] = await Promise.all([

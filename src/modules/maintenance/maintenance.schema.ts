@@ -30,6 +30,7 @@ export const maintenanceListQuerySchema = z.object({
   status: z.nativeEnum(MaintenanceTicketStatus).optional(),
   priority: z.nativeEnum(MaintenancePriority).optional(),
   apartmentId: z.string().optional(),
+  buildingId: z.string().optional(),
 });
 
 export const addNoteSchema = z.object({

@@ -38,11 +38,22 @@ type CreatePaymentRepoInput = {
 export class PaymentRepository {
   constructor(@inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  findMany(organizationId: string, skip: number, limit: number, filters: { status?: PaymentStatus; leaseId?: string }) {
+  findMany(organizationId: string, skip: number, limit: number, filters: {
+    status?: PaymentStatus;
+    leaseId?: string;
+    buildingId?: string;
+    apartmentId?: string;
+  }) {
     const where: Prisma.PaymentWhereInput = {
       organizationId,
       ...(filters.status && { status: filters.status }),
       ...(filters.leaseId && { leaseId: filters.leaseId }),
+      ...((filters.buildingId || filters.apartmentId) && {
+        lease: {
+          ...(filters.apartmentId && { apartmentId: filters.apartmentId }),
+          ...(filters.buildingId && { apartment: { buildingId: filters.buildingId } }),
+        },
+      }),
     };
 
     return Promise.all([
@@ -146,7 +157,12 @@ export class PaymentService {
     @inject(NotificationService) private readonly notifications: NotificationService,
   ) {}
 
-  async list(organizationId: string, page: number, limit: number, skip: number, filters: { status?: PaymentStatus; leaseId?: string }) {
+  async list(organizationId: string, page: number, limit: number, skip: number, filters: {
+    status?: PaymentStatus;
+    leaseId?: string;
+    buildingId?: string;
+    apartmentId?: string;
+  }) {
     await this.repo.markLatePayments();
     const [items, total] = await this.repo.findMany(organizationId, skip, limit, filters);
     return { items, total };

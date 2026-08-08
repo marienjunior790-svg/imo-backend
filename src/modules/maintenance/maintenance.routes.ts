@@ -35,12 +35,18 @@ router.get(
   asyncHandler(async (req, res) => {
     const orgId = getOrganizationId(req);
     const { page, limit, skip } = getPagination(req.query as { page?: string; limit?: string });
-    const { status, priority, apartmentId } = req.query as {
+    const { status, priority, apartmentId, buildingId } = req.query as {
       status?: import('@prisma/client').MaintenanceTicketStatus;
       priority?: import('@prisma/client').MaintenancePriority;
       apartmentId?: string;
+      buildingId?: string;
     };
-    const { items, total } = await service.list(orgId, skip, limit, { status, priority, apartmentId });
+    const { items, total } = await service.list(orgId, skip, limit, {
+      status,
+      priority,
+      apartmentId,
+      buildingId,
+    });
     sendSuccess(res, items, undefined, 200, toPaginationMeta(page, limit, total));
   }),
 );

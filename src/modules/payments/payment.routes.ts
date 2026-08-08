@@ -59,8 +59,18 @@ router.get(
   asyncHandler(async (req, res) => {
     const orgId = getOrganizationId(req);
     const { page, limit, skip } = getPagination(req.query as { page?: string; limit?: string });
-    const { status, leaseId } = req.query as { status?: PaymentStatus; leaseId?: string };
-    const { items, total } = await service.list(orgId, page, limit, skip, { status, leaseId });
+    const { status, leaseId, buildingId, apartmentId } = req.query as {
+      status?: PaymentStatus;
+      leaseId?: string;
+      buildingId?: string;
+      apartmentId?: string;
+    };
+    const { items, total } = await service.list(orgId, page, limit, skip, {
+      status,
+      leaseId,
+      buildingId,
+      apartmentId,
+    });
     sendSuccess(res, items, undefined, 200, toPaginationMeta(page, limit, total));
   }),
 );

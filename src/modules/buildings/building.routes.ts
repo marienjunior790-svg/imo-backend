@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { container } from 'tsyringe';
 import { BuildingService } from './building.service.js';
+import { BuildingExpenseService } from './building-expense.service.js';
 import { createBuildingSchema, generateApartmentsSchema, listQuerySchema, updateBuildingSchema } from './building.schema.js';
+import { createExpenseSchema, updateExpenseSchema } from './building-expense.schema.js';
 import { getOrganizationId } from '../../shared/middleware/auth.middleware.js';
 import { Permission } from '../../shared/auth/permissions.js';
 import { orgStaffPipeline } from '../../shared/middleware/security.stack.js';
@@ -14,6 +16,7 @@ import { auditSuccess, withAudit } from '../../shared/audit/audit-request.js';
 
 const router = Router();
 const service = container.resolve(BuildingService);
+const expenseService = container.resolve(BuildingExpenseService);
 
 router.use(...orgStaffPipeline);
 
@@ -26,6 +29,74 @@ router.get(
     const { page, limit, skip } = getPagination(req.query as { page?: string; limit?: string });
     const { items, total } = await service.list(orgId, page, limit, skip);
     sendSuccess(res, items, undefined, 200, toPaginationMeta(page, limit, total));
+  }),
+);
+
+router.get(
+  '/:id/overview',
+  requirePermission(Permission.BUILDING_VIEW),
+  requireOrgResource('building'),
+  asyncHandler(async (req, res) => {
+    sendSuccess(res, await service.getOverview(getOrganizationId(req), req.params.id));
+  }),
+);
+
+router.get(
+  '/:id/expenses',
+  requirePermission(Permission.EXPENSE_VIEW),
+  requireOrgResource('building'),
+  asyncHandler(async (req, res) => {
+    sendSuccess(res, await expenseService.list(getOrganizationId(req), req.params.id));
+  }),
+);
+
+router.post(
+  '/:id/expenses',
+  requirePermission(Permission.EXPENSE_CREATE),
+  requireOrgResource('building'),
+  validateBody(createExpenseSchema),
+  asyncHandler(async (req, res) => {
+    const created = await withAudit(
+      req,
+      AuditAction.EXPENSE_CREATE,
+      () => expenseService.create(getOrganizationId(req), req.params.id, req.body, req.user!.userId),
+      (r) => ({
+        resourceType: 'BuildingExpense',
+        resourceId: r.id,
+        newValue: { amount: r.amount, category: r.category },
+      }),
+    );
+    sendSuccess(res, created, 'Dépense créée', 201);
+  }),
+);
+
+router.put(
+  '/:id/expenses/:expenseId',
+  requirePermission(Permission.EXPENSE_EDIT),
+  requireOrgResource('building'),
+  validateBody(updateExpenseSchema),
+  asyncHandler(async (req, res) => {
+    const updated = await withAudit(
+      req,
+      AuditAction.EXPENSE_UPDATE,
+      () => expenseService.update(getOrganizationId(req), req.params.id, req.params.expenseId, req.body),
+      (r) => ({ resourceType: 'BuildingExpense', resourceId: r.id }),
+    );
+    sendSuccess(res, updated, 'Dépense mise à jour');
+  }),
+);
+
+router.delete(
+  '/:id/expenses/:expenseId',
+  requirePermission(Permission.EXPENSE_DELETE),
+  requireOrgResource('building'),
+  asyncHandler(async (req, res) => {
+    const deleted = await expenseService.remove(getOrganizationId(req), req.params.id, req.params.expenseId);
+    await auditSuccess(req, AuditAction.EXPENSE_DELETE, {
+      resourceType: 'BuildingExpense',
+      resourceId: deleted.id,
+    });
+    sendSuccess(res, null, 'Dépense supprimée');
   }),
 );
 
@@ -43,11 +114,16 @@ router.post(
   requirePermission(Permission.BUILDING_CREATE),
   validateBody(createBuildingSchema),
   asyncHandler(async (req, res) => {
-    const created = await withAudit(req, AuditAction.BUILDING_CREATE, () => service.create(getOrganizationId(req), req.body), (r) => ({
-      resourceType: 'Building',
-      resourceId: r.id,
-      newValue: { name: r.name, address: r.address },
-    }));
+    const created = await withAudit(
+      req,
+      AuditAction.BUILDING_CREATE,
+      () => service.create(getOrganizationId(req), req.body),
+      (r) => ({
+        resourceType: 'Building',
+        resourceId: r.id,
+        newValue: { name: r.name, address: r.address },
+      }),
+    );
     sendSuccess(res, created, 'Immeuble créé', 201);
   }),
 );
@@ -60,12 +136,17 @@ router.put(
   asyncHandler(async (req, res) => {
     const orgId = getOrganizationId(req);
     const before = await service.get(orgId, req.params.id);
-    const updated = await withAudit(req, AuditAction.BUILDING_UPDATE, () => service.update(orgId, req.params.id, req.body), (r) => ({
-      resourceType: 'Building',
-      resourceId: r.id,
-      oldValue: { name: before.name },
-      newValue: { name: r.name },
-    }));
+    const updated = await withAudit(
+      req,
+      AuditAction.BUILDING_UPDATE,
+      () => service.update(orgId, req.params.id, req.body),
+      (r) => ({
+        resourceType: 'Building',
+        resourceId: r.id,
+        oldValue: { name: before.name },
+        newValue: { name: r.name },
+      }),
+    );
     sendSuccess(res, updated, 'Immeuble mis à jour');
   }),
 );

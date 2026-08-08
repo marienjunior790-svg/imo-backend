@@ -22,6 +22,8 @@ export const paymentListQuerySchema = z.object({
   limit: z.string().optional(),
   status: z.nativeEnum(PaymentStatus).optional(),
   leaseId: z.string().optional(),
+  buildingId: z.string().optional(),
+  apartmentId: z.string().optional(),
 });
 
 export const mobileMoneyWebhookSchema = z.object({
