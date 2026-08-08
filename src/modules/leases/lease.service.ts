@@ -298,10 +298,17 @@ export class LeaseService {
     return updated;
   }
 
-  async generateContractPdf(organizationId: string, id: string) {
+  async generateContractPdf(
+    organizationId: string,
+    id: string,
+    options?: { agentName?: string | null; agentRole?: string | null },
+  ) {
     await this.subscriptionService.assertPdfLeaseAllowed(organizationId);
     const lease = await this.get(organizationId, id);
-    const pdfBuffer = await this.pdfService.generateLeaseContract(lease);
+    const pdfBuffer = await this.pdfService.generateLeaseContract(lease, {
+      agentName: options?.agentName,
+      agentRole: options?.agentRole,
+    });
 
     const fileName = `contrat-${lease.id}.pdf`;
     const upload = await this.cloudinary.uploadBuffer(pdfBuffer, {
@@ -325,6 +332,12 @@ export class LeaseService {
       },
     });
 
-    return { url: upload.url, fileName };
+    return {
+      url: upload.url,
+      fileName,
+      leaseId: lease.id,
+      tenantName: `${lease.tenant.firstName} ${lease.tenant.lastName}`,
+      apartmentLabel: lease.apartment.label,
+    };
   }
 }

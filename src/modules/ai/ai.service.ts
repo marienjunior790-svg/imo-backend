@@ -1,7 +1,8 @@
 import { inject, injectable } from 'tsyringe';
-import { UserRole } from '@prisma/client';
+import { LeaseStatus, UserRole } from '@prisma/client';
 import { env } from '../../config/env.js';
 import { OpenAiClient, ChatMessage } from '../../infrastructure/openai/openai.client.js';
+import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { AiContextService, type AiOrganizationContext } from './ai.context.service.js';
 import {
   buildContextualSuggestions,
@@ -10,8 +11,10 @@ import {
   type AiActionHint,
 } from './ai.fallback.js';
 import { SubscriptionService } from '../subscriptions/subscription.service.js';
+import { LeaseService } from '../leases/lease.service.js';
 import { PlanLimitError } from '../../shared/errors/subscription.error.js';
-import type { AiAnalyzeDto, AiChatInput } from './ai.types.js';
+import { ValidationError } from '../../shared/errors/app.error.js';
+import type { AiAnalyzeDto, AiChatInput, AiContractInput } from './ai.types.js';
 
 export interface AiChatResponse {
   reply: string;
@@ -19,6 +22,9 @@ export interface AiChatResponse {
   actions: AiActionHint[];
   poweredBy: 'openai' | 'local';
   contextUsed: boolean;
+  /** Transcription ou texte normalisé le cas échéant */
+  transcript?: string;
+  documentUrl?: string;
 }
 
 export interface AiAnalysisMetric {
@@ -49,8 +55,9 @@ const ASSISTANT_PROMPT = `Tu es le copilote immobilier ITC (ITC IMMO • TEC •
 Tu réponds en français, de façon courte, claire et premium (3 à 8 phrases max).
 Tu t'appuies UNIQUEMENT sur le contexte JSON fourni — n'invente jamais de chiffres.
 Monnaie : XAF. Si une info manque, dis-le franchement.
-Pour les analyses chiffrées lourdes, oriente vers l'onglet Analyses LIA.
-Termine parfois par une suggestion d'action concrète (voir impayés, relancer, etc.).`;
+Tu peux aider à générer un vrai contrat PDF de location (bailleur, locataire, agent) via l'action dédiée — si l'utilisateur demande un contrat, oriente-le clairement.
+Tu comprends aussi le français approximatif (fautes, dictée, abréviations).
+Termine parfois par une suggestion d'action concrète (voir impayés, générer un contrat, etc.).`;
 
 const LIA_ANALYSIS_PROMPT = `Tu es LIA (Logiciel d'Intelligence Analytique) pour ITC.
 Tu produis des analyses immobilières structurées en français.
@@ -71,6 +78,8 @@ export class AiService {
     @inject(OpenAiClient) private readonly openai: OpenAiClient,
     @inject(AiContextService) private readonly contextService: AiContextService,
     @inject(SubscriptionService) private readonly subscriptionService: SubscriptionService,
+    @inject(LeaseService) private readonly leaseService: LeaseService,
+    @inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   getSuggestions(): string[] {
@@ -78,7 +87,7 @@ export class AiService {
       'Résumer mon patrimoine',
       'Voir mes impayés',
       'Quels logements sont vacants ?',
-      'Contrats à échéance',
+      'Générer un contrat de location',
       'Quels sont les risques actuels ?',
       'Comment ajouter un locataire ?',
     ];
@@ -101,14 +110,31 @@ export class AiService {
   ): Promise<AiChatResponse> {
     await this.assertAiAccess(organizationId, userId, role);
 
+    let message = input.message.trim();
+    if (input.normalizeText && this.openai.isAvailable()) {
+      try {
+        message = await this.openai.normalizeImperfectText(message);
+      } catch {
+        /* garde le texte brut */
+      }
+    }
+
+    // Intent contrat PDF
+    if (this.isContractIntent(message)) {
+      const contract = await this.generateContract(organizationId, userId, role, {
+        leaseId: this.extractLeaseId(message),
+      });
+      return contract;
+    }
+
     const ctx = await this.contextService.buildContext(organizationId);
     const contextJson = this.contextService.toPromptContext(ctx);
     const suggestions = buildContextualSuggestions(ctx);
-    const actions = resolveChatActions(input.message);
+    const actions = resolveChatActions(message);
 
     if (!this.openai.isAvailable()) {
       return {
-        reply: buildLocalFallbackReply(input.message, ctx),
+        reply: buildLocalFallbackReply(message, ctx),
         suggestions,
         actions,
         poweredBy: 'local',
@@ -121,7 +147,7 @@ export class AiService {
       { role: 'system', content: ASSISTANT_PROMPT },
       { role: 'system', content: `Contexte organisation (JSON):\n${contextJson}` },
       ...history.map((h) => ({ role: h.role, content: h.content }) as ChatMessage),
-      { role: 'user', content: input.message },
+      { role: 'user', content: message },
     ];
 
     try {
@@ -135,9 +161,188 @@ export class AiService {
       };
     } catch {
       return {
-        reply: buildLocalFallbackReply(input.message, ctx),
+        reply: buildLocalFallbackReply(message, ctx),
         suggestions,
         actions,
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+  }
+
+  /** Audio → transcription → chat immobilier */
+  async chatFromAudio(
+    organizationId: string,
+    userId: string,
+    role: UserRole,
+    file: Express.Multer.File,
+    history?: AiChatInput['history'],
+  ): Promise<AiChatResponse> {
+    await this.assertAiAccess(organizationId, userId, role);
+    if (!this.openai.isAvailable()) {
+      throw new ValidationError('Transcription audio indisponible : OPENAI_API_KEY manquante');
+    }
+
+    const transcript = await this.openai.transcribe(
+      file.buffer,
+      file.originalname || 'audio.m4a',
+      file.mimetype || 'audio/m4a',
+    );
+
+    const result = await this.chat(organizationId, userId, role, {
+      message: transcript,
+      history,
+      normalizeText: true,
+    });
+
+    return { ...result, transcript };
+  }
+
+  /** Image → lecture (OCR / manuscrit / faux mots) → réponse copilote */
+  async chatFromImage(
+    organizationId: string,
+    userId: string,
+    role: UserRole,
+    file: Express.Multer.File,
+    userPrompt?: string,
+    history?: AiChatInput['history'],
+  ): Promise<AiChatResponse> {
+    await this.assertAiAccess(organizationId, userId, role);
+    if (!this.openai.isAvailable()) {
+      throw new ValidationError('Lecture d’image indisponible : OPENAI_API_KEY manquante');
+    }
+
+    const ctx = await this.contextService.buildContext(organizationId);
+    const contextJson = this.contextService.toPromptContext(ctx);
+    const base64 = file.buffer.toString('base64');
+    const prompt =
+      (userPrompt?.trim() ||
+        'Lis cette image (document, photo, manuscrit, SMS). Extrais le texte même approximatif, corrige les fautes, ' +
+          'puis explique en 3–6 phrases ce qui est utile pour la gestion immobilière. Si c’est un contrat ou une pièce d’identité, résume les infos clés.') +
+      `\n\nContexte org (JSON):\n${contextJson}`;
+
+    const reading = await this.openai.readImage({
+      imageBase64: base64,
+      mimeType: file.mimetype || 'image/jpeg',
+      prompt,
+    });
+
+    const suggestions = buildContextualSuggestions(ctx);
+    const actions = resolveChatActions(userPrompt || reading);
+
+    return {
+      reply: reading,
+      suggestions,
+      actions,
+      poweredBy: 'openai',
+      contextUsed: true,
+      transcript: reading.slice(0, 500),
+    };
+  }
+
+  async normalizeText(
+    organizationId: string,
+    userId: string,
+    role: UserRole,
+    text: string,
+  ): Promise<{ original: string; corrected: string; poweredBy: 'openai' | 'local' }> {
+    await this.assertAiAccess(organizationId, userId, role);
+    if (!this.openai.isAvailable()) {
+      return { original: text, corrected: text.trim(), poweredBy: 'local' };
+    }
+    const corrected = await this.openai.normalizeImperfectText(text);
+    return { original: text, corrected, poweredBy: 'openai' };
+  }
+
+  /** Génère un PDF de contrat pro (signatures bailleur / locataire / agent). */
+  async generateContract(
+    organizationId: string,
+    userId: string,
+    role: UserRole,
+    input: AiContractInput,
+  ): Promise<AiChatResponse> {
+    await this.assertAiAccess(organizationId, userId, role);
+
+    const agent = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true, role: true },
+    });
+    const agentName = agent ? `${agent.firstName} ${agent.lastName}`.trim() : null;
+
+    if (!input.leaseId) {
+      const leases = await this.prisma.lease.findMany({
+        where: {
+          organizationId,
+          status: { in: [LeaseStatus.DRAFT, LeaseStatus.ACTIVE, LeaseStatus.EXPIRED] },
+        },
+        take: 8,
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          tenant: { select: { firstName: true, lastName: true } },
+          apartment: { select: { label: true } },
+        },
+      });
+
+      if (leases.length === 0) {
+        return {
+          reply:
+            'Aucun bail trouvé pour générer un contrat. Créez d’abord un contrat (locataire + logement), puis redemandez-moi de générer le PDF.',
+          suggestions: ['Comment ajouter un locataire ?', 'Voir les contrats'],
+          actions: [{ label: 'Créer / voir les contrats', route: '/leases' }],
+          poweredBy: 'local',
+          contextUsed: true,
+        };
+      }
+
+      const list = leases
+        .map(
+          (l, i) =>
+            `${i + 1}. ${l.tenant.firstName} ${l.tenant.lastName} — ${l.apartment.label} (${l.status}) · id \`${l.id}\``,
+        )
+        .join('\n');
+
+      return {
+        reply:
+          `Je peux générer un contrat PDF professionnel (bailleur, locataire${agentName ? ', agent' : ''}).\n` +
+          `Indiquez le bail, par ex. « génère le contrat ${leases[0]!.id} », ou choisissez dans Contrats.\n\n${list}`,
+        suggestions: leases.slice(0, 3).map((l) => `Génère le contrat ${l.id}`),
+        actions: [
+          { label: 'Ouvrir les contrats', route: '/leases' },
+          ...leases.slice(0, 2).map((l) => ({
+            label: `PDF · ${l.tenant.lastName}`,
+            route: `/leases?generate=${l.id}`,
+          })),
+        ],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    try {
+      const pdf = await this.leaseService.generateContractPdf(organizationId, input.leaseId, {
+        agentName,
+        agentRole: role === UserRole.OWNER ? 'Propriétaire / Bailleur' : 'Agent immobilier / Gestionnaire',
+      });
+
+      return {
+        reply:
+          `Contrat de location généré pour ${pdf.tenantName} (${pdf.apartmentLabel}).\n` +
+          `Le PDF inclut les blocs de signature Bailleur, Locataire et Agent. Vérifiez les clauses avant signature.`,
+        suggestions: ['Voir les impayés', 'Quels contrats arrivent à échéance ?'],
+        actions: [
+          { label: 'Ouvrir le PDF', url: pdf.url },
+          { label: 'Voir les contrats', route: '/leases' },
+        ],
+        poweredBy: 'local',
+        contextUsed: true,
+        documentUrl: pdf.url,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Génération impossible';
+      return {
+        reply: `Impossible de générer le contrat : ${msg}`,
+        suggestions: ['Voir les contrats', 'Générer un contrat de location'],
+        actions: [{ label: 'Voir les contrats', route: '/leases' }],
         poweredBy: 'local',
         contextUsed: true,
       };
@@ -189,7 +394,6 @@ export class AiService {
     }
   }
 
-  /** Prévisions = estimations déterministes à partir des données org (pas de ML). */
   async forecast(organizationId: string, userId: string, role: UserRole): Promise<AiForecastResponse> {
     await this.assertLiaAccess(organizationId, userId, role);
     const ctx = await this.contextService.buildContext(organizationId);
@@ -247,6 +451,42 @@ export class AiService {
     } catch {
       return this.getSuggestions();
     }
+  }
+
+  private isContractIntent(message: string): boolean {
+    const q = message.toLowerCase();
+    const wants =
+      q.includes('contrat') ||
+      q.includes('bail') ||
+      q.includes('génér') ||
+      q.includes('gener') ||
+      q.includes('pdf');
+    const verb =
+      q.includes('génér') ||
+      q.includes('gener') ||
+      q.includes('crée') ||
+      q.includes('cree') ||
+      q.includes('établ') ||
+      q.includes('etabl') ||
+      q.includes('fais') ||
+      q.includes('fait') ||
+      q.includes('pdf');
+    // "génère un contrat" / "contrat de location pdf" / "générer le contrat clxxxx"
+    if ((q.includes('contrat') || q.includes('bail')) && verb) return true;
+    if (q.includes('contrat de location') && (q.includes('génér') || q.includes('gener') || q.includes('pdf'))) {
+      return true;
+    }
+    // Message qui n'est qu'une demande générique de génération de contrat
+    if (wants && (q.includes('contrat de location') || /^g[ée]n[eè]re?\b/.test(q))) {
+      return (q.includes('contrat') || q.includes('bail')) && verb;
+    }
+    return false;
+  }
+
+  private extractLeaseId(message: string): string | undefined {
+    // cuid-like token
+    const m = message.match(/\b(c[a-z0-9]{20,})\b/i);
+    return m?.[1];
   }
 
   private buildLocalAnalysis(

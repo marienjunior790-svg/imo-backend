@@ -2,7 +2,10 @@ import type { AiOrganizationContext } from './ai.context.service.js';
 
 export interface AiActionHint {
   label: string;
-  route: string;
+  /** Navigation in-app */
+  route?: string;
+  /** Lien externe (PDF contrat, etc.) */
+  url?: string;
 }
 
 /** Déduit des actions de navigation à partir de la question (pas de données inventées). */
@@ -37,13 +40,21 @@ export function resolveChatActions(message: string): AiActionHint[] {
     actions.push({ label: 'Ouvrir les rapports', route: '/reports' });
   }
 
-  // Dédupliquer par route
+  if (
+    (q.includes('génér') || q.includes('gener') || q.includes('crée') || q.includes('cree')) &&
+    (q.includes('contrat') || q.includes('bail'))
+  ) {
+    actions.unshift({ label: 'Voir les contrats', route: '/leases' });
+  }
+
+  // Dédupliquer par route/url
   const seen = new Set<string>();
   return actions.filter((a) => {
-    if (seen.has(a.route)) return false;
-    seen.add(a.route);
+    const key = a.url ?? a.route ?? a.label;
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
-  }).slice(0, 3);
+  }).slice(0, 4);
 }
 
 /** Réponses rule-based si OpenAI indisponible — basées uniquement sur le contexte org. */
@@ -150,7 +161,7 @@ export function buildContextualSuggestions(ctx: AiOrganizationContext): string[]
   else list.push('Quel est mon taux d\'occupation ?');
   if (ctx.expiringLeases.length > 0) list.push('Contrats à échéance');
   else list.push('Combien de contrats actifs ?');
+  list.push('Générer un contrat de location');
   list.push('Quels sont les risques actuels ?');
-  list.push('Comment ajouter un locataire ?');
   return list.slice(0, 6);
 }
