@@ -25,6 +25,7 @@ import portalRoutes from '../modules/portal/portal.routes.js';
 import notificationRoutes from '../modules/notifications/notification.routes.js';
 import notificationCenterRoutes from '../modules/notification-center/notification-center.routes.js';
 import inspectionRoutes from '../modules/inspections/inspection.routes.js';
+import agentsProvisionRoutes from '../modules/admin/agents.routes.js';
 import { PrismaService } from '../infrastructure/prisma/prisma.service.js';
 
 /** Priorité : APP_VERSION (start-prod) → npm_package_version → fallback RC */
@@ -88,6 +89,7 @@ router.use('/subscription', subscriptionRoutes);
 router.use('/automation', automationRoutes);
 router.use('/ai', aiRoutes);
 router.use('/admin', adminRoutes);
+router.use('/agents', agentsProvisionRoutes);
 router.use('/buildings', buildingRoutes);
 router.use('/apartments', apartmentRoutes);
 router.use('/tenants', tenantRoutes);

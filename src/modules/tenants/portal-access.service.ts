@@ -255,12 +255,12 @@ export class PortalAccessService {
 
   async regenerate(actor: PortalActor, tenantId: string) {
     this.assertCanProvision(actor);
-    return this.provision(actor, tenantId, { forceRegenerate: true });
+    return this.provision(actor, tenantId, { forceRegenerate: true, revealTemporaryPassword: true });
   }
 
   async reset(actor: PortalActor, tenantId: string) {
     this.assertCanSuspend(actor);
-    return this.provision(actor, tenantId, { forceRegenerate: true });
+    return this.provision(actor, tenantId, { forceRegenerate: true, revealTemporaryPassword: true });
   }
 
   async suspend(actor: PortalActor, tenantId: string) {

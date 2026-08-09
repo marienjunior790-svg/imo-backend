@@ -1,9 +1,9 @@
 import { inject, injectable } from 'tsyringe';
-import { ApartmentStatus, LeaseStatus, PortalAccessStatus, UserRole } from '@prisma/client';
+import { ApartmentStatus, LeaseStatus, PortalAccessStatus, Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
-import { NotFoundError } from '../../shared/errors/app.error.js';
+import { ConflictError, NotFoundError } from '../../shared/errors/app.error.js';
 import type { ReleaseTenantInput } from './tenant.schema.js';
-import { Prisma } from '@prisma/client';
+import { PortalAccessService } from './portal-access.service.js';
 
 export interface TenantInput {
   firstName: string;
@@ -109,6 +109,7 @@ export class TenantService {
   constructor(
     @inject(TenantRepository) private readonly repo: TenantRepository,
     @inject(PrismaService) private readonly prisma: PrismaService,
+    @inject(PortalAccessService) private readonly portalAccess: PortalAccessService,
   ) {}
 
   async list(organizationId: string, page: number, limit: number, skip: number, search?: string) {
@@ -122,6 +123,38 @@ export class TenantService {
     return tenant;
   }
 
+  /**
+   * CRM + Identity + Membership TENANT (provisionnement obligatoire).
+   * Si la provision échoue → rollback du dossier locataire.
+   */
+  async createWithAccount(
+    organizationId: string,
+    actor: { userId: string; role: UserRole; organizationId: string | null },
+    data: TenantInput,
+  ) {
+    const email = data.email?.trim().toLowerCase() || undefined;
+    if (email) {
+      const clash = await this.prisma.user.findFirst({ where: { email } });
+      if (clash) throw new ConflictError('Cet e-mail est déjà utilisé par un autre compte');
+    }
+
+    const tenant = await this.repo.create(organizationId, { ...data, email });
+    try {
+      const portalAccess = await this.portalAccess.provision(actor, tenant.id, {
+        revealTemporaryPassword: true,
+      });
+      return {
+        tenant: await this.get(organizationId, tenant.id),
+        portalAccess,
+        message: 'Locataire créé avec accès ITC',
+      };
+    } catch (err) {
+      await this.repo.delete(organizationId, tenant.id);
+      throw err;
+    }
+  }
+
+  /** @deprecated Prefer createWithAccount — CRM seul ne crée plus de fiche orpheline. */
   create(organizationId: string, data: TenantInput) {
     return this.repo.create(organizationId, data);
   }

@@ -183,12 +183,24 @@ router.post(
   requirePermission(Permission.TENANT_CREATE),
   validateBody(createTenantSchema),
   asyncHandler(async (req, res) => {
-    const created = await withAudit(req, AuditAction.TENANT_CREATE, () => service.create(getOrganizationId(req), req.body), (r) => ({
-      resourceType: 'Tenant',
-      resourceId: r.id,
-      newValue: { firstName: r.firstName, lastName: r.lastName },
-    }));
-    sendSuccess(res, created, 'Locataire créé', 201);
+    const orgId = getOrganizationId(req);
+    const a = actor(req);
+    const result = await withAudit(
+      req,
+      AuditAction.TENANT_CREATE,
+      () => service.createWithAccount(orgId, a, req.body),
+      (r) => ({
+        resourceType: 'Tenant',
+        resourceId: r.tenant.id,
+        newValue: {
+          firstName: r.tenant.firstName,
+          lastName: r.tenant.lastName,
+          portalProvisioned: Boolean(r.portalAccess?.provisioned),
+          identifier: r.portalAccess?.identifier ?? null,
+        },
+      }),
+    );
+    sendSuccess(res, result, 'Locataire créé avec accès ITC', 201);
   }),
 );
 

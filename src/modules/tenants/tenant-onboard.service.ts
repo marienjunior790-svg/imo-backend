@@ -44,7 +44,7 @@ export class TenantOnboardService {
       throw new ForbiddenError('Organisation invalide');
     }
 
-    const provisionPortal = input.provisionPortal !== false;
+    const provisionPortal = true; // Toujours provisionner Identity + Membership (jamais CRM orphelin)
     const leaseInput = input.lease;
     const activateLease = leaseInput ? leaseInput.activate !== false : false;
 

@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { container } from 'tsyringe';
 import { AdminService } from './admin.service.js';
+import { StaffProvisionService } from './staff-provision.service.js';
 import { createOrgUserSchema, updateOrgUserSchema } from './admin.schema.js';
+import { staffProvisionSchema } from './staff-provision.schema.js';
 import { Permission } from '../../shared/auth/permissions.js';
 import { adminUsersPipeline } from '../../shared/middleware/security.stack.js';
 import { requirePermission } from '../../shared/middleware/permission.middleware.js';
@@ -12,8 +14,41 @@ import { auditSuccess, withAudit } from '../../shared/audit/audit-request.js';
 
 const router = Router();
 const service = container.resolve(AdminService);
+const staffProvision = container.resolve(StaffProvisionService);
 
 router.use(...adminUsersPipeline);
+
+/** POST /admin/users/provision — Identity + Membership + mdp temporaire (AGENT/MANAGER/ACCOUNTANT) */
+router.post(
+  '/provision',
+  requirePermission(Permission.USER_CREATE),
+  validateBody(staffProvisionSchema),
+  asyncHandler(async (req, res) => {
+    const result = await withAudit(
+      req,
+      AuditAction.USER_CREATE,
+      () =>
+        staffProvision.provision(
+          {
+            userId: req.user!.userId,
+            role: req.user!.role,
+            organizationId: req.user!.organizationId,
+          },
+          req.body,
+        ),
+      (r) => ({
+        resourceType: 'User',
+        resourceId: r.user.id,
+        newValue: {
+          role: r.account.role,
+          identifier: r.account.identifier,
+          portalStatus: r.account.portalStatus,
+        },
+      }),
+    );
+    sendSuccess(res, result, 'Collaborateur provisionné', 201);
+  }),
+);
 
 router.get(
   '/',
