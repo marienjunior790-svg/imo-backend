@@ -23,7 +23,8 @@ export const registerSchema = z.object({
   lastName: z.string().min(2, 'Nom requis (min. 2 caractères)'),
   phone: z.string().optional(),
   organizationName: z.string().min(2, 'Nom d\'organisation requis'),
-  organizationType: z.enum(['AGENCY', 'OWNER']),
+  /** Optionnel — un seul type d’inscription produit. Défaut AGENCY. */
+  organizationType: z.enum(['AGENCY', 'OWNER']).optional().default('AGENCY'),
   onboarding: onboardingSchema.optional(),
 });
 
