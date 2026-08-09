@@ -1,4 +1,5 @@
 import type { AiOrganizationContext } from './ai.context.service.js';
+import { isAppHowtoIntent, resolveAppHowtoReply } from './ai.app-guide.js';
 
 export interface AiActionHint {
   label: string;
@@ -149,12 +150,16 @@ Posez une question précise, ou choisissez une suggestion ci-dessous.`;
   }
 
   if (isHelp(q)) {
-    return `Je suis le copilote immobilier d’ITC pour « ${org} ».
+    return resolveAppHowtoReply('comment marche application')
+      ?? `Je suis le copilote immobilier d’ITC pour « ${org} ».
 
 ${capabilitiesBlurb()}
 
-Exemples : « Voir mes impayés », « Quels logements sont vacants ? », « Générer un contrat », « Comment retirer un locataire ? ».`;
+Exemples : « Comment marche l’application ? », « Comment ajouter un locataire ? », « Voir mes impayés ».`;
   }
+
+  const howtoEarly = isAppHowtoIntent(message) ? resolveAppHowtoReply(message) : null;
+  if (howtoEarly) return howtoEarly;
 
   if (q.includes('retard') || q.includes('impaye') || q.includes('impayé')) {
     if (s.latePayments === 0) {

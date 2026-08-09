@@ -10,6 +10,7 @@ import {
   resolveChatActions,
   type AiActionHint,
 } from './ai.fallback.js';
+import { APP_GUIDE_PROMPT, isAppHowtoIntent, resolveAppHowtoReply } from './ai.app-guide.js';
 import {
   AiToolsService,
   OPENAI_TOOL_DEFINITIONS,
@@ -88,11 +89,14 @@ const ASSISTANT_PROMPT = `Tu es Intelligence ITC, copilote immobilier premium (I
 Règles de réponse :
 - Français clair, pro, humain. Salutations → réponds naturellement, puis 2–4 indicateurs utiles, puis 2 actions. Pas de dump froid pour « bonjour ».
 - Utilise les outils pour les données ITC réelles. N'invente JAMAIS de chiffres. Monnaie : XAF.
+- Questions « comment faire / où aller » dans l’application → guide pas à pas (menus, boutons). Tu es aussi le mode d’emploi d’ITC.
 - Pour générer un contrat PDF : appelle proposeGenerateLeasePdf puis explique que l'utilisateur doit CONFIRMER dans l'app. Ne prétends jamais que le PDF est déjà créé.
 - Pour un reçu/quittance PDF : proposeGeneratePaymentReceipt (paiement déjà payé) + confirmation.
 - Pour un avis de paiement / rappel de loyer PDF : proposeGeneratePaymentNotice + confirmation.
 - Retirer un locataire : oriente vers fiche Locataires → « Retirer le locataire ».
-- 3 à 8 phrases max sauf listes utiles.`;
+- 3 à 8 phrases max sauf listes / étapes utiles.
+
+${APP_GUIDE_PROMPT}`;
 
 const LIA_ANALYSIS_PROMPT = `Tu es LIA (Logiciel d'Intelligence Analytique) pour ITC.
 Tu produis des analyses immobilières structurées en français.
@@ -121,14 +125,14 @@ export class AiService {
 
   getSuggestions(): string[] {
     return [
+      'Comment marche l’application ?',
+      'Comment ajouter un locataire ?',
+      'Comment créer un agent ?',
       'Résumer mon patrimoine',
       'Voir mes impayés',
       'Quels logements sont vacants ?',
       'Générer un contrat de location',
-      'Générer un reçu de paiement',
-      'Générer un avis de paiement',
-      'Quels sont les risques actuels ?',
-      'Comment ajouter un locataire ?',
+      'Comment utiliser Intelligence ITC ?',
     ];
   }
 
@@ -187,6 +191,21 @@ export class AiService {
       return this.proposeLeasePdf(organizationId, userId, role, this.extractCuid(message));
     }
 
+    // Mode d’emploi app — avant les outils données (sinon « comment locataire » part en liste CRM).
+    if (isAppHowtoIntent(message)) {
+      const howto = resolveAppHowtoReply(message);
+      if (howto) {
+        const ctxGuide = await this.contextService.buildContext(organizationId);
+        return {
+          reply: howto,
+          suggestions: buildContextualSuggestions(ctxGuide),
+          actions: resolveChatActions(message),
+          poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+          contextUsed: true,
+        };
+      }
+    }
+
     const ctx = await this.contextService.buildContext(organizationId);
     const suggestions = buildContextualSuggestions(ctx);
     const actions = resolveChatActions(message);
@@ -212,6 +231,19 @@ export class AiService {
     actions: AiActionHint[],
   ): Promise<AiChatResponse> {
     const intents = this.tools.resolveLocalToolIntents(message);
+    // Si « comment / où » → guide app, pas dump d’outils
+    if (isAppHowtoIntent(message)) {
+      const howto = resolveAppHowtoReply(message);
+      if (howto) {
+        return {
+          reply: howto,
+          suggestions,
+          actions: this.dedupeActions([...actions, ...resolveChatActions(message)]),
+          poweredBy: 'local',
+          contextUsed: true,
+        };
+      }
+    }
     if (intents.length === 0) {
       return {
         reply: buildLocalFallbackReply(message, ctx),

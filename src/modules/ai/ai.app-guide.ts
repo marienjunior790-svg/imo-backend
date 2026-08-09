@@ -1,0 +1,338 @@
+/**
+ * Guide d’utilisation de l’application ITC (réponses locales + prompt OpenAI).
+ * Couvre la hiérarchie Owner / Manager / Terrain / Locataire et les parcours UI.
+ */
+
+function normalizeQuery(message: string): string {
+  return message
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[’']/g, "'")
+    .trim();
+}
+
+/** Questions « comment faire / où aller / à quoi sert » l’app. */
+export function isAppHowtoIntent(message: string): boolean {
+  const q = normalizeQuery(message);
+  if (q.length < 4) return false;
+
+  const howtoVerb =
+    q.includes('comment') ||
+    q.includes('ou ') ||
+    q.startsWith('ou ') ||
+    q.includes('ouvrir') ||
+    q.includes('acceder') ||
+    q.includes('accéder') ||
+    q.includes('utiliser') ||
+    q.includes('fonctionne') ||
+    q.includes('marche') ||
+    q.includes('explique') ||
+    q.includes('etape') ||
+    q.includes('étape') ||
+    q.includes('tutoriel') ||
+    q.includes('guide') ||
+    q.includes('aide') ||
+    q.includes('que faire') ||
+    q.includes('c\'est quoi') ||
+    q.includes('c est quoi') ||
+    q.includes('a quoi sert') ||
+    q.includes('role de') ||
+    q.includes('rôle de') ||
+    q.includes('difference') ||
+    q.includes('différence');
+
+  const appTopic =
+    q.includes('app') ||
+    q.includes('application') ||
+    q.includes('itc') ||
+    q.includes('ecran') ||
+    q.includes('écran') ||
+    q.includes('menu') ||
+    q.includes('bouton') ||
+    q.includes('module') ||
+    q.includes('dashboard') ||
+    q.includes('tableau de bord') ||
+    q.includes('parametre') ||
+    q.includes('paramètre') ||
+    q.includes('espace') ||
+    q.includes('portail') ||
+    q.includes('hierarchie') ||
+    q.includes('hiérarchie') ||
+    q.includes('proprietaire') ||
+    q.includes('propriétaire') ||
+    q.includes('gestionnaire') ||
+    q.includes('agent') ||
+    q.includes('locataire') ||
+    q.includes('immeuble') ||
+    q.includes('logement') ||
+    q.includes('bien') ||
+    q.includes('contrat') ||
+    q.includes('bail') ||
+    q.includes('paiement') ||
+    q.includes('loyer') ||
+    q.includes('maintenance') ||
+    q.includes('intervention') ||
+    q.includes('equipe') ||
+    q.includes('équipe') ||
+    q.includes('analyse') ||
+    q.includes('intelligence') ||
+    q.includes('ia ') ||
+    q.startsWith('ia') ||
+    q.includes('rece') ||
+    q.includes('avis') ||
+    q.includes('ajouter') ||
+    q.includes('creer') ||
+    q.includes('créer') ||
+    q.includes('retirer') ||
+    q.includes('enregistrer');
+
+  if (howtoVerb && appTopic) return true;
+
+  // Formulations courtes type « ajouter un locataire » / « créer un agent »
+  if (
+    (q.includes('ajouter') || q.includes('creer') || q.includes('créer') || q.includes('enregistrer')) &&
+    (q.includes('locataire') ||
+      q.includes('agent') ||
+      q.includes('immeuble') ||
+      q.includes('contrat') ||
+      q.includes('paiement') ||
+      q.includes('logement'))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function resolveAppHowtoReply(message: string): string | null {
+  const q = normalizeQuery(message);
+
+  // Vue d’ensemble / comment marche l’app
+  if (
+    q.includes('application') ||
+    q.includes('comment ca marche') ||
+    q.includes('comment ça marche') ||
+    q.includes('utiliser itc') ||
+    q.includes('utiliser l\'app') ||
+    q.includes('utiliser l app') ||
+    (q.includes('aide') && (q.includes('app') || q.includes('itc') || q.length < 12)) ||
+    q.includes('hierarchie') ||
+    q.includes('hiérarchie') ||
+    (q.includes('role') && (q.includes('agent') || q.includes('proprio') || q.includes('locataire'))) ||
+    (q.includes('différence') && q.includes('agent'))
+  ) {
+    return `ITC est une entreprise de gestion immobilière dans l’app :
+
+👑 Propriétaire (OWNER) — supervision
+• Vue globale, rapports, équipe, abonnement, configuration
+• Peut tout consulter ; n’est pas obligé de faire l’ops au quotidien
+
+👨‍💼 Agent gestionnaire (MANAGER) — opérations
+• Locataires, biens, contrats, paiements, maintenance (desk)
+• C’est le centre de gravité quotidien
+
+🔧 Agent terrain (AGENT) — interventions
+• Espace terrain : missions assignées uniquement
+
+👤 Locataire (TENANT) — portail
+• Son logement, bail, loyers, demandes de maintenance
+
+Demandez par ex. : « Comment ajouter un locataire ? », « Comment créer un agent ? », « Où voir les impayés ? ».`;
+  }
+
+  if (q.includes('agent') && (q.includes('creer') || q.includes('créer') || q.includes('ajout') || q.includes('provision'))) {
+    return `Créer un collaborateur (compte + accès ITC) :
+
+1. Connectez-vous en Propriétaire
+2. Menu → Équipe (agents) — ou Paramètres → Équipe
+3. Choisissez :
+   • Gestionnaire (ops) → rôle MANAGER (locataires, contrats, paiements…)
+   • Terrain (maintenance) → rôle AGENT (interventions seulement)
+4. Remplissez identité → créer → notez l’identifiant + mot de passe temporaire
+
+Le collaborateur change son mot de passe à la première connexion.`;
+  }
+
+  if (
+    (q.includes('gestionnaire') || (q.includes('manager') && !q.includes('terrain'))) &&
+    (q.includes('comment') || q.includes('quoi') || q.includes('role') || q.includes('rôle') || q.includes('faire'))
+  ) {
+    return `L’agent gestionnaire opère au quotidien :
+• Locataires (créer, fiche, retirer)
+• Biens / contrats / paiements
+• Maintenance (recevoir les demandes, assigner)
+• Intelligence ITC (chat, analyses)
+
+Le propriétaire supervise ; le terrain exécute les interventions.`;
+  }
+
+  if (q.includes('locataire') && (q.includes('ajout') || q.includes('creer') || q.includes('créer') || q.includes('nouve'))) {
+    return `Ajouter un locataire (idéal : espace gestionnaire) :
+
+1. Menu → Locataires → +
+2. Identité (prénom, nom, N° pièce), contacts
+3. Associez un logement / créez le contrat si proposé
+4. ITC crée le compte portail + vous affiche identifiant et mot de passe temporaire
+5. Remettez ces accès au locataire (il change le mot de passe au 1er login)
+
+Le locataire n’a pas à s’inscrire seul.`;
+  }
+
+  if (
+    q.includes('locataire') &&
+    (q.includes('retir') || q.includes('evinc') || q.includes('expuls') || q.includes('liber') || q.includes('depart'))
+  ) {
+    return `Retirer un locataire :
+
+1. Locataires → ouvrez la fiche
+2. « Retirer le locataire »
+3. Choisissez le motif (départ, décision proprio, fin de bail, impayés…)
+
+ITC résilie le(s) bail(s), libère le logement et archive le portail. L’historique reste.`;
+  }
+
+  if (q.includes('immeuble') || (q.includes('bien') && (q.includes('ajout') || q.includes('creer') || q.includes('créer')))) {
+    return `Parc immobilier :
+
+• Immeubles : menu → Immeubles → créer / ouvrir un immeuble
+• Logements : dans l’immeuble, ajoutez des unités (loyer, statut)
+• Ou menu → Biens / Logements pour la liste transversale
+
+Sans logement disponible, vous ne pouvez pas bien rattacher un nouveau locataire.`;
+  }
+
+  if (q.includes('contrat') || q.includes('bail')) {
+    if (q.includes('pdf') || q.includes('gener') || q.includes('génér')) {
+      return `Générer un contrat PDF :
+
+• Contrats → menu du bail → « Générer le contrat PDF »
+• Ou dans Intelligence ITC : « Génère un contrat de location » puis Confirmer
+
+Le PDF inclut identité, loyers et blocs signature. Vérifiez avant usage.`;
+    }
+    return `Contrats / baux :
+
+1. Menu → Contrats
+2. Créez / activez un bail (locataire + logement)
+3. Actions : PDF, renouveler (+12 mois), résilier
+
+Les échéances de loyers suivent le bail actif.`;
+  }
+
+  if (q.includes('paiement') || q.includes('loyer') || q.includes('impay')) {
+    if (!(q.includes('comment') || q.includes('enregistr') || q.includes('marquer') || q.includes('ouvrir') || q.includes('ou ') || q.includes('recu') || q.includes('quittance') || q.includes('avis'))) {
+      return null;
+    }
+    if (q.includes('recu') || q.includes('quittance')) {
+      return `Reçu / quittance PDF :
+
+• Paiements → un paiement déjà encaissé → générer le reçu
+• Ou Intelligence ITC : « Génère un reçu de paiement » → Confirmer
+
+Avis de paiement (rappel) : pour un loyer en attente / retard → « Génère un avis de paiement ».`;
+    }
+    return `Paiements & loyers :
+
+1. Menu → Paiements
+2. Filtrez impayés / en attente si besoin
+3. Ouvrez une échéance → « Marquer payé » (montant, mode, référence)
+
+Les indicateurs du dashboard et de l’IA utilisent ces données réelles.`;
+  }
+
+  if (q.includes('maintenance') || q.includes('intervention') || q.includes('reparation') || q.includes('réparation') || q.includes('fuite')) {
+    return `Maintenance :
+
+• Locataire : portail → SAV → signaler un problème
+• Gestionnaire / propriétaire : menu → Maintenance (desk) pour suivre / assigner
+• Agent terrain : Espace terrain → Interventions (accepter, démarrer, terminer)
+
+Le propriétaire peut consulter l’historique sans traiter chaque ticket.`;
+  }
+
+  if (
+    q.includes('intelligence') ||
+    q.includes(' analyse') ||
+    q.includes('onglet') ||
+    (q.includes('ia') && (q.includes('comment') || q.includes('utiliser') || q.includes('faire'))) ||
+    q.includes('dictée') ||
+    q.includes('dictee') ||
+    q.includes('vocal') ||
+    q.includes('image')
+  ) {
+    return `Intelligence ITC :
+
+• Onglet Chat — questions données + « comment faire » dans l’app
+• Onglet Analyser — LIA (vue d’ensemble, revenus, occupation, impayés) + prévisions
+• Micro — dictée (même sans clé OpenAI) puis Envoyer
+• Image — OCR du texte sur documents / reçus
+• « Lire la réponse » — voix du téléphone (ou TTS cloud si clé OpenAI)
+
+Exemples utiles : « Voir mes impayés », « Comment ajouter un locataire ? », « Générer un avis de paiement ».`;
+  }
+
+  if (q.includes('dashboard') || q.includes('tableau de bord') || q.includes('vue globale') || q.includes('rapport')) {
+    return `Pilot & rapports :
+
+• Dashboard / Vue globale — KPIs occupation, encaissements, alertes
+• Rapports — indicateurs / exports (surtout propriétaire)
+• Notifications — alertes in-app
+
+Le gestionnaire privilégie Locataires / Contrats / Paiements / Maintenance au quotidien.`;
+  }
+
+  if (q.includes('parametre') || q.includes('paramètre') || q.includes('profil') || q.includes('mot de passe') || q.includes('mfa')) {
+    return `Compte & sécurité :
+
+• Paramètres / Profil — identité, préférences notifications
+• Mot de passe, MFA, Sessions — sécurité du compte
+• Abonnement — plan (propriétaire)
+• Équipe — créer gestionnaire ou terrain (propriétaire)
+
+Les locataires et agents terrain ne voient pas les menus CRM (immeubles, équipe…).`;
+  }
+
+  if (q.includes('portail') || (q.includes('espace') && q.includes('locataire'))) {
+    return `Espace locataire :
+
+• Accueil — résumé
+• Bail — son contrat
+• Loyers — échéances / paiements
+• SAV — créer et suivre une maintenance
+• Notifications / Profil
+
+Il ne voit jamais les autres locataires ni les finances de l’organisation.`;
+  }
+
+  // Fallback howto générique si intent détecté
+  if (isAppHowtoIntent(message)) {
+    return `Je peux vous guider dans ITC. Précisez l’action, par exemple :
+
+• Comment marche l’application ?
+• Comment ajouter un locataire ?
+• Comment créer un agent gestionnaire ?
+• Comment enregistrer un paiement ?
+• Comment générer un contrat PDF ?
+• Où voir la maintenance ?
+• Comment utiliser l’Intelligence ITC ?
+
+Ou posez une question données : « mes impayés », « logements vacants », « résumé patrimoine ».`;
+  }
+
+  return null;
+}
+
+/** Bloc injecté dans le system prompt OpenAI. */
+export const APP_GUIDE_PROMPT = `
+Tu connais l’app mobile ITC (gestion immobilière) :
+
+Hiérarchie :
+- OWNER = propriétaire / supervision (vue globale, équipe, rapports, config)
+- MANAGER = agent gestionnaire / ops (locataires, biens, contrats, paiements, maintenance desk)
+- AGENT = agent terrain (interventions assignées uniquement, espace /agent)
+- TENANT = locataire (portail : son logement, bail, loyers, SAV)
+
+Quand l’utilisateur demande COMMENT faire dans l’app (où cliquer, créer, ouvrir un module), réponds avec des étapes concrètes UI (menus, boutons), pas seulement des chiffres.
+Ne confonds pas « agent gestionnaire » (MANAGER) et « agent terrain » (AGENT).
+Pour les données (impayés, vacants…), utilise les outils. Pour le mode d’emploi, explique les parcours.`;

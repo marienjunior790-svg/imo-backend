@@ -217,7 +217,7 @@ export class AiToolsService {
     ) {
       tools.push('proposeGeneratePaymentNotice');
     }
-    if (q.includes('locataire') && !q.includes('retirer') && !q.includes('ajout')) {
+    if (q.includes('locataire') && !q.includes('retirer') && !q.includes('ajout') && !q.includes('comment') && !q.includes('creer') && !q.includes('cree')) {
       tools.push('getTenants');
     }
     if (q.includes('revenu') || q.includes('financ') || q.includes('encaiss')) {
