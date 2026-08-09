@@ -2,12 +2,18 @@ import { randomUUID } from 'crypto';
 import { env } from '../../config/env.js';
 import { NotFoundError, ValidationError } from '../../shared/errors/app.error.js';
 
-export type PendingActionType = 'GENERATE_LEASE_PDF' | 'NAVIGATE_HINT';
+export type PendingActionType =
+  | 'GENERATE_LEASE_PDF'
+  | 'GENERATE_PAYMENT_RECEIPT'
+  | 'GENERATE_PAYMENT_NOTICE'
+  | 'NAVIGATE_HINT';
 
 export interface PendingActionPayload {
   leaseId?: string;
+  paymentId?: string;
   tenantName?: string;
   apartmentLabel?: string;
+  periodLabel?: string;
   route?: string;
   summary?: string;
 }

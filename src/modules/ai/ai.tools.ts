@@ -13,7 +13,9 @@ export type AiToolName =
   | 'getTenants'
   | 'getFinancialSummary'
   | 'getExpiringContracts'
-  | 'proposeGenerateLeasePdf';
+  | 'proposeGenerateLeasePdf'
+  | 'proposeGeneratePaymentReceipt'
+  | 'proposeGeneratePaymentNotice';
 
 export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
@@ -93,6 +95,36 @@ export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'proposeGeneratePaymentReceipt',
+      description:
+        'Propose un reçu/quittance PDF pour un paiement déjà enregistré (PAID/PARTIAL). Confirmation utilisateur obligatoire.',
+      parameters: {
+        type: 'object',
+        properties: {
+          paymentId: { type: 'string', description: 'ID du paiement (cuid). Optionnel pour lister les paiements payés.' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'proposeGeneratePaymentNotice',
+      description:
+        'Propose un avis de paiement PDF (rappel de loyer) pour PENDING/LATE/PARTIAL. Confirmation utilisateur obligatoire.',
+      parameters: {
+        type: 'object',
+        properties: {
+          paymentId: { type: 'string', description: 'ID du paiement (cuid). Optionnel pour lister les impayés / en attente.' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 @injectable()
@@ -129,6 +161,16 @@ export class AiToolsService {
         return this.getExpiringContracts(organizationId);
       case 'proposeGenerateLeasePdf':
         return this.listLeasesForPdf(organizationId, typeof args.leaseId === 'string' ? args.leaseId : undefined);
+      case 'proposeGeneratePaymentReceipt':
+        return this.listPaymentsForReceipt(
+          organizationId,
+          typeof args.paymentId === 'string' ? args.paymentId : undefined,
+        );
+      case 'proposeGeneratePaymentNotice':
+        return this.listPaymentsForNotice(
+          organizationId,
+          typeof args.paymentId === 'string' ? args.paymentId : undefined,
+        );
       default:
         return { error: `Outil inconnu: ${toolName}` };
     }
@@ -162,6 +204,18 @@ export class AiToolsService {
       tools.push('proposeGenerateLeasePdf');
     } else if (q.includes('contrat') || q.includes('bail')) {
       tools.push('getContracts');
+    }
+    if (
+      (q.includes('recu') || q.includes('quittance')) &&
+      (q.includes('gener') || q.includes('cree') || q.includes('pdf') || q.includes('prepar') || q.includes('fais'))
+    ) {
+      tools.push('proposeGeneratePaymentReceipt');
+    }
+    if (
+      (q.includes('avis de paiement') || (q.includes('avis') && q.includes('loyer')) || q.includes('rappel de loyer')) &&
+      (q.includes('gener') || q.includes('cree') || q.includes('pdf') || q.includes('prepar') || q.includes('envoie') || q.includes('fais'))
+    ) {
+      tools.push('proposeGeneratePaymentNotice');
     }
     if (q.includes('locataire') && !q.includes('retirer') && !q.includes('ajout')) {
       tools.push('getTenants');
@@ -331,6 +385,136 @@ export class AiToolsService {
     const listed = await this.getContracts(organizationId);
     return { ...listed, requiresUserConfirmation: true };
   }
+
+  private async listPaymentsForReceipt(organizationId: string, paymentId?: string) {
+    if (paymentId) {
+      const payment = await this.prisma.payment.findFirst({
+        where: {
+          id: paymentId,
+          organizationId,
+          status: { in: [PaymentStatus.PAID, PaymentStatus.PARTIAL] },
+        },
+        include: {
+          lease: {
+            include: {
+              tenant: { select: { firstName: true, lastName: true } },
+              apartment: { select: { label: true } },
+            },
+          },
+        },
+      });
+      if (!payment) {
+        return { found: false, paymentId, requiresUserConfirmation: true };
+      }
+      return {
+        found: true,
+        payment: {
+          id: payment.id,
+          status: payment.status,
+          amountPaidXaf: decimalToNumber(payment.amountPaid),
+          period: `${payment.periodMonth}/${payment.periodYear}`,
+          tenantName: `${payment.lease.tenant.firstName} ${payment.lease.tenant.lastName}`,
+          apartmentLabel: payment.lease.apartment.label,
+          hasReceipt: Boolean(payment.receiptPdfUrl),
+        },
+        requiresUserConfirmation: true,
+      };
+    }
+
+    const rows = await this.prisma.payment.findMany({
+      where: { organizationId, status: { in: [PaymentStatus.PAID, PaymentStatus.PARTIAL] } },
+      take: 15,
+      orderBy: [{ paidAt: 'desc' }, { updatedAt: 'desc' }],
+      include: {
+        lease: {
+          include: {
+            tenant: { select: { firstName: true, lastName: true } },
+            apartment: { select: { label: true } },
+          },
+        },
+      },
+    });
+    return {
+      count: rows.length,
+      items: rows.map((p) => ({
+        id: p.id,
+        status: p.status,
+        amountPaidXaf: decimalToNumber(p.amountPaid),
+        period: `${p.periodMonth}/${p.periodYear}`,
+        tenantName: `${p.lease.tenant.firstName} ${p.lease.tenant.lastName}`,
+        apartmentLabel: p.lease.apartment.label,
+        hasReceipt: Boolean(p.receiptPdfUrl),
+      })),
+      requiresUserConfirmation: true,
+    };
+  }
+
+  private async listPaymentsForNotice(organizationId: string, paymentId?: string) {
+    if (paymentId) {
+      const payment = await this.prisma.payment.findFirst({
+        where: {
+          id: paymentId,
+          organizationId,
+          status: { in: [PaymentStatus.PENDING, PaymentStatus.LATE, PaymentStatus.PARTIAL] },
+        },
+        include: {
+          lease: {
+            include: {
+              tenant: { select: { firstName: true, lastName: true } },
+              apartment: { select: { label: true } },
+            },
+          },
+        },
+      });
+      if (!payment) {
+        return { found: false, paymentId, requiresUserConfirmation: true };
+      }
+      const due = Math.max(0, decimalToNumber(payment.amount) - decimalToNumber(payment.amountPaid));
+      return {
+        found: true,
+        payment: {
+          id: payment.id,
+          status: payment.status,
+          amountDueXaf: due,
+          period: `${payment.periodMonth}/${payment.periodYear}`,
+          dueDate: payment.dueDate.toISOString().slice(0, 10),
+          tenantName: `${payment.lease.tenant.firstName} ${payment.lease.tenant.lastName}`,
+          apartmentLabel: payment.lease.apartment.label,
+        },
+        requiresUserConfirmation: true,
+      };
+    }
+
+    const rows = await this.prisma.payment.findMany({
+      where: {
+        organizationId,
+        status: { in: [PaymentStatus.PENDING, PaymentStatus.LATE, PaymentStatus.PARTIAL] },
+      },
+      take: 15,
+      orderBy: { dueDate: 'asc' },
+      include: {
+        lease: {
+          include: {
+            tenant: { select: { firstName: true, lastName: true } },
+            apartment: { select: { label: true } },
+          },
+        },
+      },
+    });
+    return {
+      count: rows.length,
+      items: rows.map((p) => ({
+        id: p.id,
+        status: p.status,
+        amountDueXaf: Math.max(0, decimalToNumber(p.amount) - decimalToNumber(p.amountPaid)),
+        period: `${p.periodMonth}/${p.periodYear}`,
+        dueDate: p.dueDate.toISOString().slice(0, 10),
+        tenantName: `${p.lease.tenant.firstName} ${p.lease.tenant.lastName}`,
+        apartmentLabel: p.lease.apartment.label,
+      })),
+      requiresUserConfirmation: true,
+    };
+  }
 }
 
 export function formatToolResultForLocalReply(toolName: string, result: unknown): string {
@@ -395,6 +579,40 @@ Confirmez la génération du PDF professionnel pour créer le document.`;
       .map((l) => `• ${l.tenantName} — ${l.apartmentLabel} (${l.status}) · id ${l.id}`)
       .join('\n');
     return `Contrats (${data.count}) :\n${list}`;
+  }
+  if (toolName === 'proposeGeneratePaymentReceipt') {
+    if (data.found && data.payment) {
+      const p = data.payment as Record<string, unknown>;
+      return `Paiement trouvé : ${p.tenantName} — ${p.apartmentLabel} (${p.period}, ${p.status}).
+Confirmez pour générer le reçu PDF.`;
+    }
+    const items = (data.items as Array<Record<string, unknown>>) ?? [];
+    if (!items.length) return 'Aucun paiement enregistré pouvant recevoir un reçu.';
+    const list = items
+      .slice(0, 8)
+      .map(
+        (p) =>
+          `• ${p.tenantName} — ${p.apartmentLabel} (${p.period}) · ${Number(p.amountPaidXaf).toLocaleString('fr-FR')} XAF · id ${p.id}`,
+      )
+      .join('\n');
+    return `Paiements payés (${data.count}) — indiquez un id ou confirmez le plus récent :\n${list}`;
+  }
+  if (toolName === 'proposeGeneratePaymentNotice') {
+    if (data.found && data.payment) {
+      const p = data.payment as Record<string, unknown>;
+      return `Loyer à rappeler : ${p.tenantName} — ${p.apartmentLabel} (${p.period}, ${p.status}).
+Confirmez pour générer l’avis de paiement PDF.`;
+    }
+    const items = (data.items as Array<Record<string, unknown>>) ?? [];
+    if (!items.length) return 'Aucun loyer en attente ou en retard pour un avis.';
+    const list = items
+      .slice(0, 8)
+      .map(
+        (p) =>
+          `• ${p.tenantName} — ${p.apartmentLabel} (${p.period}) · dû ${Number(p.amountDueXaf).toLocaleString('fr-FR')} XAF · id ${p.id}`,
+      )
+      .join('\n');
+    return `Loyers à rappeler (${data.count}) :\n${list}`;
   }
   if (toolName === 'getTenants') {
     const items = (data.items as Array<Record<string, unknown>>) ?? [];

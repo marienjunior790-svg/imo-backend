@@ -146,4 +146,19 @@ router.post(
   }),
 );
 
+router.post(
+  '/:id/generate-notice',
+  requirePermission(Permission.PAYMENT_EXPORT_PDF),
+  requireOrgResource('payment'),
+  asyncHandler(async (req, res) => {
+    const result = await withAudit(
+      req,
+      AuditAction.PAYMENT_EXPORT_PDF,
+      () => service.generateNoticePdf(getOrganizationId(req), req.params.id),
+      () => ({ resourceType: 'Payment', resourceId: req.params.id }),
+    );
+    sendSuccess(res, result, 'Avis de paiement PDF généré');
+  }),
+);
+
 export default router;

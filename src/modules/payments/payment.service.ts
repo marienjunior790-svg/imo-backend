@@ -307,7 +307,63 @@ export class PaymentService {
       },
     });
 
-    return { url: upload.url, fileName };
+    return {
+      url: upload.url,
+      fileName,
+      paymentId: payment.id,
+      tenantName: `${payment.lease.tenant.firstName} ${payment.lease.tenant.lastName}`,
+      apartmentLabel: payment.lease.apartment.label,
+      periodMonth: payment.periodMonth,
+      periodYear: payment.periodYear,
+    };
+  }
+
+  /** Avis de paiement (rappel) pour un loyer PENDING / LATE / PARTIAL. */
+  async generateNoticePdf(organizationId: string, id: string) {
+    await this.subscriptionService.assertPdfReceiptAllowed(organizationId);
+    const payment = await this.get(organizationId, id);
+    if (
+      payment.status !== PaymentStatus.PENDING &&
+      payment.status !== PaymentStatus.LATE &&
+      payment.status !== PaymentStatus.PARTIAL
+    ) {
+      throw new ValidationError(
+        'Un avis de paiement ne s’applique qu’aux loyers en attente, en retard ou partiels',
+      );
+    }
+
+    const pdfBuffer = await this.pdfService.generatePaymentNotice(payment);
+    const fileName = `avis-${payment.periodYear}-${payment.periodMonth}-${payment.id}.pdf`;
+
+    const upload = await this.cloudinary.uploadBuffer(pdfBuffer, {
+      folder: `immo-tec/${organizationId}/notices`,
+      fileName,
+      resourceType: 'raw',
+    });
+
+    await this.prisma.document.create({
+      data: {
+        organizationId,
+        type: 'OTHER',
+        fileName,
+        mimeType: 'application/pdf',
+        fileSize: pdfBuffer.length,
+        cloudinaryUrl: upload.url,
+        cloudinaryPublicId: upload.publicId,
+        paymentId: id,
+        leaseId: payment.leaseId,
+      },
+    });
+
+    return {
+      url: upload.url,
+      fileName,
+      paymentId: payment.id,
+      tenantName: `${payment.lease.tenant.firstName} ${payment.lease.tenant.lastName}`,
+      apartmentLabel: payment.lease.apartment.label,
+      periodMonth: payment.periodMonth,
+      periodYear: payment.periodYear,
+    };
   }
 
   async exportExcel(organizationId: string): Promise<string> {

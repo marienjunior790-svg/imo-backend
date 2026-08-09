@@ -48,6 +48,8 @@ type PaymentWithRelations = {
   currency: string;
   periodMonth: number;
   periodYear: number;
+  status?: string | null;
+  dueDate?: Date | null;
   paidAt?: Date | null;
   method?: string | null;
   reference?: string | null;
@@ -423,6 +425,55 @@ export class PdfService {
 
     doc.moveDown(3);
     doc.fontSize(10).fillColor('#666').text('Document généré par IMMO-tec — Ce reçu fait foi de paiement.', { align: 'center' });
+
+    doc.end();
+    return bufferPromise;
+  }
+
+  /** Avis de paiement / rappel de loyer (avant encaissement). */
+  async generatePaymentNotice(payment: PaymentWithRelations): Promise<Buffer> {
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    const bufferPromise = bufferFromPdf(doc);
+
+    const orgName = payment.lease.organization?.name ?? 'IMMO-tec';
+    const due = Math.max(0, decimalToNumber(payment.amount) - decimalToNumber(payment.amountPaid));
+    const period = `${MONTHS_FR[payment.periodMonth - 1]} ${payment.periodYear}`;
+    const tenant = `${payment.lease.tenant.firstName} ${payment.lease.tenant.lastName}`;
+
+    doc.fontSize(20).text('AVIS DE PAIEMENT', { align: 'center' });
+    doc.moveDown();
+    doc.fontSize(10).fillColor('#666').text(`N° ${payment.id}`, { align: 'center' });
+    doc.fillColor('#000');
+    doc.moveDown(2);
+
+    doc.fontSize(12);
+    doc.text(`Émetteur : ${orgName}`);
+    if (payment.lease.organization?.phone) doc.text(`Tél. : ${payment.lease.organization.phone}`);
+    doc.moveDown();
+    doc.text(`Destinataire : ${tenant}`);
+    doc.text(`Tél. : ${payment.lease.tenant.phone}`);
+    doc.text(`Logement : ${payment.lease.apartment.label}`);
+    doc.text(`Période : ${period}`);
+    if (payment.dueDate) doc.text(`Échéance : ${formatDate(new Date(payment.dueDate))}`);
+    if (payment.status) doc.text(`Statut : ${payment.status}`);
+    doc.moveDown();
+
+    doc.fontSize(16).text(`Montant dû : ${formatMoney(due, payment.currency || 'XAF')}`, {
+      align: 'center',
+    });
+    doc.moveDown();
+
+    doc.fontSize(11).fillColor('#333');
+    doc.text(
+      'Merci de régulariser ce loyer dans les meilleurs délais. ' +
+        'En cas de paiement déjà effectué, ignorez cet avis et conservez votre quittance.',
+      { align: 'left' },
+    );
+
+    doc.moveDown(3);
+    doc.fontSize(10).fillColor('#666').text('Document généré par IMMO-tec — Avis de paiement.', {
+      align: 'center',
+    });
 
     doc.end();
     return bufferPromise;

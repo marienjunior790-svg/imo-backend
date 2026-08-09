@@ -1,17 +1,17 @@
 import { UserRole } from '@prisma/client';
 
 /**
- * P6 — rôles canoniques ITC.
+ * Hiérarchie métier ITC (entreprise de gestion immobilière) :
  *
- *   OWNER       propriétaire / agence — pilotage complet
- *   MANAGER     gestion locative (baux, paiements, candidatures)
- *   AGENT       agent de maintenance — interventions terrain
- *   TENANT      locataire — portail personnel
- *   SUPER_ADMIN plateforme (inchangé)
+ *   OWNER    = boss / supervision (pilotage, équipe, config, vue globale)
+ *   MANAGER  = agent gestionnaire / chef de service (opérations quotidiennes)
+ *   AGENT    = agent de maintenance / terrain (interventions assignées uniquement)
+ *   TENANT   = locataire (portail personnel)
  *
- * ORG_ADMIN et TECHNICIAN restent des valeurs valides en base : ils sont normalisés
- * ici pour que les JWT émis avant la migration et les comptes non basculés continuent
- * de fonctionner. Toute comparaison de rôle doit passer par ce module.
+ * Ne pas confondre rôle utilisateur (OWNER/MANAGER/AGENT/TENANT)
+ * et type d’organisation (AGENCY | OWNER dans Organization.type).
+ *
+ * ORG_ADMIN et TECHNICIAN restent des alias legacy normalisés ici.
  */
 export const LEGACY_ROLE_ALIASES: Readonly<Record<string, UserRole>> = {
   ORG_ADMIN: UserRole.OWNER,
@@ -77,22 +77,28 @@ export const isOrgStaff = (role: UserRole | string | null | undefined): boolean 
 export const isMaintenanceAgent = (role: UserRole | string | null | undefined): boolean =>
   has(MAINTENANCE_ROLES, role);
 
-/** Libellé produit exposé aux clients (mobile / web). */
+/** Libellé produit exposé aux clients (mobile / web) — hiérarchie Boss / Gestionnaire / Terrain / Locataire. */
 export function roleLabel(role: UserRole | string | null | undefined): string {
   switch (normalizeRole(role)) {
     case UserRole.SUPER_ADMIN:
       return 'Administrateur plateforme';
     case UserRole.OWNER:
-      return 'Propriétaire / Agence';
+      return 'Propriétaire (supervision)';
     case UserRole.MANAGER:
-      return 'Gestionnaire locatif';
+      return 'Agent gestionnaire';
     case UserRole.AGENT:
-      return 'Agent de maintenance';
+      return 'Agent terrain (maintenance)';
     case UserRole.ACCOUNTANT:
       return 'Comptable';
     case UserRole.TENANT:
       return 'Locataire';
+    case UserRole.MAINTENANCE_LEAD:
+      return 'Responsable maintenance';
     default:
       return String(role ?? '');
   }
 }
+
+/** Rôle « centre de gravité opérationnel » (chef de service). */
+export const isOpsManager = (role: UserRole | string | null | undefined): boolean =>
+  normalizeRole(role) === UserRole.MANAGER;

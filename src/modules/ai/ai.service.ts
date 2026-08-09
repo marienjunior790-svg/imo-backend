@@ -24,6 +24,7 @@ import {
 import { listDocumentCapabilities } from './ai.documents.js';
 import { SubscriptionService } from '../subscriptions/subscription.service.js';
 import { LeaseService } from '../leases/lease.service.js';
+import { PaymentService } from '../payments/payment.service.js';
 import { PlanLimitError } from '../../shared/errors/subscription.error.js';
 import { ValidationError } from '../../shared/errors/app.error.js';
 import type { AiAnalyzeDto, AiChatInput, AiContractInput } from './ai.types.js';
@@ -88,6 +89,8 @@ Règles de réponse :
 - Français clair, pro, humain. Salutations → réponds naturellement, puis 2–4 indicateurs utiles, puis 2 actions. Pas de dump froid pour « bonjour ».
 - Utilise les outils pour les données ITC réelles. N'invente JAMAIS de chiffres. Monnaie : XAF.
 - Pour générer un contrat PDF : appelle proposeGenerateLeasePdf puis explique que l'utilisateur doit CONFIRMER dans l'app. Ne prétends jamais que le PDF est déjà créé.
+- Pour un reçu/quittance PDF : proposeGeneratePaymentReceipt (paiement déjà payé) + confirmation.
+- Pour un avis de paiement / rappel de loyer PDF : proposeGeneratePaymentNotice + confirmation.
 - Retirer un locataire : oriente vers fiche Locataires → « Retirer le locataire ».
 - 3 à 8 phrases max sauf listes utiles.`;
 
@@ -111,6 +114,7 @@ export class AiService {
     @inject(AiContextService) private readonly contextService: AiContextService,
     @inject(SubscriptionService) private readonly subscriptionService: SubscriptionService,
     @inject(LeaseService) private readonly leaseService: LeaseService,
+    @inject(PaymentService) private readonly paymentService: PaymentService,
     @inject(PrismaService) private readonly prisma: PrismaService,
     @inject(AiToolsService) private readonly tools: AiToolsService,
   ) {}
@@ -121,6 +125,8 @@ export class AiService {
       'Voir mes impayés',
       'Quels logements sont vacants ?',
       'Générer un contrat de location',
+      'Générer un reçu de paiement',
+      'Générer un avis de paiement',
       'Quels sont les risques actuels ?',
       'Comment ajouter un locataire ?',
     ];
@@ -170,9 +176,15 @@ export class AiService {
       }
     }
 
-    // Contrats : proposition + confirmation obligatoire (jamais de PDF auto).
+    // Documents PDF : proposition + confirmation obligatoire (jamais de PDF auto).
+    if (this.isNoticeIntent(message)) {
+      return this.proposePaymentNotice(organizationId, userId, role, this.extractCuid(message));
+    }
+    if (this.isReceiptIntent(message)) {
+      return this.proposePaymentReceipt(organizationId, userId, role, this.extractCuid(message));
+    }
     if (this.isContractIntent(message)) {
-      return this.proposeLeasePdf(organizationId, userId, role, this.extractLeaseId(message));
+      return this.proposeLeasePdf(organizationId, userId, role, this.extractCuid(message));
     }
 
     const ctx = await this.contextService.buildContext(organizationId);
@@ -220,8 +232,22 @@ export class AiService {
       parts.push(formatToolResultForLocalReply(name, result));
 
       if (name === 'proposeGenerateLeasePdf') {
-        const leaseId = this.extractLeaseId(message);
+        const leaseId = this.extractCuid(message);
         const proposed = await this.proposeLeasePdf(organizationId, userId, UserRole.OWNER, leaseId);
+        if (proposed.pendingAction) pendingAction = proposed.pendingAction;
+        if (proposed.actions.length) actions = [...actions, ...proposed.actions];
+        parts[parts.length - 1] = proposed.reply;
+      }
+      if (name === 'proposeGeneratePaymentReceipt') {
+        const paymentId = this.extractCuid(message);
+        const proposed = await this.proposePaymentReceipt(organizationId, userId, UserRole.OWNER, paymentId);
+        if (proposed.pendingAction) pendingAction = proposed.pendingAction;
+        if (proposed.actions.length) actions = [...actions, ...proposed.actions];
+        parts[parts.length - 1] = proposed.reply;
+      }
+      if (name === 'proposeGeneratePaymentNotice') {
+        const paymentId = this.extractCuid(message);
+        const proposed = await this.proposePaymentNotice(organizationId, userId, UserRole.OWNER, paymentId);
         if (proposed.pendingAction) pendingAction = proposed.pendingAction;
         if (proposed.actions.length) actions = [...actions, ...proposed.actions];
         parts[parts.length - 1] = proposed.reply;
@@ -293,11 +319,34 @@ export class AiService {
           let leaseId: string | undefined;
           try {
             const parsed = JSON.parse(args || '{}') as { leaseId?: string };
-            leaseId = parsed.leaseId || this.extractLeaseId(message);
+            leaseId = parsed.leaseId || this.extractCuid(message);
           } catch {
-            leaseId = this.extractLeaseId(message);
+            leaseId = this.extractCuid(message);
           }
           const proposed = await this.proposeLeasePdf(organizationId, userId, UserRole.OWNER, leaseId);
+          pendingAction = proposed.pendingAction;
+          actions = [...actions, ...proposed.actions];
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: JSON.stringify({
+              ...((typeof result === 'object' && result) || {}),
+              pendingActionId: proposed.pendingAction?.id,
+              note: 'PDF non généré — confirmation utilisateur obligatoire.',
+            }),
+          });
+        } else if (name === 'proposeGeneratePaymentReceipt' || name === 'proposeGeneratePaymentNotice') {
+          let paymentId: string | undefined;
+          try {
+            const parsed = JSON.parse(args || '{}') as { paymentId?: string };
+            paymentId = parsed.paymentId || this.extractCuid(message);
+          } catch {
+            paymentId = this.extractCuid(message);
+          }
+          const proposed =
+            name === 'proposeGeneratePaymentReceipt'
+              ? await this.proposePaymentReceipt(organizationId, userId, UserRole.OWNER, paymentId)
+              : await this.proposePaymentNotice(organizationId, userId, UserRole.OWNER, paymentId);
           pendingAction = proposed.pendingAction;
           actions = [...actions, ...proposed.actions];
           messages.push({
@@ -351,7 +400,7 @@ export class AiService {
     await this.assertAiAccess(organizationId, userId, role);
     if (!this.openai.isSttAvailable()) {
       throw new ValidationError(
-        'Transcription vocale indisponible en mode local. Ajoutez OPENAI_API_KEY (STT) sur Railway.',
+        'Transcription serveur indisponible. Sur l’app, le micro utilise la dictée appareil pour envoyer votre message vocal à l’IA.',
       );
     }
 
@@ -384,8 +433,9 @@ export class AiService {
       const ctxLocal = await this.contextService.buildContext(organizationId);
       return {
         reply:
-          'Mode local : l’analyse d’image nécessite OPENAI_API_KEY sur Railway. ' +
-          'En attendant, posez une question texte (impayés, patrimoine, contrats) — les données ITC restent disponibles.',
+          'Vision GPT indisponible sans OPENAI_API_KEY. ' +
+          'Sur l’app mobile, le texte des documents est lu via OCR appareil puis analysé avec vos données ITC. ' +
+          'Renvoyez l’image depuis l’app à jour, ou posez une question texte.',
         suggestions: buildContextualSuggestions(ctxLocal),
         actions: resolveChatActions(userPrompt || 'image'),
         poweredBy: 'local',
@@ -554,6 +604,228 @@ export class AiService {
     };
   }
 
+  async proposePaymentReceipt(
+    organizationId: string,
+    userId: string,
+    role: UserRole,
+    paymentId?: string,
+  ): Promise<AiChatResponse> {
+    await this.assertAiAccess(organizationId, userId, role);
+
+    if (!paymentId) {
+      const listed = await this.tools.execute(organizationId, 'proposeGeneratePaymentReceipt', {});
+      const data = listed as { count?: number; items?: Array<{ id: string; tenantName: string; apartmentLabel: string; period: string }> };
+      const items = data.items ?? [];
+      if (!items.length) {
+        return {
+          reply:
+            'Aucun paiement encaissé trouvé. Enregistrez d’abord un loyer payé, puis redemandez le reçu PDF.',
+          suggestions: ['Voir les paiements', 'Voir mes impayés'],
+          actions: [{ label: 'Ouvrir les paiements', route: '/payments' }],
+          poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+          contextUsed: true,
+        };
+      }
+      const list = items
+        .slice(0, 8)
+        .map((p, i) => `${i + 1}. ${p.tenantName} — ${p.apartmentLabel} (${p.period}) · id \`${p.id}\``)
+        .join('\n');
+      return {
+        reply:
+          `Voici les paiements éligibles à un reçu PDF.\n` +
+          `Demandez « génère le reçu <id> ».\n\n${list}\n\n` +
+          `La génération exigera votre confirmation.`,
+        suggestions: items.slice(0, 3).map((p) => `Génère le reçu ${p.id}`),
+        actions: [{ label: 'Ouvrir les paiements', route: '/payments' }],
+        poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+        contextUsed: true,
+      };
+    }
+
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, organizationId },
+      include: {
+        lease: {
+          include: {
+            tenant: { select: { firstName: true, lastName: true } },
+            apartment: { select: { label: true } },
+          },
+        },
+      },
+    });
+
+    if (!payment) {
+      return {
+        reply: 'Paiement introuvable dans votre organisation.',
+        suggestions: ['Voir les paiements'],
+        actions: [{ label: 'Voir les paiements', route: '/payments' }],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    if (payment.status !== 'PAID' && payment.status !== 'PARTIAL') {
+      return {
+        reply:
+          `Ce paiement (${payment.status}) n’est pas encore encaissé. Enregistrez le paiement, ou générez plutôt un avis de paiement.`,
+        suggestions: [`Génère un avis de paiement ${payment.id}`, 'Voir les paiements'],
+        actions: [{ label: 'Voir les paiements', route: '/payments' }],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    const tenantName = `${payment.lease.tenant.firstName} ${payment.lease.tenant.lastName}`;
+    const apartmentLabel = payment.lease.apartment.label;
+    const periodLabel = `${payment.periodMonth}/${payment.periodYear}`;
+    const pending = createPendingAction({
+      organizationId,
+      userId,
+      type: 'GENERATE_PAYMENT_RECEIPT',
+      payload: {
+        paymentId: payment.id,
+        tenantName,
+        apartmentLabel,
+        periodLabel,
+        summary: `Reçu PDF — ${tenantName} · ${apartmentLabel} · ${periodLabel}`,
+      },
+    });
+
+    return {
+      reply:
+        `Reçu proposé :\n` +
+        `• Locataire : ${tenantName}\n` +
+        `• Logement : ${apartmentLabel}\n` +
+        `• Période : ${periodLabel}\n` +
+        `• Statut : ${payment.status}\n\n` +
+        `Confirmez pour générer la quittance PDF, ou annulez.`,
+      suggestions: ['Voir les paiements', 'Générer un avis de paiement'],
+      actions: [{ label: 'Voir les paiements', route: '/payments' }],
+      poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+      contextUsed: true,
+      pendingAction: {
+        id: pending.id,
+        type: pending.type,
+        title: 'Créer le reçu PDF',
+        summary: pending.payload.summary ?? '',
+        payload: pending.payload,
+      },
+    };
+  }
+
+  async proposePaymentNotice(
+    organizationId: string,
+    userId: string,
+    role: UserRole,
+    paymentId?: string,
+  ): Promise<AiChatResponse> {
+    await this.assertAiAccess(organizationId, userId, role);
+
+    if (!paymentId) {
+      const listed = await this.tools.execute(organizationId, 'proposeGeneratePaymentNotice', {});
+      const data = listed as {
+        count?: number;
+        items?: Array<{ id: string; tenantName: string; apartmentLabel: string; period: string; amountDueXaf: number }>;
+      };
+      const items = data.items ?? [];
+      if (!items.length) {
+        return {
+          reply: 'Aucun loyer en attente ou en retard pour un avis de paiement.',
+          suggestions: ['Voir les paiements', 'Résumer mon patrimoine'],
+          actions: [{ label: 'Ouvrir les paiements', route: '/payments' }],
+          poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+          contextUsed: true,
+        };
+      }
+      const list = items
+        .slice(0, 8)
+        .map(
+          (p, i) =>
+            `${i + 1}. ${p.tenantName} — ${p.apartmentLabel} (${p.period}) · ${Number(p.amountDueXaf).toLocaleString('fr-FR')} XAF · id \`${p.id}\``,
+        )
+        .join('\n');
+      return {
+        reply:
+          `Voici les loyers pour lesquels un avis PDF est possible.\n` +
+          `Demandez « génère l’avis <id> ».\n\n${list}\n\n` +
+          `La génération exigera votre confirmation.`,
+        suggestions: items.slice(0, 3).map((p) => `Génère l’avis ${p.id}`),
+        actions: [{ label: 'Ouvrir les paiements', route: '/payments' }],
+        poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+        contextUsed: true,
+      };
+    }
+
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, organizationId },
+      include: {
+        lease: {
+          include: {
+            tenant: { select: { firstName: true, lastName: true } },
+            apartment: { select: { label: true } },
+          },
+        },
+      },
+    });
+
+    if (!payment) {
+      return {
+        reply: 'Paiement introuvable dans votre organisation.',
+        suggestions: ['Voir les paiements'],
+        actions: [{ label: 'Voir les paiements', route: '/payments' }],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    if (payment.status === 'PAID') {
+      return {
+        reply: 'Ce loyer est déjà soldé. Demandez plutôt un reçu de paiement.',
+        suggestions: [`Génère le reçu ${payment.id}`, 'Voir les paiements'],
+        actions: [{ label: 'Voir les paiements', route: '/payments' }],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    const tenantName = `${payment.lease.tenant.firstName} ${payment.lease.tenant.lastName}`;
+    const apartmentLabel = payment.lease.apartment.label;
+    const periodLabel = `${payment.periodMonth}/${payment.periodYear}`;
+    const pending = createPendingAction({
+      organizationId,
+      userId,
+      type: 'GENERATE_PAYMENT_NOTICE',
+      payload: {
+        paymentId: payment.id,
+        tenantName,
+        apartmentLabel,
+        periodLabel,
+        summary: `Avis PDF — ${tenantName} · ${apartmentLabel} · ${periodLabel}`,
+      },
+    });
+
+    return {
+      reply:
+        `Avis de paiement proposé :\n` +
+        `• Locataire : ${tenantName}\n` +
+        `• Logement : ${apartmentLabel}\n` +
+        `• Période : ${periodLabel}\n` +
+        `• Statut : ${payment.status}\n\n` +
+        `Confirmez pour générer l’avis PDF, ou annulez.`,
+      suggestions: ['Voir les impayés', 'Générer un reçu de paiement'],
+      actions: [{ label: 'Voir les paiements', route: '/payments' }],
+      poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+      contextUsed: true,
+      pendingAction: {
+        id: pending.id,
+        type: pending.type,
+        title: 'Créer l’avis PDF',
+        summary: pending.payload.summary ?? '',
+        payload: pending.payload,
+      },
+    };
+  }
+
   async confirmAction(
     organizationId: string,
     userId: string,
@@ -563,10 +835,30 @@ export class AiService {
     await this.assertAiAccess(organizationId, userId, role);
     const action = consumePendingAction(actionId, organizationId, userId);
 
-    if (action.type !== 'GENERATE_LEASE_PDF' || !action.payload.leaseId) {
-      throw new ValidationError('Type d’action non supporté');
+    if (action.type === 'GENERATE_LEASE_PDF') {
+      if (!action.payload.leaseId) throw new ValidationError('leaseId manquant pour le contrat');
+      return this.executeLeasePdf(organizationId, userId, role, action.payload.leaseId);
     }
 
+    if (action.type === 'GENERATE_PAYMENT_RECEIPT') {
+      if (!action.payload.paymentId) throw new ValidationError('paymentId manquant pour le reçu');
+      return this.executePaymentReceipt(organizationId, action.payload.paymentId);
+    }
+
+    if (action.type === 'GENERATE_PAYMENT_NOTICE') {
+      if (!action.payload.paymentId) throw new ValidationError('paymentId manquant pour l’avis');
+      return this.executePaymentNotice(organizationId, action.payload.paymentId);
+    }
+
+    throw new ValidationError('Type d’action non supporté');
+  }
+
+  private async executeLeasePdf(
+    organizationId: string,
+    userId: string,
+    role: UserRole,
+    leaseId: string,
+  ): Promise<AiChatResponse> {
     const agent = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { firstName: true, lastName: true },
@@ -574,7 +866,7 @@ export class AiService {
     const agentName = agent ? `${agent.firstName} ${agent.lastName}`.trim() : null;
 
     try {
-      const pdf = await this.leaseService.generateContractPdf(organizationId, action.payload.leaseId, {
+      const pdf = await this.leaseService.generateContractPdf(organizationId, leaseId, {
         agentName,
         agentRole: role === UserRole.OWNER ? 'Propriétaire / Bailleur' : 'Agent immobilier / Gestionnaire',
       });
@@ -583,7 +875,7 @@ export class AiService {
         reply:
           `Contrat de location généré pour ${pdf.tenantName} (${pdf.apartmentLabel}).\n` +
           `Le PDF inclut les blocs de signature. Vérifiez les clauses avant signature.`,
-        suggestions: ['Voir les impayés', 'Quels contrats arrivent à échéance ?'],
+        suggestions: ['Voir les impayés', 'Générer un reçu de paiement'],
         actions: [
           { label: 'Ouvrir le PDF', url: pdf.url },
           { label: 'Voir les contrats', route: '/leases' },
@@ -598,6 +890,60 @@ export class AiService {
         reply: `Impossible de générer le contrat : ${msg}`,
         suggestions: ['Voir les contrats'],
         actions: [{ label: 'Voir les contrats', route: '/leases' }],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+  }
+
+  private async executePaymentReceipt(organizationId: string, paymentId: string): Promise<AiChatResponse> {
+    try {
+      const pdf = await this.paymentService.generateReceiptPdf(organizationId, paymentId);
+      return {
+        reply:
+          `Reçu généré pour ${pdf.tenantName} (${pdf.apartmentLabel}) — période ${pdf.periodMonth}/${pdf.periodYear}.`,
+        suggestions: ['Générer un avis de paiement', 'Voir les paiements'],
+        actions: [
+          { label: 'Ouvrir le reçu', url: pdf.url },
+          { label: 'Voir les paiements', route: '/payments' },
+        ],
+        poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+        contextUsed: true,
+        documentUrl: pdf.url,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Génération impossible';
+      return {
+        reply: `Impossible de générer le reçu : ${msg}`,
+        suggestions: ['Voir les paiements'],
+        actions: [{ label: 'Voir les paiements', route: '/payments' }],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+  }
+
+  private async executePaymentNotice(organizationId: string, paymentId: string): Promise<AiChatResponse> {
+    try {
+      const pdf = await this.paymentService.generateNoticePdf(organizationId, paymentId);
+      return {
+        reply:
+          `Avis de paiement généré pour ${pdf.tenantName} (${pdf.apartmentLabel}) — période ${pdf.periodMonth}/${pdf.periodYear}.`,
+        suggestions: ['Voir les impayés', 'Générer un reçu de paiement'],
+        actions: [
+          { label: 'Ouvrir l’avis', url: pdf.url },
+          { label: 'Voir les paiements', route: '/payments' },
+        ],
+        poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+        contextUsed: true,
+        documentUrl: pdf.url,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Génération impossible';
+      return {
+        reply: `Impossible de générer l’avis : ${msg}`,
+        suggestions: ['Voir les paiements'],
+        actions: [{ label: 'Voir les paiements', route: '/payments' }],
         poweredBy: 'local',
         contextUsed: true,
       };
@@ -729,14 +1075,42 @@ export class AiService {
     }
   }
 
-  private isContractIntent(message: string): boolean {
-    const q = message.toLowerCase();
-    const wants =
-      q.includes('contrat') ||
-      q.includes('bail') ||
-      q.includes('génér') ||
+  private isNoticeIntent(message: string): boolean {
+    const q = message
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '');
+    const verb =
       q.includes('gener') ||
+      q.includes('cree') ||
+      q.includes('prepar') ||
+      q.includes('fais') ||
+      q.includes('pdf') ||
+      q.includes('envoie');
+    if (q.includes('avis de paiement') && verb) return true;
+    if (q.includes('rappel de loyer') && verb) return true;
+    if (q.includes('avis') && q.includes('loyer') && verb) return true;
+    return false;
+  }
+
+  private isReceiptIntent(message: string): boolean {
+    const q = message
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '');
+    if (this.isNoticeIntent(message)) return false;
+    const verb =
+      q.includes('gener') ||
+      q.includes('cree') ||
+      q.includes('prepar') ||
+      q.includes('fais') ||
       q.includes('pdf');
+    return (q.includes('recu') || q.includes('quittance')) && verb;
+  }
+
+  private isContractIntent(message: string): boolean {
+    if (this.isReceiptIntent(message) || this.isNoticeIntent(message)) return false;
+    const q = message.toLowerCase();
     const verb =
       q.includes('génér') ||
       q.includes('gener') ||
@@ -752,15 +1126,10 @@ export class AiService {
     if (q.includes('contrat de location') && (q.includes('génér') || q.includes('gener') || q.includes('pdf'))) {
       return true;
     }
-    // Message qui n'est qu'une demande générique de génération de contrat
-    if (wants && (q.includes('contrat de location') || /^g[ée]n[eè]re?\b/.test(q))) {
-      return (q.includes('contrat') || q.includes('bail')) && verb;
-    }
     return false;
   }
 
-  private extractLeaseId(message: string): string | undefined {
-    // cuid-like token
+  private extractCuid(message: string): string | undefined {
     const m = message.match(/\b(c[a-z0-9]{20,})\b/i);
     return m?.[1];
   }
@@ -844,6 +1213,7 @@ export class AiService {
   }
 
   private async assertLiaAccess(organizationId: string, userId: string, role: UserRole): Promise<void> {
-    await this.subscriptionService.assertUserProAccess(userId, organizationId, role);
+    // Même accessibilité que le chat IA (analyses locales disponibles sans plan Enterprise).
+    await this.assertAiAccess(organizationId, userId, role);
   }
 }

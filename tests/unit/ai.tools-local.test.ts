@@ -29,6 +29,16 @@ describe('AiToolsService.resolveLocalToolIntents', () => {
     expect(intents).toContain('proposeGenerateLeasePdf');
   });
 
+  it('détecte la génération de reçu', () => {
+    const intents = tools.resolveLocalToolIntents('Génère un reçu de paiement');
+    expect(intents).toContain('proposeGeneratePaymentReceipt');
+  });
+
+  it('détecte la génération d’avis de paiement', () => {
+    const intents = tools.resolveLocalToolIntents('Génère un avis de paiement');
+    expect(intents).toContain('proposeGeneratePaymentNotice');
+  });
+
   it('détecte les vacants', () => {
     const intents = tools.resolveLocalToolIntents('Quels logements sont vacants ?');
     expect(intents).toContain('getVacantUnits');
@@ -100,11 +110,12 @@ describe('pending actions', () => {
   });
 });
 
-describe('document capabilities wave1', () => {
-  it('expose LEASE_CONTRACT en vague 1 et stubs vague 2', () => {
+describe('document capabilities wave1+2', () => {
+  it('expose contrat + reçu + avis, stubs le reste', () => {
     const caps = listDocumentCapabilities();
-    const lease = caps.find((c) => c.kind === 'LEASE_CONTRACT');
-    expect(lease?.available).toBe(true);
+    expect(caps.find((c) => c.kind === 'LEASE_CONTRACT')?.available).toBe(true);
+    expect(caps.find((c) => c.kind === 'PAYMENT_RECEIPT')?.available).toBe(true);
+    expect(caps.find((c) => c.kind === 'PAYMENT_NOTICE')?.available).toBe(true);
     const inspection = caps.find((c) => c.kind === 'PROPERTY_INSPECTION');
     expect(inspection?.available).toBe(false);
     expect(inspection?.wave).toBe(2);

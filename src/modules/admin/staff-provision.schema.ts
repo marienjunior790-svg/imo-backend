@@ -5,7 +5,7 @@ export const staffProvisionSchema = z.object({
   lastName: z.string().min(2),
   phone: z.string().min(8).optional(),
   email: z.string().email().optional().or(z.literal('')).transform((v) => (v === '' ? undefined : v)),
-  role: z.enum(['AGENT', 'MANAGER', 'ACCOUNTANT']).default('AGENT'),
+  role: z.enum(['AGENT', 'MANAGER', 'ACCOUNTANT']).default('MANAGER'),
 });
 
 export type StaffProvisionDto = z.infer<typeof staffProvisionSchema>;

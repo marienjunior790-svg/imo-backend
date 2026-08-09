@@ -23,6 +23,14 @@ describe('staffProvisionSchema', () => {
     expect(parsed.role).toBe('AGENT');
   });
 
+  it('par défaut provisionne un MANAGER (agent gestionnaire)', () => {
+    const parsed = staffProvisionSchema.parse({
+      firstName: 'Marie',
+      lastName: 'Ops',
+    });
+    expect(parsed.role).toBe('MANAGER');
+  });
+
   it('refuse un prénom trop court', () => {
     expect(() =>
       staffProvisionSchema.parse({ firstName: 'A', lastName: 'Ok', role: 'AGENT' }),
