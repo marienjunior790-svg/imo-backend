@@ -148,8 +148,8 @@ export class AiService {
       },
       documents: listDocumentCapabilities(),
       message: online
-        ? 'IA connectée — modèle multimodal via backend.'
-        : 'Mode local — données ITC réelles via outils métier. Ajoutez OPENAI_API_KEY sur Railway pour GPT / voix / images / TTS.',
+        ? 'Modèle multimodal via backend.'
+        : 'Données ITC réelles via outils métier. Ajoutez OPENAI_API_KEY sur Railway pour GPT / voix / images / TTS.',
     };
   }
 
