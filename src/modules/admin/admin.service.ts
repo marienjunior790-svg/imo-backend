@@ -109,13 +109,10 @@ export class AdminService {
 
 
 
+    // NotFound (pas Forbidden) pour éviter le probe cross-org par ID.
     if (!actorOrgId || target.organizationId !== actorOrgId) {
-
-      throw new ForbiddenError('Utilisateur hors de votre organisation');
-
+      throw new NotFoundError('Utilisateur introuvable');
     }
-
-
 
     return target;
 
@@ -140,19 +137,72 @@ export class AdminService {
 
 
     const users = await this.prisma.user.findMany({
-
       where,
-
       orderBy: [{ organizationId: 'asc' }, { lastName: 'asc' }],
-
       select: userSelect,
-
     });
 
+    const openStatuses = ['OPEN', 'ASSIGNED', 'IN_PROGRESS'] as const;
+    const orgIds = [...new Set(users.map((u) => u.organizationId).filter(Boolean))] as string[];
+    const ticketCounts =
+      orgIds.length === 0
+        ? []
+        : await this.prisma.maintenanceTicket.groupBy({
+            by: ['assignedToId'],
+            where: {
+              organizationId: { in: orgIds },
+              assignedToId: { not: null },
+              status: { in: [...openStatuses] },
+            },
+            _count: { _all: true },
+          });
+    const openByAssignee = new Map(
+      ticketCounts
+        .filter((c) => c.assignedToId)
+        .map((c) => [c.assignedToId as string, c._count._all]),
+    );
 
+    return users.map((u) => ({
+      ...sanitizeUser({ ...u, passwordHash: '' }),
+      openAssignedTickets: openByAssignee.get(u.id) ?? 0,
+    }));
+  }
 
-    return users.map((u) => sanitizeUser({ ...u, passwordHash: '' }));
+  async getUser(actorRole: UserRole, actorOrgId: string | null, targetUserId: string) {
+    this.assertAdmin(actorRole);
+    await this.assertTargetInOrg(actorRole, actorOrgId, targetUserId);
 
+    const user = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: userSelect,
+    });
+    if (!user) throw new NotFoundError('Utilisateur introuvable');
+
+    const [assigned, inProgress, completed, closed] = await Promise.all([
+      this.prisma.maintenanceTicket.count({
+        where: { organizationId: user.organizationId!, assignedToId: targetUserId, status: 'ASSIGNED' },
+      }),
+      this.prisma.maintenanceTicket.count({
+        where: { organizationId: user.organizationId!, assignedToId: targetUserId, status: 'IN_PROGRESS' },
+      }),
+      this.prisma.maintenanceTicket.count({
+        where: { organizationId: user.organizationId!, assignedToId: targetUserId, status: 'COMPLETED' },
+      }),
+      this.prisma.maintenanceTicket.count({
+        where: { organizationId: user.organizationId!, assignedToId: targetUserId, status: 'CLOSED' },
+      }),
+    ]);
+
+    return {
+      ...sanitizeUser({ ...user, passwordHash: '' }),
+      activity: {
+        assigned,
+        inProgress,
+        completed,
+        closed,
+        openTotal: assigned + inProgress,
+      },
+    };
   }
 
 
@@ -295,17 +345,14 @@ export class AdminService {
       where: { id: targetUserId },
 
       data: {
-
+        ...(input.firstName !== undefined ? { firstName: input.firstName } : {}),
+        ...(input.lastName !== undefined ? { lastName: input.lastName } : {}),
+        ...(input.phone !== undefined ? { phone: input.phone } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-
         ...(input.role !== undefined ? { role: input.role as UserRole } : {}),
-
         ...(input.proAccessEnabled !== undefined ? { proAccessEnabled: input.proAccessEnabled } : {}),
-
       },
-
       select: userSelect,
-
     });
 
     // P5 : dual-write Membership (rôle porté par l'appartenance)

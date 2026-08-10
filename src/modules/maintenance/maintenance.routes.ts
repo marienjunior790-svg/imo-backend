@@ -170,7 +170,7 @@ router.post(
     const note = await withAudit(
       req,
       AuditAction.MAINTENANCE_UPDATE,
-      () => service.addNote(getOrganizationId(req), req.params.id, req.body, actorFrom(req)),
+      () => service.addNote(getOrganizationId(req), req.params.id, req.body.message, actorFrom(req)),
       () => ({ resourceType: 'MaintenanceTicket', resourceId: req.params.id }),
     );
     sendSuccess(res, note, 'Note ajoutée');

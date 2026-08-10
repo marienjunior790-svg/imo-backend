@@ -59,6 +59,15 @@ router.get(
   }),
 );
 
+router.get(
+  '/:id',
+  requirePermission(Permission.USER_VIEW, Permission.PLATFORM_USER_VIEW),
+  asyncHandler(async (req, res) => {
+    const user = await service.getUser(req.user!.role, req.user!.organizationId, req.params.id);
+    sendSuccess(res, user);
+  }),
+);
+
 router.post(
   '/',
   requirePermission(Permission.USER_CREATE, Permission.PLATFORM_USER_MANAGE),

@@ -21,6 +21,9 @@ export const createOrgUserSchema = z.object({
 });
 
 export const updateOrgUserSchema = z.object({
+  firstName: z.string().min(2).max(80).optional(),
+  lastName: z.string().min(2).max(80).optional(),
+  phone: z.string().min(8).max(30).optional().or(z.literal('')).transform((v) => (v === '' ? undefined : v)),
   isActive: z.boolean().optional(),
   role: z.enum(orgAssignableRoles).optional(),
   proAccessEnabled: z.boolean().optional(),
