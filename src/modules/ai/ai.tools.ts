@@ -732,21 +732,38 @@ Confirmez pour générer l’avis de paiement PDF.`;
     }
     const items = (data.items as Array<Record<string, unknown>>) ?? [];
     const filter = (data.filter as { role?: string | null }) ?? {};
-    const roleHint = filter.role === 'AGENT' ? 'agent' : 'collaborateur';
     if (!items.length) {
       return filter.role === 'AGENT'
         ? 'Vous n’avez actuellement aucun agent enregistré dans votre équipe.'
         : 'Aucun collaborateur trouvé pour ces critères.';
     }
-    const list = items
-      .slice(0, 30)
-      .map((m) => {
-        const status = m.isActive ? 'Actif' : 'Inactif';
-        return `• ${m.fullName} — ${m.roleLabel ?? m.role} — ${status}`;
-      })
-      .join('\n');
-    const noun = filter.role === 'AGENT' ? 'agent(s)' : 'collaborateur(s)';
-    return `Voici les ${roleHint}s de votre équipe :\n${list}\n\nVous avez actuellement ${data.count} ${noun}.`;
+
+    // Homonymes : ne jamais fusionner — distinguer via email/tél ou réf. userId (pas le nom).
+    const nameCounts = new Map<string, number>();
+    for (const m of items) {
+      const key = String(m.fullName ?? '')
+        .trim()
+        .toLowerCase();
+      nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
+    }
+
+    const list = items.slice(0, 30).map((m, index) => {
+      const status = m.isActive ? 'Actif' : 'Inactif';
+      const name = String(m.fullName ?? '').trim() || 'Sans nom';
+      const key = name.toLowerCase();
+      let detail = '';
+      if ((nameCounts.get(key) ?? 0) > 1) {
+        const email = typeof m.email === 'string' && m.email.trim() ? m.email.trim() : '';
+        const phone = typeof m.phone === 'string' && m.phone.trim() ? m.phone.trim() : '';
+        const id = typeof m.id === 'string' ? m.id : '';
+        const disambiguator = email || phone || (id ? `réf. ${id.slice(-6)}` : '');
+        if (disambiguator) detail = ` · ${disambiguator}`;
+      }
+      return `${index + 1}. ${name} — ${m.roleLabel ?? m.role} — ${status}${detail}`;
+    });
+
+    const noun = filter.role === 'AGENT' ? 'agents' : 'collaborateurs';
+    return `Vous avez actuellement ${data.count} ${noun} :\n\n${list.join('\n')}`;
   }
   return JSON.stringify(result).slice(0, 1200);
 }
@@ -774,7 +791,11 @@ export function resolveTeamMembersLocalIntent(qNormalized: string): LocalToolInt
   if (isMaintenanceAssignQuery) return null;
 
   if (q.includes('agent') && !isCreateHowto) {
-    return { name: 'getTeamMembers', args: { role: UserRole.AGENT } };
+    const args: Record<string, unknown> = { role: UserRole.AGENT };
+    if (q.includes('actif') || q.includes('active')) {
+      args.status = 'active';
+    }
+    return { name: 'getTeamMembers', args };
   }
 
   if (

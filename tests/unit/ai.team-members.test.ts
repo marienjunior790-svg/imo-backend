@@ -54,12 +54,14 @@ describe('formatToolResultForLocalReply — getTeamMembers', () => {
       filter: { role: 'AGENT' },
       items: [
         {
+          id: 'id_a',
           fullName: 'Jean Dupont',
           roleLabel: 'Agent terrain (maintenance)',
           role: 'AGENT',
           isActive: true,
         },
         {
+          id: 'id_b',
           fullName: 'Patrick X',
           roleLabel: 'Agent terrain (maintenance)',
           role: 'AGENT',
@@ -69,8 +71,9 @@ describe('formatToolResultForLocalReply — getTeamMembers', () => {
     });
     expect(text).toContain('Jean Dupont');
     expect(text).toContain('Patrick X');
-    expect(text).toContain('2 agent');
-    expect(text).not.toContain('Inventé');
+    expect(text).toContain('2 agents');
+    expect(text).toMatch(/^Vous avez actuellement 2 agents/m);
+    expect(text).not.toContain('(×');
   });
 
   it('cas vide agents', () => {
@@ -88,6 +91,44 @@ describe('formatToolResultForLocalReply — getTeamMembers', () => {
       code: 403,
     });
     expect(text.toLowerCase()).toContain('permission');
+  });
+
+  it('ne fusionne pas les homonymes et ajoute une réf. stable', () => {
+    const text = formatToolResultForLocalReply('getTeamMembers', {
+      count: 3,
+      filter: { role: 'AGENT' },
+      items: [
+        {
+          id: 'cmsaaaaaa0001thomas1',
+          fullName: 'Thomas Shelby',
+          roleLabel: 'Agent terrain (maintenance)',
+          role: 'AGENT',
+          isActive: true,
+        },
+        {
+          id: 'cmsbbbbbb0002thomas2',
+          fullName: 'Thomas Shelby',
+          roleLabel: 'Agent terrain (maintenance)',
+          role: 'AGENT',
+          isActive: true,
+          email: 't2@example.com',
+        },
+        {
+          id: 'cmscccccc0003unique3',
+          fullName: 'Ada Agent',
+          roleLabel: 'Agent terrain (maintenance)',
+          role: 'AGENT',
+          isActive: true,
+        },
+      ],
+    });
+    expect(text).toContain('3 agents');
+    expect(text.match(/Thomas Shelby/g)?.length).toBe(2);
+    expect(text).toContain('t2@example.com');
+    expect(text).toContain('réf. homas1');
+    expect(text).not.toContain('(×');
+    // Unique name: no disambiguator required
+    expect(text).toMatch(/Ada Agent — Agent terrain \(maintenance\) — Actif$/m);
   });
 });
 
