@@ -68,6 +68,36 @@ router.get(
   }),
 );
 
+/** Configure / répare l’accès login d’un collaborateur historique (loginId + mdp temporaire). */
+router.post(
+  '/:id/provision-access',
+  requirePermission(Permission.USER_CREATE),
+  asyncHandler(async (req, res) => {
+    const result = await withAudit(
+      req,
+      AuditAction.USER_UPDATE,
+      () =>
+        staffProvision.provisionAccess(
+          {
+            userId: req.user!.userId,
+            role: req.user!.role,
+            organizationId: req.user!.organizationId,
+          },
+          req.params.id,
+        ),
+      (r) => ({
+        resourceType: 'User',
+        resourceId: r.user.id,
+        newValue: {
+          identifier: r.account.identifier,
+          provisionAccess: true,
+        },
+      }),
+    );
+    sendSuccess(res, result, 'Accès collaborateur configuré', 200);
+  }),
+);
+
 router.post(
   '/',
   requirePermission(Permission.USER_CREATE, Permission.PLATFORM_USER_MANAGE),

@@ -17,6 +17,7 @@ export interface TeamMemberListFilters {
 const memberSelect = {
   id: true,
   email: true,
+  loginId: true,
   firstName: true,
   lastName: true,
   phone: true,
@@ -98,8 +99,11 @@ export class TeamMembersService {
 
     return users.map((u) => {
       const sanitized = sanitizeUser({ ...u, passwordHash: '' });
+      const hasLoginAccess = Boolean((u.email && u.email.trim()) || (u.loginId && u.loginId.trim()));
       return {
         ...sanitized,
+        loginId: u.loginId,
+        hasLoginAccess,
         fullName: `${u.firstName} ${u.lastName}`.trim(),
         roleLabel: roleLabel(u.role),
         openAssignedTickets: openByAssignee.get(u.id) ?? 0,

@@ -30,31 +30,19 @@ type UpdateOrgUserInput = z.infer<typeof updateOrgUserSchema>;
 
 
 const userSelect = {
-
   id: true,
-
   email: true,
-
+  loginId: true,
   firstName: true,
-
   lastName: true,
-
   phone: true,
-
   role: true,
-
   isActive: true,
-
   proAccessEnabled: true,
-
   organizationId: true,
-
   lastLoginAt: true,
-
   createdAt: true,
-
   organization: { select: { id: true, name: true } },
-
 } as const;
 
 
@@ -191,6 +179,8 @@ export class AdminService {
 
     return {
       ...sanitizeUser({ ...user, passwordHash: '' }),
+      loginId: user.loginId,
+      hasLoginAccess: Boolean((user.email && user.email.trim()) || (user.loginId && user.loginId.trim())),
       activity: {
         assigned,
         inProgress,

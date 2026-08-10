@@ -83,6 +83,9 @@ export class StaffProvisionService {
           proAccessEnabled: false,
         },
       });
+      if (!created.email && !created.loginId) {
+        throw new ValidationError('Échec provisionnement : aucun identifiant de connexion');
+      }
       await tx.membership.create({
         data: {
           userId: created.id,
@@ -121,8 +124,93 @@ export class StaffProvisionService {
         mustChangePassword: true,
         temporaryPassword,
         role: user.role,
+        hasLoginAccess: true,
       },
       message: 'Collaborateur provisionné — remettez les identifiants',
+    };
+  }
+
+  /**
+   * Répare un collaborateur historique sans email ni loginId :
+   * alloue un loginId + mot de passe temporaire (ne crée jamais d’email inventé).
+   * Idempotent si un identifiant existe déjà : régénère uniquement le mot de passe.
+   */
+  async provisionAccess(
+    actor: { userId: string; role: UserRole; organizationId: string | null },
+    targetUserId: string,
+  ) {
+    if (!isOrgAdminLevel(actor.role)) {
+      throw new ForbiddenError('Seul le propriétaire peut configurer l’accès collaborateur');
+    }
+    const organizationId = actor.organizationId;
+    if (!organizationId) throw new ForbiddenError('Organisation requise');
+
+    const target = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!target || target.organizationId !== organizationId) {
+      throw new ForbiddenError('Collaborateur introuvable dans votre organisation');
+    }
+    if (!['AGENT', 'MANAGER', 'ACCOUNTANT', 'TECHNICIAN', 'MAINTENANCE_LEAD'].includes(target.role)) {
+      throw new ValidationError('Accès réservé aux collaborateurs métier (pas OWNER/TENANT)');
+    }
+
+    let loginId = target.loginId;
+    if (!target.email && !loginId) {
+      loginId = await this.allocateLoginId();
+    }
+
+    const temporaryPassword = generateTemporaryPassword(20);
+    const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+    const now = new Date();
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id: target.id },
+        data: {
+          loginId,
+          passwordHash,
+          isActive: true,
+          mustChangePassword: true,
+          tempPasswordSetAt: now,
+          portalStatus: PortalAccessStatus.PROVISIONED,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        },
+      });
+      await tx.refreshToken.updateMany({
+        where: { userId: updated.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      return updated;
+    });
+
+    await this.audit.log({
+      action: AuditAction.USER_UPDATE,
+      userId: actor.userId,
+      userRole: actor.role,
+      organizationId,
+      resourceType: 'User',
+      resourceId: user.id,
+      newValue: {
+        provisionAccess: true,
+        loginId: user.loginId,
+        mustChangePassword: true,
+      },
+    });
+
+    return {
+      user: sanitizeUser({ ...user, passwordHash: '' }),
+      account: {
+        provisioned: true,
+        portalStatus: PortalAccessStatus.PROVISIONED,
+        identifier: user.email ?? user.loginId,
+        email: user.email,
+        loginId: user.loginId,
+        mustChangePassword: true,
+        temporaryPassword,
+        role: user.role,
+        hasLoginAccess: true,
+      },
+      message: 'Accès configuré — remettez les identifiants une seule fois',
     };
   }
 
