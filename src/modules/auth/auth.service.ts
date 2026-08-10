@@ -1046,6 +1046,14 @@ export class AuthService {
         });
       } catch (err) {
         console.error('[auth] Password reset email FAILED', err);
+        const detail = err instanceof Error ? err.message : String(err);
+        if (detail.includes('RESEND_DOMAIN_REQUIRED')) {
+          throw new AppError(
+            503,
+            "Service e-mail incomplet : le domaine d'envoi Resend n'est pas vérifié. Contactez le support ITC.",
+            'MAIL_DOMAIN_UNVERIFIED',
+          );
+        }
         throw new AppError(
           503,
           "Impossible d'envoyer l'e-mail de réinitialisation. Réessayez plus tard.",

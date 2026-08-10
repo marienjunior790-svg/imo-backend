@@ -128,6 +128,37 @@ export class PaymentRepository {
     });
   }
 
+  /** Remet un paiement PAID/PARTIAL en impayé (PENDING ou LATE selon échéance). */
+  markUnpaid(organizationId: string, id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.findFirst({ where: { id, organizationId } });
+      if (!payment) throw new NotFoundError('Paiement introuvable');
+      if (payment.status !== PaymentStatus.PAID && payment.status !== PaymentStatus.PARTIAL) {
+        throw new ValidationError('Ce paiement n’est pas enregistré comme payé');
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const due = new Date(payment.dueDate);
+      due.setHours(0, 0, 0, 0);
+      const status = due < today ? PaymentStatus.LATE : PaymentStatus.PENDING;
+
+      return tx.payment.update({
+        where: { id },
+        data: {
+          amountPaid: 0,
+          status,
+          method: null,
+          paidAt: null,
+          notes: payment.notes
+            ? `${payment.notes}\n[ITC] Marqué impayé le ${new Date().toISOString()}`
+            : `[ITC] Marqué impayé le ${new Date().toISOString()}`,
+        },
+        include: { lease: { include: { tenant: true, apartment: true, organization: true } } },
+      });
+    });
+  }
+
   markLatePayments() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -233,6 +264,10 @@ export class PaymentService {
     }
 
     return payment;
+  }
+
+  async markUnpaid(organizationId: string, id: string) {
+    return this.repo.markUnpaid(organizationId, id);
   }
 
   async initiateMobileMoney(organizationId: string, id: string) {

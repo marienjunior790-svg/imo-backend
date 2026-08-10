@@ -117,6 +117,22 @@ router.post(
 );
 
 router.post(
+  '/:id/mark-unpaid',
+  requirePermission(Permission.PAYMENT_VALIDATE),
+  requireOrgResource('payment'),
+  requireFeature(FeatureKey.RECORD_PAYMENT),
+  asyncHandler(async (req, res) => {
+    const updated = await withAudit(
+      req,
+      AuditAction.PAYMENT_VALIDATE,
+      () => service.markUnpaid(getOrganizationId(req), req.params.id),
+      (r) => ({ resourceType: 'Payment', resourceId: r.id, newValue: { status: r.status, amountPaid: 0 } }),
+    );
+    sendSuccess(res, updated, 'Paiement marqué impayé');
+  }),
+);
+
+router.post(
   '/:id/initiate-mobile-money',
   requirePermission(Permission.PAYMENT_CREATE),
   requireOrgResource('payment'),

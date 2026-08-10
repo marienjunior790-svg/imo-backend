@@ -50,7 +50,14 @@ async function sendViaResend(payload: MailPayload): Promise<MailSendResult> {
 
   const body = (await res.json().catch(() => ({}))) as { id?: string; message?: string; name?: string };
   if (!res.ok) {
-    throw new Error(`Resend HTTP ${res.status}: ${body.message ?? body.name ?? res.statusText}`);
+    const detail = body.message ?? body.name ?? res.statusText;
+    // Resend sandbox: onboarding@resend.dev ne peut envoyer qu’au propriétaire du compte Resend.
+    if (res.status === 403 && /verify a domain|own email address/i.test(detail)) {
+      throw new Error(
+        'RESEND_DOMAIN_REQUIRED: vérifiez un domaine sur resend.com/domains et mettez à jour MAIL_FROM (ne pas utiliser onboarding@resend.dev en production).',
+      );
+    }
+    throw new Error(`Resend HTTP ${res.status}: ${detail}`);
   }
   return { provider: 'resend', messageId: body.id };
 }
