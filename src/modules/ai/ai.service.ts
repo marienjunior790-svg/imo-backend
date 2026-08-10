@@ -93,6 +93,7 @@ Règles de réponse :
 - Pour générer un contrat PDF : appelle proposeGenerateLeasePdf puis explique que l'utilisateur doit CONFIRMER dans l'app. Ne prétends jamais que le PDF est déjà créé.
 - Pour un reçu/quittance PDF : proposeGeneratePaymentReceipt (paiement déjà payé) + confirmation.
 - Pour un avis de paiement / rappel de loyer PDF : proposeGeneratePaymentNotice + confirmation.
+- Pour la liste des agents / équipe : appelle getTeamMembers (role=AGENT pour « mes agents »). N'invente jamais de noms.
 - Retirer un locataire : oriente vers fiche Locataires → « Retirer le locataire ».
 - 3 à 8 phrases max sauf listes / étapes utiles.
 
@@ -128,6 +129,7 @@ export class AiService {
       'Comment marche l’application ?',
       'Comment ajouter un locataire ?',
       'Comment créer un agent ?',
+      'Quels sont mes agents ?',
       'Résumer mon patrimoine',
       'Voir mes impayés',
       'Quels logements sont vacants ?',
@@ -258,8 +260,9 @@ export class AiService {
     const parts: string[] = [];
     let pendingAction: AiPendingActionHint | undefined;
 
-    for (const name of intents) {
-      const result = await this.tools.execute(organizationId, name, {});
+    for (const intent of intents) {
+      const name = intent.name;
+      const result = await this.tools.execute(organizationId, name, intent.args ?? {});
       toolsUsed.push(name);
       parts.push(formatToolResultForLocalReply(name, result));
 

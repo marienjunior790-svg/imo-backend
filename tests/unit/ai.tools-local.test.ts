@@ -16,32 +16,32 @@ describe('AiToolsService.resolveLocalToolIntents', () => {
 
   it('détecte les impayés', () => {
     const intents = tools.resolveLocalToolIntents('Quels locataires n’ont pas encore payé ?');
-    expect(intents).toContain('getOutstandingPayments');
+    expect(intents.map((i) => i.name)).toContain('getOutstandingPayments');
   });
 
   it('détecte le patrimoine', () => {
     const intents = tools.resolveLocalToolIntents('Résumer mon patrimoine');
-    expect(intents).toContain('getDashboardSummary');
+    expect(intents.map((i) => i.name)).toContain('getDashboardSummary');
   });
 
   it('détecte la génération de contrat', () => {
     const intents = tools.resolveLocalToolIntents('Génère un contrat de location');
-    expect(intents).toContain('proposeGenerateLeasePdf');
+    expect(intents.map((i) => i.name)).toContain('proposeGenerateLeasePdf');
   });
 
   it('détecte la génération de reçu', () => {
     const intents = tools.resolveLocalToolIntents('Génère un reçu de paiement');
-    expect(intents).toContain('proposeGeneratePaymentReceipt');
+    expect(intents.map((i) => i.name)).toContain('proposeGeneratePaymentReceipt');
   });
 
   it('détecte la génération d’avis de paiement', () => {
     const intents = tools.resolveLocalToolIntents('Génère un avis de paiement');
-    expect(intents).toContain('proposeGeneratePaymentNotice');
+    expect(intents.map((i) => i.name)).toContain('proposeGeneratePaymentNotice');
   });
 
   it('détecte les vacants', () => {
     const intents = tools.resolveLocalToolIntents('Quels logements sont vacants ?');
-    expect(intents).toContain('getVacantUnits');
+    expect(intents.map((i) => i.name)).toContain('getVacantUnits');
   });
 });
 

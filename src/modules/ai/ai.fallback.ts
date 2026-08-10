@@ -76,8 +76,17 @@ export function resolveChatActions(message: string): AiActionHint[] {
     actions.push({ label: 'Fiches locataires', route: '/tenants' });
   } else if (q.includes('locataire') && (q.includes('ajout') || q.includes('cre') || q.includes('comment'))) {
     actions.push({ label: 'Ajouter un locataire', route: '/tenants' });
-  } else if (q.includes('locataire')) {
+  } else   if (q.includes('locataire')) {
     actions.push({ label: 'Voir les locataires', route: '/tenants' });
+  }
+  if (
+    q.includes('agent') &&
+    !q.includes('creer') &&
+    !q.includes('créer') &&
+    !q.includes('ajout') &&
+    !q.includes('comment')
+  ) {
+    actions.push({ label: 'Voir l’équipe', route: '/team/agents' });
   }
   if (q.includes('immeuble') || q.includes('patrimoine') || q.includes('parc')) {
     actions.push({ label: 'Voir les immeubles', route: '/buildings' });

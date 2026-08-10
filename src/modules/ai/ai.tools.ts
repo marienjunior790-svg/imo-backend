@@ -1,8 +1,11 @@
 import { inject, injectable } from 'tsyringe';
-import { ApartmentStatus, LeaseStatus, PaymentStatus } from '@prisma/client';
+import { ApartmentStatus, LeaseStatus, PaymentStatus, UserRole } from '@prisma/client';
 import type OpenAI from 'openai';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
+import { AppError, ForbiddenError } from '../../shared/errors/app.error.js';
+import { normalizeRole } from '../../shared/auth/roles.js';
 import { decimalToNumber } from '../../shared/utils/response.util.js';
+import { TeamMembersService } from '../admin/team-members.service.js';
 import { AiContextService } from './ai.context.service.js';
 
 export type AiToolName =
@@ -13,9 +16,16 @@ export type AiToolName =
   | 'getTenants'
   | 'getFinancialSummary'
   | 'getExpiringContracts'
+  | 'getTeamMembers'
   | 'proposeGenerateLeasePdf'
   | 'proposeGeneratePaymentReceipt'
   | 'proposeGeneratePaymentNotice';
+
+/** Intent local avec arguments (organizationId jamais dans args — injecté côté service). */
+export type LocalToolIntent = {
+  name: AiToolName;
+  args?: Record<string, unknown>;
+};
 
 export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
@@ -83,6 +93,36 @@ export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool
   {
     type: 'function',
     function: {
+      name: 'getTeamMembers',
+      description:
+        'Liste les collaborateurs / agents de l’organisation authentifiée (équipe). ' +
+        'Pour « mes agents » / liste des agents terrain, passer role=AGENT. ' +
+        'Ne pas utiliser pour l’assignation maintenance (agents terrain disponibles à l’affectation). ' +
+        'Ne jamais inventer de noms — uniquement les membres retournés. ' +
+        'Ne jamais passer organizationId (imposé par le serveur).',
+      parameters: {
+        type: 'object',
+        properties: {
+          role: {
+            type: 'string',
+            description: 'Filtre rôle Prisma : AGENT | MANAGER | ACCOUNTANT | OWNER | …',
+          },
+          status: {
+            type: 'string',
+            description: 'active | inactive | all (défaut all)',
+          },
+          search: {
+            type: 'string',
+            description: 'Recherche prénom, nom, e-mail ou téléphone',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'proposeGenerateLeasePdf',
       description:
         'Propose la génération d’un contrat PDF professionnel. Ne génère PAS immédiatement — l’utilisateur doit confirmer.',
@@ -132,6 +172,7 @@ export class AiToolsService {
   constructor(
     @inject(PrismaService) private readonly prisma: PrismaService,
     @inject(AiContextService) private readonly contextService: AiContextService,
+    @inject(TeamMembersService) private readonly teamMembers: TeamMembersService,
   ) {}
 
   async execute(
@@ -142,86 +183,97 @@ export class AiToolsService {
     const args =
       typeof rawArgs === 'string'
         ? (JSON.parse(rawArgs || '{}') as Record<string, unknown>)
-        : (rawArgs ?? {});
+        : { ...(rawArgs ?? {}) };
 
-    switch (toolName as AiToolName) {
-      case 'getDashboardSummary':
-        return this.getDashboardSummary(organizationId);
-      case 'getOutstandingPayments':
-        return this.getOutstandingPayments(organizationId);
-      case 'getVacantUnits':
-        return this.getVacantUnits(organizationId);
-      case 'getContracts':
-        return this.getContracts(organizationId, typeof args.status === 'string' ? args.status : undefined);
-      case 'getTenants':
-        return this.getTenants(organizationId);
-      case 'getFinancialSummary':
-        return this.getFinancialSummary(organizationId);
-      case 'getExpiringContracts':
-        return this.getExpiringContracts(organizationId);
-      case 'proposeGenerateLeasePdf':
-        return this.listLeasesForPdf(organizationId, typeof args.leaseId === 'string' ? args.leaseId : undefined);
-      case 'proposeGeneratePaymentReceipt':
-        return this.listPaymentsForReceipt(
-          organizationId,
-          typeof args.paymentId === 'string' ? args.paymentId : undefined,
-        );
-      case 'proposeGeneratePaymentNotice':
-        return this.listPaymentsForNotice(
-          organizationId,
-          typeof args.paymentId === 'string' ? args.paymentId : undefined,
-        );
-      default:
-        return { error: `Outil inconnu: ${toolName}` };
+    // Interdit : org inventée par le LLM — seul organizationId du JWT compte.
+    delete args.organizationId;
+    delete args.orgId;
+    delete args.organization_id;
+
+    try {
+      switch (toolName as AiToolName) {
+        case 'getDashboardSummary':
+          return await this.getDashboardSummary(organizationId);
+        case 'getOutstandingPayments':
+          return await this.getOutstandingPayments(organizationId);
+        case 'getVacantUnits':
+          return await this.getVacantUnits(organizationId);
+        case 'getContracts':
+          return await this.getContracts(organizationId, typeof args.status === 'string' ? args.status : undefined);
+        case 'getTenants':
+          return await this.getTenants(organizationId);
+        case 'getFinancialSummary':
+          return await this.getFinancialSummary(organizationId);
+        case 'getExpiringContracts':
+          return await this.getExpiringContracts(organizationId);
+        case 'getTeamMembers':
+          return await this.getTeamMembers(organizationId, args);
+        case 'proposeGenerateLeasePdf':
+          return await this.listLeasesForPdf(organizationId, typeof args.leaseId === 'string' ? args.leaseId : undefined);
+        case 'proposeGeneratePaymentReceipt':
+          return await this.listPaymentsForReceipt(
+            organizationId,
+            typeof args.paymentId === 'string' ? args.paymentId : undefined,
+          );
+        case 'proposeGeneratePaymentNotice':
+          return await this.listPaymentsForNotice(
+            organizationId,
+            typeof args.paymentId === 'string' ? args.paymentId : undefined,
+          );
+        default:
+          return { error: `Outil inconnu: ${toolName}`, code: 404 };
+      }
+    } catch (err) {
+      return mapToolError(err);
     }
   }
 
   /** Intent routing sans LLM — données réelles uniquement. */
-  resolveLocalToolIntents(message: string): AiToolName[] {
+  resolveLocalToolIntents(message: string): LocalToolIntent[] {
     const q = message
       .toLowerCase()
       .normalize('NFD')
       .replace(/\p{M}/gu, '');
 
-    const tools: AiToolName[] = [];
+    const tools: LocalToolIntent[] = [];
     if (
       q.includes('impay') ||
       q.includes('retard') ||
       (q.includes('pas encore pay') && q.includes('locataire'))
     ) {
-      tools.push('getOutstandingPayments');
+      tools.push({ name: 'getOutstandingPayments' });
     }
     if (q.includes('vacant') || q.includes('disponib') || q.includes('libre')) {
-      tools.push('getVacantUnits');
+      tools.push({ name: 'getVacantUnits' });
     }
     if (q.includes('expir') || q.includes('echeanc')) {
-      tools.push('getExpiringContracts');
+      tools.push({ name: 'getExpiringContracts' });
     }
     if (
       (q.includes('contrat') || q.includes('bail')) &&
       (q.includes('gener') || q.includes('cree') || q.includes('pdf') || q.includes('prepar'))
     ) {
-      tools.push('proposeGenerateLeasePdf');
+      tools.push({ name: 'proposeGenerateLeasePdf' });
     } else if (q.includes('contrat') || q.includes('bail')) {
-      tools.push('getContracts');
+      tools.push({ name: 'getContracts' });
     }
     if (
       (q.includes('recu') || q.includes('quittance')) &&
       (q.includes('gener') || q.includes('cree') || q.includes('pdf') || q.includes('prepar') || q.includes('fais'))
     ) {
-      tools.push('proposeGeneratePaymentReceipt');
+      tools.push({ name: 'proposeGeneratePaymentReceipt' });
     }
     if (
       (q.includes('avis de paiement') || (q.includes('avis') && q.includes('loyer')) || q.includes('rappel de loyer')) &&
       (q.includes('gener') || q.includes('cree') || q.includes('pdf') || q.includes('prepar') || q.includes('envoie') || q.includes('fais'))
     ) {
-      tools.push('proposeGeneratePaymentNotice');
+      tools.push({ name: 'proposeGeneratePaymentNotice' });
     }
     if (q.includes('locataire') && !q.includes('retirer') && !q.includes('ajout') && !q.includes('comment') && !q.includes('creer') && !q.includes('cree')) {
-      tools.push('getTenants');
+      tools.push({ name: 'getTenants' });
     }
     if (q.includes('revenu') || q.includes('financ') || q.includes('encaiss')) {
-      tools.push('getFinancialSummary');
+      tools.push({ name: 'getFinancialSummary' });
     }
     if (
       q.includes('patrimoine') ||
@@ -230,9 +282,55 @@ export class AiToolsService {
       q.includes('dashboard') ||
       q.includes('parc')
     ) {
-      tools.push('getDashboardSummary');
+      tools.push({ name: 'getDashboardSummary' });
     }
-    return [...new Set(tools)];
+
+    const teamIntent = resolveTeamMembersLocalIntent(q);
+    if (teamIntent) tools.push(teamIntent);
+
+    const seen = new Set<string>();
+    return tools.filter((t) => {
+      const key = `${t.name}:${JSON.stringify(t.args ?? {})}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private async getTeamMembers(organizationId: string, args: Record<string, unknown>) {
+    const role = typeof args.role === 'string' ? args.role.trim() : undefined;
+    const statusRaw = typeof args.status === 'string' ? args.status.trim().toLowerCase() : undefined;
+    const status =
+      statusRaw === 'active' || statusRaw === 'inactive' || statusRaw === 'all' ? statusRaw : undefined;
+    const search = typeof args.search === 'string' ? args.search : undefined;
+
+    const items = await this.teamMembers.listOrganizationMembers(organizationId, {
+      role,
+      status,
+      search,
+    });
+
+    return {
+      count: items.length,
+      filter: {
+        role: role ? normalizeRole(role) : null,
+        status: status ?? 'all',
+        search: search?.trim() || null,
+      },
+      organizationId,
+      items: items.map((m) => ({
+        id: m.id,
+        fullName: m.fullName,
+        firstName: m.firstName,
+        lastName: m.lastName,
+        email: m.email,
+        phone: m.phone,
+        role: m.role,
+        roleLabel: m.roleLabel,
+        isActive: m.isActive,
+        openAssignedTickets: m.openAssignedTickets,
+      })),
+    };
   }
 
   private async getDashboardSummary(organizationId: string) {
@@ -623,5 +721,84 @@ Confirmez pour générer l’avis de paiement PDF.`;
       .join('\n');
     return `Locataires (${data.count}) :\n${list}`;
   }
+  if (toolName === 'getTeamMembers') {
+    if (typeof data.error === 'string') {
+      const code = typeof data.code === 'number' ? data.code : null;
+      if (code === 401) return 'Vous n’êtes pas authentifié. Reconnectez-vous puis réessayez.';
+      if (code === 403) return 'Permission insuffisante pour consulter l’équipe.';
+      if (code === 404) return 'Ressource équipe introuvable.';
+      if (code === 500) return 'Erreur serveur lors de la lecture de l’équipe. Réessayez plus tard.';
+      return `Impossible d’accéder aux agents : ${data.error}`;
+    }
+    const items = (data.items as Array<Record<string, unknown>>) ?? [];
+    const filter = (data.filter as { role?: string | null }) ?? {};
+    const roleHint = filter.role === 'AGENT' ? 'agent' : 'collaborateur';
+    if (!items.length) {
+      return filter.role === 'AGENT'
+        ? 'Vous n’avez actuellement aucun agent enregistré dans votre équipe.'
+        : 'Aucun collaborateur trouvé pour ces critères.';
+    }
+    const list = items
+      .slice(0, 30)
+      .map((m) => {
+        const status = m.isActive ? 'Actif' : 'Inactif';
+        return `• ${m.fullName} — ${m.roleLabel ?? m.role} — ${status}`;
+      })
+      .join('\n');
+    const noun = filter.role === 'AGENT' ? 'agent(s)' : 'collaborateur(s)';
+    return `Voici les ${roleHint}s de votre équipe :\n${list}\n\nVous avez actuellement ${data.count} ${noun}.`;
+  }
   return JSON.stringify(result).slice(0, 1200);
+}
+
+/** Intent équipe / agents — hors questions maintenance d’affectation. */
+export function resolveTeamMembersLocalIntent(qNormalized: string): LocalToolIntent | null {
+  const q = qNormalized;
+  const isCreateHowto =
+    q.includes('comment') ||
+    q.includes('creer') ||
+    q.includes('créer') ||
+    q.includes('ajout') ||
+    q.includes('provision');
+
+  // Agents terrain pour assignation maintenance → pas getTeamMembers.
+  const isMaintenanceAssignQuery =
+    q.includes('agent') &&
+    (q.includes('maintenance') ||
+      q.includes('intervention') ||
+      q.includes('affectation') ||
+      q.includes('affecte') ||
+      q.includes('assign') ||
+      (q.includes('disponible') && (q.includes('ticket') || q.includes('panne'))));
+
+  if (isMaintenanceAssignQuery) return null;
+
+  if (q.includes('agent') && !isCreateHowto) {
+    return { name: 'getTeamMembers', args: { role: UserRole.AGENT } };
+  }
+
+  if (
+    (q.includes('equipe') || q.includes('équipe') || q.includes('collaborateur')) &&
+    !isCreateHowto
+  ) {
+    return { name: 'getTeamMembers', args: {} };
+  }
+
+  return null;
+}
+
+function mapToolError(err: unknown): { error: string; code: number } {
+  if (err instanceof ForbiddenError) {
+    return { error: err.message || 'Permission refusée', code: 403 };
+  }
+  if (err instanceof AppError) {
+    return { error: err.message, code: err.statusCode };
+  }
+  if (err instanceof Error && /network|econnrefused|etimedout|fetch failed/i.test(err.message)) {
+    return { error: 'Erreur réseau', code: 503 };
+  }
+  return {
+    error: err instanceof Error ? err.message : 'Erreur serveur',
+    code: 500,
+  };
 }

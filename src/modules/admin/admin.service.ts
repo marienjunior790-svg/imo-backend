@@ -19,6 +19,7 @@ import { isOrgAdminLevel, isOwner, isPlatformAdmin } from '../../shared/auth/rol
 import type { z } from 'zod';
 
 import { createOrgUserSchema, updateOrgUserSchema } from './admin.schema.js';
+import { TeamMembersService } from './team-members.service.js';
 
 
 
@@ -65,6 +66,7 @@ export class AdminService {
   constructor(
     @inject(PrismaService) private readonly prisma: PrismaService,
     @inject(AuditService) private readonly auditService: AuditService,
+    @inject(TeamMembersService) private readonly teamMembers: TeamMembersService,
   ) {}
 
 
@@ -124,20 +126,14 @@ export class AdminService {
 
     this.assertAdmin(actorRole);
 
+    // Org owners : même source de vérité que le tool IA getTeamMembers.
+    if (actorRole !== UserRole.SUPER_ADMIN) {
+      if (!actorOrgId) throw new ForbiddenError('Organisation requise');
+      return this.teamMembers.listOrganizationMembers(actorOrgId);
+    }
 
-
-    const where =
-
-      actorRole === UserRole.SUPER_ADMIN
-
-        ? {}
-
-        : { organizationId: actorOrgId ?? undefined };
-
-
-
+    // SUPER_ADMIN : vue plateforme (hors chemin IA org-scopé).
     const users = await this.prisma.user.findMany({
-      where,
       orderBy: [{ organizationId: 'asc' }, { lastName: 'asc' }],
       select: userSelect,
     });
