@@ -56,7 +56,8 @@ export class PortalService {
       this.prisma.payment.findMany({
         where: {
           lease: { tenantId: tenant.id },
-          status: { in: [PaymentStatus.LATE, PaymentStatus.PARTIAL] },
+          // Aligné sur nextPayment / liste « À payer » : PENDING + PARTIAL + LATE
+          status: { in: [PaymentStatus.PENDING, PaymentStatus.PARTIAL, PaymentStatus.LATE] },
         },
         select: { amount: true, amountPaid: true },
       }),
