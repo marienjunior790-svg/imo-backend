@@ -169,6 +169,10 @@ export function actionsFromTools(toolsUsed: string[]): AiActionHint[] {
         actions.push({ label: 'Voir les locataires', route: '/tenants' });
         actions.push({ label: 'Messagerie', route: '/notifications' });
         break;
+      case 'proposeSendWhatsAppMessage':
+        actions.push({ label: 'Voir les locataires', route: '/tenants' });
+        actions.push({ label: 'Messagerie', route: '/notifications' });
+        break;
       case 'getTeamMembers':
         actions.push({ label: 'Voir l’équipe', route: '/team/agents' });
         break;

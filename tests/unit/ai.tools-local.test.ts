@@ -11,6 +11,18 @@ import {
 } from '../../src/modules/ai/ai.pending-actions.js';
 import { listDocumentCapabilities } from '../../src/modules/ai/ai.documents.js';
 
+jest.mock('../../src/config/env.js', () => {
+  const actual = jest.requireActual('../../src/config/env.js') as Record<string, unknown>;
+  return {
+    ...actual,
+    isWhatsAppConfigured: true,
+    env: {
+      ...(actual.env as Record<string, unknown>),
+      WHATSAPP_DEFAULT_COUNTRY_CODE: '242',
+    },
+  };
+});
+
 describe('AiToolsService.resolveLocalToolIntents', () => {
   const tools = Object.create(AiToolsService.prototype) as AiToolsService;
 
@@ -39,11 +51,29 @@ describe('AiToolsService.resolveLocalToolIntents', () => {
     const intents = tools.resolveLocalToolIntents('Envoie un message au locataire');
     expect(intents.map((i) => i.name)).toContain('proposeSendTenantMessage');
     expect(intents.map((i) => i.name)).not.toContain('proposeGeneratePaymentNotice');
+    expect(intents.map((i) => i.name)).not.toContain('proposeSendWhatsAppMessage');
   });
 
   it('détecte rappel message sans avis de loyer', () => {
     const intents = tools.resolveLocalToolIntents('Envoie un rappel à Jean');
     expect(intents.map((i) => i.name)).toContain('proposeSendTenantMessage');
+  });
+
+  it('préfère WhatsApp pour « envoie un rappel de loyer » si configuré', () => {
+    const intents = tools.resolveLocalToolIntents('Envoie un rappel de loyer au locataire');
+    expect(intents.map((i) => i.name)).toContain('proposeSendWhatsAppMessage');
+    expect(intents.map((i) => i.name)).not.toContain('proposeGeneratePaymentNotice');
+    expect(intents.map((i) => i.name)).not.toContain('proposeSendTenantMessage');
+  });
+
+  it('détecte WhatsApp explicite', () => {
+    const intents = tools.resolveLocalToolIntents('Envoie un whatsapp au locataire Marie : Bonjour');
+    expect(intents.map((i) => i.name)).toContain('proposeSendWhatsAppMessage');
+  });
+
+  it('détecte média WhatsApp comme non supporté', () => {
+    const intents = tools.resolveLocalToolIntents('Envoie une image whatsapp au locataire');
+    expect(intents.map((i) => i.name)).toContain('proposeSendWhatsAppMedia');
   });
 
   it('détecte la génération de reçu', () => {
@@ -156,6 +186,32 @@ describe('formatToolResultForLocalReply', () => {
     expect(text).toContain('Marie');
     expect(text).toContain('Confirmez');
   });
+
+  it('formate proposeSendWhatsAppMessage prêt', () => {
+    const text = formatToolResultForLocalReply('proposeSendWhatsAppMessage', {
+      ready: true,
+      missing: [],
+      preview: {
+        tenantId: 't1',
+        tenantName: 'Marie Koumba',
+        toPhone: '+242061234567',
+        body: 'Rappel de loyer',
+      },
+    });
+    expect(text).toContain('Marie Koumba');
+    expect(text).toContain('+242061234567');
+    expect(text).toContain('WhatsApp');
+    expect(text).toContain('Confirmer');
+  });
+
+  it('formate proposeSendWhatsAppMedia unsupported', () => {
+    const text = formatToolResultForLocalReply('proposeSendWhatsAppMedia', {
+      ready: false,
+      unsupported: true,
+      error: 'Envoi WhatsApp audio/image non encore disponible.',
+    });
+    expect(text.toLowerCase()).toContain('non encore disponible');
+  });
 });
 
 describe('pending actions', () => {
@@ -176,7 +232,7 @@ describe('pending actions', () => {
     expect(() => getPendingAction(action.id, 'org1', 'user1')).toThrow();
   });
 
-  it('supporte CREATE_LEASE et SEND_TENANT_MESSAGE', () => {
+  it('supporte CREATE_LEASE, SEND_TENANT_MESSAGE et SEND_WHATSAPP_MESSAGE', () => {
     const lease = createPendingAction({
       organizationId: 'org1',
       userId: 'user1',
@@ -205,6 +261,21 @@ describe('pending actions', () => {
     });
     expect(msg.type).toBe('SEND_TENANT_MESSAGE');
     expect(getPendingAction(msg.id, 'org1', 'user1').payload.body).toBe('Bonjour');
+
+    const wa = createPendingAction({
+      organizationId: 'org1',
+      userId: 'user1',
+      type: 'SEND_WHATSAPP_MESSAGE',
+      payload: {
+        tenantId: 't1',
+        toPhone: '+242061234567',
+        tenantName: 'Jean Test',
+        body: 'Rappel WA',
+        providerChannel: 'WHATSAPP',
+      },
+    });
+    expect(wa.type).toBe('SEND_WHATSAPP_MESSAGE');
+    expect(getPendingAction(wa.id, 'org1', 'user1').payload.toPhone).toBe('+242061234567');
   });
 
   it('refuse une autre organisation', () => {

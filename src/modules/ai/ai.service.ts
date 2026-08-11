@@ -29,6 +29,7 @@ import { SubscriptionService } from '../subscriptions/subscription.service.js';
 import { LeaseService } from '../leases/lease.service.js';
 import { PaymentService } from '../payments/payment.service.js';
 import { NotificationCenterService } from '../notification-center/notification-center.service.js';
+import { RbacService } from '../../shared/rbac/rbac.service.js';
 import { PlanLimitError } from '../../shared/errors/subscription.error.js';
 import { ValidationError } from '../../shared/errors/app.error.js';
 import { decimalToNumber } from '../../shared/utils/response.util.js';
@@ -104,6 +105,7 @@ Règles ABSOLUES :
 - Questions « comment faire » → guide UI réel (menus / boutons), jamais une procédure inventée.
 - PDF contrat / reçu / avis : outils propose* puis confirmation utilisateur obligatoire.
 - Création de bail (enregistrement) et envoi de message locataire : proposeCreateLease / proposeSendTenantMessage puis confirmation — ne jamais inventer d’IDs, montants ou destinataires ; ne jamais prétendre succès sans outil / confirmation.
+- WhatsApp Business : proposeSendWhatsAppMessage puis confirmation obligatoire. Ne jamais inventer de numéro. Ne prétendre un envoi réussi que si l’outil confirme avec un providerMessageId. Audio/image WhatsApp : non disponible (proposeSendWhatsAppMedia).
 - Agents : getTeamMembers(role=AGENT). N’invente jamais de noms.
 - Respecte le périmètre organisation du JWT ; tu n’as pas d’autre org.
 
@@ -133,6 +135,7 @@ export class AiService {
     @inject(NotificationCenterService) private readonly notificationCenter: NotificationCenterService,
     @inject(PrismaService) private readonly prisma: PrismaService,
     @inject(AiToolsService) private readonly tools: AiToolsService,
+    @inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
   getSuggestions(): string[] {
@@ -322,6 +325,14 @@ export class AiService {
         if (proposed.pendingAction) pendingAction = proposed.pendingAction;
         if (proposed.reply) parts[parts.length - 1] = proposed.reply;
       }
+      if (name === 'proposeSendWhatsAppMessage') {
+        const proposed = this.attachPendingSendWhatsAppMessage(organizationId, userId, result);
+        if (proposed.pendingAction) pendingAction = proposed.pendingAction;
+        if (proposed.reply) parts[parts.length - 1] = proposed.reply;
+      }
+      if (name === 'proposeSendWhatsAppMedia') {
+        parts[parts.length - 1] = formatToolResultForLocalReply('proposeSendWhatsAppMedia', result);
+      }
     }
 
     return {
@@ -455,6 +466,24 @@ export class AiService {
               pendingActionId: proposed.pendingAction?.id,
               note: 'Message non envoyé — confirmation utilisateur obligatoire.',
             }),
+          });
+        } else if (name === 'proposeSendWhatsAppMessage') {
+          const proposed = this.attachPendingSendWhatsAppMessage(organizationId, userId, result);
+          if (proposed.pendingAction) pendingAction = proposed.pendingAction;
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: JSON.stringify({
+              ...((typeof result === 'object' && result) || {}),
+              pendingActionId: proposed.pendingAction?.id,
+              note: 'WhatsApp non envoyé — confirmation utilisateur obligatoire.',
+            }),
+          });
+        } else if (name === 'proposeSendWhatsAppMedia') {
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: JSON.stringify(result),
           });
         } else {
           messages.push({
@@ -957,7 +986,13 @@ export class AiService {
     }
 
     if (action.type === 'SEND_TENANT_MESSAGE') {
+      await this.rbac.assertPermission(role, 'MESSAGE_SEND');
       return this.executeSendTenantMessage(organizationId, userId, action.payload);
+    }
+
+    if (action.type === 'SEND_WHATSAPP_MESSAGE') {
+      await this.rbac.assertPermission(role, 'MESSAGE_SEND');
+      return this.executeSendWhatsAppMessage(organizationId, userId, action.payload);
     }
 
     throw new ValidationError('Type d’action non supporté');
@@ -1059,6 +1094,55 @@ export class AiService {
     };
   }
 
+  private attachPendingSendWhatsAppMessage(
+    organizationId: string,
+    userId: string,
+    result: unknown,
+  ): { pendingAction?: AiPendingActionHint; reply?: string } {
+    const data = result as {
+      ready?: boolean;
+      preview?: {
+        recipientUserId?: string;
+        tenantId?: string;
+        tenantName?: string;
+        toPhone?: string;
+        subject?: string;
+        body?: string;
+        providerChannel?: 'WHATSAPP';
+      };
+      summary?: string;
+    };
+    if (!data?.ready || !data.preview?.tenantId || !data.preview?.toPhone || !data.preview?.body) {
+      return { reply: formatToolResultForLocalReply('proposeSendWhatsAppMessage', result) };
+    }
+    const preview = data.preview;
+    const pending = createPendingAction({
+      organizationId,
+      userId,
+      type: 'SEND_WHATSAPP_MESSAGE',
+      payload: {
+        recipientUserId: preview.recipientUserId,
+        tenantId: preview.tenantId,
+        tenantName: preview.tenantName,
+        toPhone: preview.toPhone,
+        subject: preview.subject,
+        body: preview.body,
+        providerChannel: 'WHATSAPP',
+        summary: data.summary ?? `WhatsApp à ${preview.tenantName ?? 'locataire'} (${preview.toPhone})`,
+      },
+    });
+    return {
+      reply: formatToolResultForLocalReply('proposeSendWhatsAppMessage', result),
+      pendingAction: {
+        id: pending.id,
+        type: pending.type,
+        title: 'Envoyer WhatsApp',
+        summary: pending.payload.summary ?? '',
+        payload: pending.payload,
+      },
+    };
+  }
+
   private async executeCreateLease(
     organizationId: string,
     userId: string,
@@ -1151,6 +1235,57 @@ export class AiService {
       return {
         reply: `Impossible d’envoyer le message : ${msg}`,
         suggestions: ['Voir les locataires'],
+        actions: [{ label: 'Voir les locataires', route: '/tenants' }],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+  }
+
+  private async executeSendWhatsAppMessage(
+    organizationId: string,
+    userId: string,
+    payload: PendingActionPayload,
+  ): Promise<AiChatResponse> {
+    if (!payload.tenantId || !payload.toPhone || !payload.body) {
+      throw new ValidationError('Locataire, téléphone ou corps WhatsApp manquant');
+    }
+    try {
+      const { message, providerMessageId } = await this.notificationCenter.sendWhatsAppMessage(
+        organizationId,
+        userId,
+        {
+          tenantId: payload.tenantId,
+          toPhone: payload.toPhone,
+          body: payload.body,
+          subject: payload.subject,
+          recipientUserId: payload.recipientUserId,
+        },
+      );
+      const messageId =
+        message && typeof message === 'object' && 'id' in message
+          ? String((message as { id: string }).id)
+          : undefined;
+      return {
+        reply:
+          `Message WhatsApp envoyé.\n` +
+          `• Destinataire : ${payload.tenantName ?? 'le locataire'} (${payload.toPhone})\n` +
+          `• Provider ID : ${providerMessageId}\n` +
+          (messageId ? `• ID message ITC : ${messageId}\n` : '') +
+          `• Canal : WhatsApp Business`,
+        suggestions: ['Voir les locataires', 'Voir les impayés'],
+        actions: [
+          { label: 'Messagerie', route: '/notifications' },
+          { label: 'Voir les locataires', route: '/tenants' },
+        ],
+        poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+        contextUsed: true,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Envoi WhatsApp impossible';
+      return {
+        reply: `L’envoi WhatsApp a échoué.\n${msg}`,
+        suggestions: ['Voir les locataires', 'Envoyer un message portail'],
         actions: [{ label: 'Voir les locataires', route: '/tenants' }],
         poweredBy: 'local',
         contextUsed: true,

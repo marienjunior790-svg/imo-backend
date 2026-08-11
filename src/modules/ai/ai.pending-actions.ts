@@ -8,6 +8,7 @@ export type PendingActionType =
   | 'GENERATE_PAYMENT_NOTICE'
   | 'CREATE_LEASE'
   | 'SEND_TENANT_MESSAGE'
+  | 'SEND_WHATSAPP_MESSAGE'
   | 'NAVIGATE_HINT';
 
 export interface PendingActionPayload {
@@ -29,6 +30,8 @@ export interface PendingActionPayload {
   recipientUserId?: string;
   subject?: string;
   body?: string;
+  toPhone?: string;
+  providerChannel?: 'WHATSAPP' | 'IN_APP' | 'EMAIL' | 'SMS';
 }
 
 export interface PendingAction {

@@ -570,6 +570,7 @@ model Tenant {
   leases       Lease[]
   maintenanceTickets MaintenanceTicket[]
   propertyInspections PropertyInspection[]
+  messages     Message[]
 
   @@index([organizationId])
   @@index([organizationId, phone])
@@ -923,24 +924,48 @@ enum ReminderStatus {
   CANCELLED
 }
 
+enum MessageChannel {
+  IN_APP
+  WHATSAPP
+  EMAIL
+  SMS
+}
+
+enum MessageDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  DELIVERED
+  READ
+}
+
 model Message {
-  id             String    @id @default(cuid())
-  organizationId String
-  senderId       String
-  recipientId    String?
-  subject        String?
-  body           String
-  threadId       String?
-  readAt         DateTime?
-  createdAt      DateTime  @default(now())
+  id                String                 @id @default(cuid())
+  organizationId    String
+  senderId          String
+  recipientId       String?
+  subject           String?
+  body              String
+  threadId          String?
+  readAt            DateTime?
+  createdAt         DateTime               @default(now())
+  channel           MessageChannel         @default(IN_APP)
+  deliveryStatus    MessageDeliveryStatus  @default(DELIVERED)
+  providerMessageId String?                @unique
+  error             String?
+  tenantId          String?
+  toPhone           String?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   sender       User         @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
   recipient    User?        @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: SetNull)
+  tenant       Tenant?      @relation(fields: [tenantId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, createdAt])
   @@index([recipientId, readAt])
   @@index([threadId])
+  @@index([organizationId, channel])
+  @@index([tenantId])
   @@map("messages")
 }
 

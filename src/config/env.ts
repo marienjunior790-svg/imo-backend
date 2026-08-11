@@ -54,6 +54,16 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional(),
   /** Expéditeur vérifié, ex. ITC <noreply@votredomaine.com> */
   MAIL_FROM: z.string().optional(),
+  // WhatsApp Business — Meta Cloud API (optionnel)
+  WHATSAPP_ENABLED: z.coerce.boolean().default(false),
+  WHATSAPP_TOKEN: z.string().optional(),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
+  WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().optional(),
+  WHATSAPP_API_VERSION: z.string().default('v21.0'),
+  WHATSAPP_DEFAULT_COUNTRY_CODE: z.string().default('242'),
+  /** Si défini, les envois sortants utilisent un template (paramètre body = texte). */
+  WHATSAPP_TEMPLATE_NAME: z.string().optional(),
+  WHATSAPP_TEMPLATE_LANGUAGE: z.string().default('fr'),
   // Monitoring (optionnel)
   SENTRY_DSN: z.string().url().optional(),
   // Cache IA (ms)
@@ -84,6 +94,10 @@ export const isOpenAiConfigured = Boolean(env.OPENAI_API_KEY);
 export const isMailerConfigured = Boolean(
   (env.RESEND_API_KEY && env.MAIL_FROM) ||
     (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS && env.MAIL_FROM),
+);
+
+export const isWhatsAppConfigured = Boolean(
+  env.WHATSAPP_ENABLED && env.WHATSAPP_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID,
 );
 
 export const corsOrigins = env.CORS_ORIGINS

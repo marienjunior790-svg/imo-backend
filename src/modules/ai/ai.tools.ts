@@ -7,6 +7,8 @@ import { normalizeRole } from '../../shared/auth/roles.js';
 import { decimalToNumber } from '../../shared/utils/response.util.js';
 import { TeamMembersService } from '../admin/team-members.service.js';
 import { AiContextService } from './ai.context.service.js';
+import { env, isWhatsAppConfigured } from '../../config/env.js';
+import { isValidWhatsAppPhone, normalizePhoneE164 } from '../../shared/utils/phone.util.js';
 
 export type AiToolName =
   | 'getDashboardSummary'
@@ -23,7 +25,9 @@ export type AiToolName =
   | 'proposeGeneratePaymentReceipt'
   | 'proposeGeneratePaymentNotice'
   | 'proposeCreateLease'
-  | 'proposeSendTenantMessage';
+  | 'proposeSendTenantMessage'
+  | 'proposeSendWhatsAppMessage'
+  | 'proposeSendWhatsAppMedia';
 
 /** Intent local avec arguments (organizationId jamais dans args — injecté côté service). */
 export type LocalToolIntent = {
@@ -243,6 +247,44 @@ export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'proposeSendWhatsAppMessage',
+      description:
+        'Propose d’envoyer un message WhatsApp (Meta Cloud API) au locataire. ' +
+        'Confirmation obligatoire. Ne jamais inventer de numéro. Texte uniquement (pas audio/image).',
+      parameters: {
+        type: 'object',
+        properties: {
+          tenantId: { type: 'string', description: 'ID locataire (cuid)' },
+          tenantName: { type: 'string', description: 'Nom à rechercher si pas d’ID' },
+          toPhone: {
+            type: 'string',
+            description: 'Numéro E.164 ou local CG (optionnel — sinon téléphone du locataire en base)',
+          },
+          subject: { type: 'string', description: 'Libellé / objet interne' },
+          body: { type: 'string', description: 'Corps du message WhatsApp' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'proposeSendWhatsAppMedia',
+      description:
+        'Stub : envoi WhatsApp audio/image non disponible. Retourne unsupported.',
+      parameters: {
+        type: 'object',
+        properties: {
+          mediaType: { type: 'string', description: 'audio | image' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 @injectable()
@@ -306,6 +348,15 @@ export class AiToolsService {
           return await this.proposeCreateLease(organizationId, args);
         case 'proposeSendTenantMessage':
           return await this.proposeSendTenantMessage(organizationId, args);
+        case 'proposeSendWhatsAppMessage':
+          return await this.proposeSendWhatsAppMessage(organizationId, args);
+        case 'proposeSendWhatsAppMedia':
+          return {
+            ready: false,
+            unsupported: true,
+            error:
+              'Envoi WhatsApp audio/image non encore disponible. Utilisez un message texte (proposeSendWhatsAppMessage).',
+          };
         default:
           return { error: `Outil inconnu: ${toolName}`, code: 404 };
       }
@@ -398,13 +449,52 @@ export class AiToolsService {
       tools.push({ name: 'proposeGeneratePaymentReceipt' });
     }
     const wantsPdfNotice =
-      (q.includes('avis de paiement') || (q.includes('avis') && q.includes('loyer')) || q.includes('rappel de loyer')) &&
-      (q.includes('gener') || q.includes('cree') || q.includes('pdf') || q.includes('prepar') || q.includes('envoie') || q.includes('fais'));
+      (q.includes('avis de paiement') ||
+        (q.includes('avis') && q.includes('loyer')) ||
+        (q.includes('rappel de loyer') &&
+          (q.includes('gener') || q.includes('cree') || q.includes('pdf') || q.includes('prepar') || q.includes('fais')))) &&
+      (q.includes('gener') ||
+        q.includes('cree') ||
+        q.includes('pdf') ||
+        q.includes('prepar') ||
+        q.includes('envoie') ||
+        q.includes('fais'));
     if (wantsPdfNotice) {
       tools.push({ name: 'proposeGeneratePaymentNotice' });
     }
+
+    const wantsWhatsAppMedia =
+      (q.includes('whatsapp') || q.includes('whats app')) &&
+      (q.includes('audio') ||
+        q.includes('vocal') ||
+        q.includes('voix') ||
+        q.includes('image') ||
+        q.includes('photo') ||
+        q.includes('media') ||
+        q.includes('média'));
+    const wantsRentReminderSend =
+      (q.includes('envoie') || q.includes('envoyer')) &&
+      q.includes('rappel') &&
+      (q.includes('loyer') || q.includes('locataire'));
+    const wantsWhatsAppExplicit = q.includes('whatsapp') || q.includes('whats app');
+    const wantsWhatsAppMessage =
+      !wantsWhatsAppMedia &&
+      !wantsPdfNotice &&
+      (wantsWhatsAppExplicit || (isWhatsAppConfigured && wantsRentReminderSend));
+
+    if (wantsWhatsAppMedia) {
+      tools.push({ name: 'proposeSendWhatsAppMedia' });
+    } else if (wantsWhatsAppMessage) {
+      tools.push({
+        name: 'proposeSendWhatsAppMessage',
+        args: extractSendWhatsAppMessageArgsFromMessage(message),
+      });
+    }
+
     const wantsTenantMessage =
       !wantsPdfNotice &&
+      !wantsWhatsAppMessage &&
+      !wantsWhatsAppMedia &&
       ((q.includes('message') &&
         (q.includes('envoie') ||
           q.includes('envoyer') ||
@@ -412,7 +502,8 @@ export class AiToolsService {
           q.includes('ecris') ||
           q.includes('locataire'))) ||
         (q.includes('envoie') && q.includes('rappel') && !q.includes('avis') && !q.includes('loyer')) ||
-        (q.includes('envoyer') && q.includes('rappel') && !q.includes('avis') && !q.includes('loyer')));
+        (q.includes('envoyer') && q.includes('rappel') && !q.includes('avis') && !q.includes('loyer')) ||
+        (!isWhatsAppConfigured && wantsRentReminderSend));
     if (wantsTenantMessage) {
       tools.push({ name: 'proposeSendTenantMessage', args: extractSendTenantMessageArgsFromMessage(message) });
     }
@@ -1141,6 +1232,166 @@ export class AiToolsService {
       requiresUserConfirmation: true,
     };
   }
+
+  /** Valide une proposition WhatsApp — ne mute pas ; ne jamais inventer de numéro. */
+  private async proposeSendWhatsAppMessage(organizationId: string, args: Record<string, unknown>) {
+    if (!isWhatsAppConfigured) {
+      return {
+        ready: false,
+        error:
+          'WhatsApp n’est pas configuré sur ce serveur (WHATSAPP_ENABLED + WHATSAPP_TOKEN + WHATSAPP_PHONE_NUMBER_ID). ' +
+          'Vous pouvez envoyer un message interne via le portail locataire.',
+        requiresUserConfirmation: false,
+      };
+    }
+
+    const tenantId = typeof args.tenantId === 'string' ? args.tenantId.trim() : '';
+    const tenantNameSearch = typeof args.tenantName === 'string' ? args.tenantName.trim() : '';
+    const subject = typeof args.subject === 'string' ? args.subject.trim() : '';
+    const body = typeof args.body === 'string' ? args.body.trim() : '';
+    const toPhoneArg = typeof args.toPhone === 'string' ? args.toPhone.trim() : '';
+
+    const missing: string[] = [];
+    if (!body) missing.push('body');
+    if (!tenantId && !tenantNameSearch) missing.push('tenantId|tenantName');
+
+    let tenant: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      userId: string | null;
+      phone: string;
+    } | null = null;
+
+    if (tenantId) {
+      tenant = await this.prisma.tenant.findFirst({
+        where: { id: tenantId, organizationId },
+        select: { id: true, firstName: true, lastName: true, userId: true, phone: true },
+      });
+      if (!tenant) {
+        return {
+          ready: false,
+          error: 'Locataire introuvable dans votre organisation.',
+          missing,
+          requiresUserConfirmation: true,
+        };
+      }
+    } else if (tenantNameSearch) {
+      const parts = tenantNameSearch.split(/\s+/).filter(Boolean);
+      const candidates = await this.prisma.tenant.findMany({
+        where: {
+          organizationId,
+          OR: [
+            { firstName: { contains: tenantNameSearch, mode: 'insensitive' } },
+            { lastName: { contains: tenantNameSearch, mode: 'insensitive' } },
+            ...(parts.length >= 2
+              ? [
+                  {
+                    AND: [
+                      { firstName: { contains: parts[0], mode: 'insensitive' as const } },
+                      { lastName: { contains: parts.slice(1).join(' '), mode: 'insensitive' as const } },
+                    ],
+                  },
+                ]
+              : []),
+          ],
+        },
+        take: 8,
+        select: { id: true, firstName: true, lastName: true, userId: true, phone: true },
+      });
+      if (candidates.length === 0) {
+        return {
+          ready: false,
+          error: `Aucun locataire trouvé pour « ${tenantNameSearch} ».`,
+          missing,
+          requiresUserConfirmation: true,
+        };
+      }
+      if (candidates.length > 1) {
+        return {
+          ready: false,
+          error: 'Plusieurs locataires correspondent — précisez tenantId.',
+          candidates: candidates.map((t) => ({
+            id: t.id,
+            name: `${t.firstName} ${t.lastName}`,
+            phone: t.phone || null,
+          })),
+          missing: ['tenantId'],
+          requiresUserConfirmation: true,
+        };
+      }
+      tenant = candidates[0];
+    }
+
+    if (!tenant) {
+      return {
+        ready: false,
+        missing,
+        note: 'Indiquez le locataire (tenantId ou nom), le numéro si besoin, et le corps du message.',
+        requiresUserConfirmation: true,
+      };
+    }
+
+    const rawPhone = toPhoneArg || tenant.phone || '';
+    if (!rawPhone) {
+      return {
+        ready: false,
+        error: 'Ce locataire ne possède pas de numéro WhatsApp valide enregistré dans ITC.',
+        preview: {
+          tenantId: tenant.id,
+          tenantName: `${tenant.firstName} ${tenant.lastName}`,
+          subject: subject || undefined,
+          body: body || undefined,
+        },
+        missing: ['toPhone'],
+        requiresUserConfirmation: true,
+      };
+    }
+
+    const toPhone = normalizePhoneE164(rawPhone, env.WHATSAPP_DEFAULT_COUNTRY_CODE);
+    if (!toPhone || !isValidWhatsAppPhone(toPhone)) {
+      return {
+        ready: false,
+        error: 'Ce locataire ne possède pas de numéro WhatsApp valide enregistré dans ITC.',
+        preview: {
+          tenantId: tenant.id,
+          tenantName: `${tenant.firstName} ${tenant.lastName}`,
+          toPhone: rawPhone,
+          subject: subject || undefined,
+          body: body || undefined,
+        },
+        missing: ['toPhone'],
+        requiresUserConfirmation: true,
+      };
+    }
+
+    const preview = {
+      tenantId: tenant.id,
+      tenantName: `${tenant.firstName} ${tenant.lastName}`,
+      toPhone,
+      recipientUserId: tenant.userId ?? undefined,
+      subject: subject || undefined,
+      body: body || undefined,
+      providerChannel: 'WHATSAPP' as const,
+    };
+
+    if (missing.length) {
+      return {
+        ready: false,
+        missing,
+        preview,
+        requiresUserConfirmation: true,
+      };
+    }
+
+    return {
+      ready: true,
+      missing: [],
+      preview,
+      summary: `WhatsApp à ${preview.tenantName} (${toPhone})${subject ? ` — ${subject}` : ''}`,
+      requiresUserConfirmation: true,
+    };
+  }
 }
 
 export function formatToolResultForLocalReply(toolName: string, result: unknown): string {
@@ -1359,6 +1610,40 @@ Confirmez pour générer l’avis de paiement PDF.`;
       `Précisez le locataire et le texte du message.`
     );
   }
+  if (toolName === 'proposeSendWhatsAppMessage') {
+    if (typeof data.error === 'string') {
+      const candidates = (data.candidates as Array<Record<string, unknown>>) ?? [];
+      const list = candidates.length
+        ? `\nCorrespondances :\n${candidates
+            .map((c) => `• ${c.name} · id ${c.id}${c.phone ? ` · ${c.phone}` : ''}`)
+            .join('\n')}`
+        : '';
+      return `${data.error}${list}`;
+    }
+    const preview = (data.preview as Record<string, unknown>) ?? {};
+    const missing = (data.missing as string[]) ?? [];
+    if (data.ready) {
+      const name = String(preview.tenantName ?? 'le locataire');
+      const bodyPreview = String(preview.body ?? '').slice(0, 500);
+      return (
+        `Je vais envoyer ce message WhatsApp à ${name} :\n\n` +
+        `“${bodyPreview}”\n\n` +
+        `Téléphone : ${preview.toPhone}\n\n` +
+        `[Confirmer l’envoi] / [Annuler]`
+      );
+    }
+    return (
+      `Envoi WhatsApp incomplet.\n` +
+      (missing.length ? `Champs manquants : ${missing.join(', ')}.\n` : '') +
+      `Précisez le locataire, un numéro valide et le texte.`
+    );
+  }
+  if (toolName === 'proposeSendWhatsAppMedia') {
+    return (
+      (typeof data.error === 'string' ? data.error : null) ||
+      'Envoi WhatsApp audio/image non encore disponible. Utilisez un message texte.'
+    );
+  }
   if (toolName === 'getTenants') {
     const items = (data.items as Array<Record<string, unknown>>) ?? [];
     if (!items.length) return 'Aucun locataire enregistré.';
@@ -1497,6 +1782,26 @@ function extractSendTenantMessageArgsFromMessage(message: string): Record<string
     }
   }
   if (!args.subject && args.body) args.subject = 'Message ITC';
+  return args;
+}
+
+function extractSendWhatsAppMessageArgsFromMessage(message: string): Record<string, unknown> {
+  const args = extractSendTenantMessageArgsFromMessage(message);
+  const phone =
+    message.match(/(?:\+|00)?(?:242)?0?\d[\d\s.\-]{7,}\d/)?.[0] ||
+    message.match(/toPhone\s*[:=]?\s*([+\d][\d\s.\-]{7,})/i)?.[1];
+  if (phone) args.toPhone = phone.trim();
+  if (!args.body) {
+    if (/rappel\s+de\s+loyer/i.test(message)) {
+      args.body =
+        'Bonjour, ceci est un rappel concernant votre loyer. Merci de régulariser dès que possible. — ITC';
+      args.subject = args.subject || 'Rappel de loyer';
+    } else if (/rappel/i.test(message) && !args.body) {
+      args.body = 'Bonjour, ceci est un rappel de votre propriétaire. — ITC';
+      args.subject = args.subject || 'Rappel ITC';
+    }
+  }
+  if (!args.subject && args.body) args.subject = 'WhatsApp ITC';
   return args;
 }
 

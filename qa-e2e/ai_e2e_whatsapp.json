@@ -1,0 +1,13 @@
+{
+  "date": "2026-08-11",
+  "verdict": "BLOCKED",
+  "reason": "E2E Meta non exécuté : (1) code WhatsApp non déployé sur Railway tant que commit/push non faits ; (2) WHATSAPP_* credentials Meta absents ; (3) envoi prod nécessite autorisation explicite + numéro de test contrôlé. Aucun faux PASS.",
+  "unitTests": { "phone.util+ai.tools-local": "34 PASS" },
+  "provider": "meta_whatsapp_cloud_api",
+  "passCriteria": "confirm + Message WhatsApp envoyé + providerMessageId (wamid)",
+  "script": "qa-e2e/ai_e2e_whatsapp_test.ps1",
+  "checks": [
+    { "id": "WA_E2E", "status": "BLOCKED", "detail": "Credentials Meta + deploy + migrate + numéro de test requis" },
+    { "id": "WA_MEDIA", "status": "NOT_SUPPORTED", "detail": "proposeSendWhatsAppMedia stub only" }
+  ]
+}
