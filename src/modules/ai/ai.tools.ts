@@ -449,6 +449,7 @@ export class AiToolsService {
       tools.push({ name: 'proposeGeneratePaymentReceipt' });
     }
     const wantsPdfNotice =
+      !(q.includes('whatsapp') || q.includes('whats app')) &&
       (q.includes('avis de paiement') ||
         (q.includes('avis') && q.includes('loyer')) ||
         (q.includes('rappel de loyer') &&
@@ -1787,10 +1788,19 @@ function extractSendTenantMessageArgsFromMessage(message: string): Record<string
 
 function extractSendWhatsAppMessageArgsFromMessage(message: string): Record<string, unknown> {
   const args = extractSendTenantMessageArgsFromMessage(message);
-  const phone =
-    message.match(/(?:\+|00)?(?:242)?0?\d[\d\s.\-]{7,}\d/)?.[0] ||
-    message.match(/toPhone\s*[:=]?\s*([+\d][\d\s.\-]{7,})/i)?.[1];
-  if (phone) args.toPhone = phone.trim();
+  // Uniquement toPhone= explicite ou E.164 (+ / 00…) — ne jamais matcher une date ni un cuid.
+  const explicit =
+    message.match(/toPhone\s*[:=]\s*([+\d][\d\s.\-]{6,}\d)/i)?.[1] ||
+    message.match(/(?:whatsapp|tel|phone|num[eé]ro)\s*[:=]?\s*(\+[\d\s.\-]{8,}\d)/i)?.[1] ||
+    message.match(/(?<![\w])(\+(?:242)?0?\d[\d\s.\-]{6,}\d)(?![\w])/i)?.[1] ||
+    message.match(/(?<![\w])(00(?:242)?0?\d[\d\s.\-]{6,}\d)(?![\w])/i)?.[1];
+  if (explicit) {
+    const candidate = explicit.trim();
+    // Rejeter les faux positifs type dates ISO (20xx-xx-xx)
+    if (!/^20\d{2}[-.\s]/.test(candidate)) {
+      args.toPhone = candidate;
+    }
+  }
   if (!args.body) {
     if (/rappel\s+de\s+loyer/i.test(message)) {
       args.body =

@@ -20,13 +20,38 @@ function Chat($msg,$hist=$null) {
 }
 
 $tenants = Invoke-RestMethod -Uri "$base/tenants" -Headers $h
-$tItems = @($tenants.data)
-if ($tenants.data.items) { $tItems = @($tenants.data.items) }
-$tenant = $tItems | Where-Object { $_.phone -and $_.phone.ToString().Length -ge 8 } | Select-Object -First 1
-if (-not $tenant) { $tenant = $tItems | Select-Object -First 1 }
+# /tenants renvoie data: Tenant[] (pas data.items) — ne pas lire .items sur un tableau PS
+$raw = $tenants.data
+if ($null -eq $raw) { throw 'Aucun locataire (data null)' }
+if ($raw -is [System.Array]) {
+  $tItems = @($raw)
+} elseif ($raw.PSObject.Properties.Name -contains 'items') {
+  $tItems = @($raw.items)
+} else {
+  $tItems = @($raw)
+}
+Write-Output ("tenants_count={0}" -f $tItems.Count)
 
-$stamp = (Get-Date).ToString('yyyy-MM-dd HH:mm')
-$bodyText = "Rappel loyer test WhatsApp ITC $stamp"
+$tenant = $null
+if ($env:ITC_WA_TEST_TENANT_ID) {
+  $tenant = $tItems | Where-Object { $_.id -eq $env:ITC_WA_TEST_TENANT_ID } | Select-Object -First 1
+}
+if (-not $tenant -and $env:ITC_WA_TEST_PHONE) {
+  $want = ($env:ITC_WA_TEST_PHONE -replace '\D', '')
+  $tenant = $tItems | Where-Object {
+    $p = ($_.phone -replace '\D', '')
+    $p -and ($p -eq $want -or $p.EndsWith($want) -or $want.EndsWith($p))
+  } | Select-Object -First 1
+}
+if (-not $tenant) {
+  $tenant = $tItems | Where-Object { $_.phone -and $_.phone.ToString().Trim().Length -ge 8 } | Select-Object -First 1
+}
+if (-not $tenant -or -not $tenant.id) {
+  throw "Locataire de test introuvable (définir ITC_WA_TEST_TENANT_ID ou ITC_WA_TEST_PHONE)."
+}
+
+$stamp = Get-Date -Format 'HHmmss'
+$bodyText = "Bonjour Fortune, rappel de loyer test ITC WhatsApp numero $stamp."
 $msg = "Envoie un WhatsApp au locataire tenantId $($tenant.id) : $bodyText"
 Write-Output "tenant=$($tenant.id) name=$($tenant.firstName) $($tenant.lastName) phone=$($tenant.phone)"
 
@@ -53,7 +78,27 @@ if ($reply -match 'WhatsApp n.?est pas configur|WHATSAPP_ENABLED|WHATSAPP_TOKEN|
     $pmid = $Matches[1]
     if (-not $pmid -and $cr -match '(wamid\.\S+)') { $pmid = $Matches[1] }
     if ($cr -match 'Message WhatsApp envoyé' -and ($pmid -or $cr -match 'wamid')) {
-      Add-R 'WA_SEND' 'PASS' "providerMessageId present" $cr.Substring(0,[Math]::Min(280,$cr.Length))
+      Add-R 'WA_SEND' 'PASS' "providerMessageId=$pmid" $cr.Substring(0,[Math]::Min(280,$cr.Length))
+      # Vérifier persistance Message (channel/deliveryStatus/providerMessageId)
+      try {
+        Start-Sleep -Seconds 1
+        $msgs = Invoke-RestMethod -Uri "$base/notification-center/messages" -Headers $h
+        $mItems = @($msgs.data)
+        if ($msgs.data -isnot [System.Array] -and $msgs.data.items) { $mItems = @($msgs.data.items) }
+        $hit = $mItems | Where-Object {
+          $_.channel -eq 'WHATSAPP' -and (
+            ($pmid -and $_.providerMessageId -eq $pmid) -or
+            ($_.body -and $_.body.ToString().Contains('WhatsApp ITC'))
+          )
+        } | Select-Object -First 1
+        if ($hit) {
+          Add-R 'WA_PERSIST' 'PASS' ("deliveryStatus={0} providerMessageId={1} messageId={2}" -f $hit.deliveryStatus,$hit.providerMessageId,$hit.id)
+        } else {
+          Add-R 'WA_PERSIST' 'PARTIAL' 'Réponse IA OK mais ligne Message WHATSAPP non trouvée via API messages'
+        }
+      } catch {
+        Add-R 'WA_PERSIST' 'PARTIAL' ("Impossible de lister messages: {0}" -f $_.Exception.Message)
+      }
       Add-R 'WA_E2E' 'PASS' 'Envoi accepté par Meta Cloud API (preuve provider).'
     } else {
       Add-R 'WA_SEND' 'FAIL' 'Réponse sans preuve provider claire' $cr.Substring(0,[Math]::Min(280,$cr.Length))

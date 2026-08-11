@@ -1520,6 +1520,9 @@ export class AiService {
       .toLowerCase()
       .normalize('NFD')
       .replace(/\p{M}/gu, '');
+    // WhatsApp / message texte : ne jamais dériver vers avis PDF
+    if (q.includes('whatsapp') || q.includes('whats app')) return false;
+    if (q.includes('message') && (q.includes('envoie') || q.includes('envoyer'))) return false;
     const verb =
       q.includes('gener') ||
       q.includes('cree') ||
