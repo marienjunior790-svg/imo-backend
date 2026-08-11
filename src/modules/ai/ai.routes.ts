@@ -17,9 +17,9 @@ import { requirePermission } from '../../shared/middleware/permission.middleware
 import { validateBody } from '../../shared/middleware/validate.middleware.js';
 import { requireFeature } from '../../shared/middleware/feature.middleware.js';
 import { FeatureKey } from '../../shared/constants/feature-keys.js';
-import { asyncHandler, sendSuccess } from '../../shared/utils/response.util.js';
+import { asyncHandler, sendError, sendSuccess } from '../../shared/utils/response.util.js';
 import { AuditAction } from '../../shared/audit/audit-actions.js';
-import { withAudit } from '../../shared/audit/audit-request.js';
+import { auditFailure, auditSuccess, withAudit } from '../../shared/audit/audit-request.js';
 import { ValidationError } from '../../shared/errors/app.error.js';
 
 const router = Router();
@@ -277,15 +277,37 @@ router.post(
   requireFeature(FeatureKey.ACCESS_AI),
   validateBody(aiSpeakSchema),
   asyncHandler(async (req, res) => {
-    const audio = await withAudit(
-      req,
-      AuditAction.AI_TTS,
-      () => service.speak(getOrganizationId(req), req.user!.userId, req.user!.role, req.body.text),
-      () => ({ resourceType: 'AiTts', newValue: { chars: String(req.body.text).length } }),
-    );
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Content-Length', String(audio.length));
-    res.status(200).send(audio);
+    try {
+      // TTS d’abord — l’audit ne doit pas bloquer ni perdre l’audio.
+      const audio = await service.speak(
+        getOrganizationId(req),
+        req.user!.userId,
+        req.user!.role,
+        req.body.text,
+      );
+      try {
+        await auditSuccess(req, AuditAction.AI_TTS, {
+          resourceType: 'AiTts',
+          newValue: { chars: String(req.body.text).length },
+        });
+      } catch (auditErr) {
+        console.error('[ai.speak] auditSuccess failed (non-blocking):', auditErr);
+      }
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Content-Length', String(audio.length));
+      res.status(200);
+      res.end(audio);
+    } catch (err) {
+      try {
+        await auditFailure(req, AuditAction.AI_TTS, {
+          resourceType: 'AiTts',
+          errorMessage: err instanceof Error ? err.message : 'Erreur TTS',
+        });
+      } catch {
+        /* ignore */
+      }
+      sendError(res, err);
+    }
   }),
 );
 

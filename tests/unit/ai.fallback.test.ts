@@ -1,4 +1,8 @@
-import { buildLocalFallbackReply } from '../../src/modules/ai/ai.fallback.js';
+import {
+  actionsFromTools,
+  buildLocalFallbackReply,
+  resolveChatActions,
+} from '../../src/modules/ai/ai.fallback.js';
 import type { AiOrganizationContext } from '../../src/modules/ai/ai.context.service.js';
 
 const mockContext: AiOrganizationContext = {
@@ -53,5 +57,42 @@ describe('AI local fallback', () => {
     expect(reply.toLowerCase()).toContain('bonjour');
     expect(reply).toContain('Agence Test');
     expect(reply).toMatch(/impay|vacant|patrimoine|contrat/i);
+  });
+
+  it('répond à « mes logements » avec le parc réel (jamais « pas compris »)', () => {
+    const reply = buildLocalFallbackReply('mes logements', mockContext);
+    expect(reply.toLowerCase()).not.toMatch(/pas reconnu|pas compris|demande précise/);
+    expect(reply).toContain('5');
+    expect(reply).toMatch(/logement|occup/i);
+  });
+
+  it('question floue : données réelles sans « pas reconnu »', () => {
+    const reply = buildLocalFallbackReply('xyz abc', mockContext);
+    expect(reply.toLowerCase()).not.toMatch(/pas reconnu|pas compris/);
+    expect(reply).toContain('Agence Test');
+  });
+});
+
+describe('resolveChatActions', () => {
+  it('propose navigation logements', () => {
+    const actions = resolveChatActions('mes logements');
+    expect(actions.some((a) => a.route === '/properties')).toBe(true);
+  });
+
+  it('propose navigation impayés avec query', () => {
+    const actions = resolveChatActions('qui n’a pas payé ce mois-ci ?');
+    expect(actions.some((a) => a.route === '/payments?tab=unpaid')).toBe(true);
+  });
+});
+
+describe('actionsFromTools', () => {
+  it('mappe getUnits vers propriétés', () => {
+    const actions = actionsFromTools(['getUnits']);
+    expect(actions.some((a) => a.route === '/properties')).toBe(true);
+  });
+
+  it('mappe getOutstandingPayments vers onglet impayés', () => {
+    const actions = actionsFromTools(['getOutstandingPayments']);
+    expect(actions.some((a) => a.route === '/payments?tab=unpaid')).toBe(true);
   });
 });

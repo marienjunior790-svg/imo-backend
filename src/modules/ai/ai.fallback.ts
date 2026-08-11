@@ -57,11 +57,26 @@ export function resolveChatActions(message: string): AiActionHint[] {
     return actions;
   }
 
-  if (q.includes('impay') || q.includes('retard') || q.includes('relanc')) {
+  if (q.includes('que dois') || q.includes('quoi faire') || (q.includes('aujourd') && q.includes('faire'))) {
+    actions.push({ label: 'Voir les impayés', route: '/payments?tab=unpaid' });
+    actions.push({ label: 'Tableau de bord', route: '/dashboard' });
+    actions.push({ label: 'Voir les logements', route: '/properties' });
+  }
+  if (q.includes('impay') || q.includes('retard') || q.includes('relanc') || (q.includes('pas pay') && q.includes('qui'))) {
     actions.push({ label: 'Voir les impayés', route: '/payments?tab=unpaid' });
   }
   if (q.includes('vacant') || q.includes('disponib') || q.includes('libre') || q.includes('occupation')) {
     actions.push({ label: 'Voir les biens', route: '/properties' });
+  }
+  if (
+    q.includes('logement') ||
+    q.includes('appartement') ||
+    /\bappart\b/.test(q) ||
+    /\bmes biens\b/.test(q) ||
+    (q.includes('montre') && q.includes('patrimoine'))
+  ) {
+    actions.push({ label: 'Voir les logements', route: '/properties' });
+    actions.push({ label: 'Résumé du parc', route: '/dashboard' });
   }
   if (q.includes('contrat') || q.includes('bail') || q.includes('echeanc') || q.includes('expir')) {
     actions.push({ label: 'Voir les contrats', route: '/leases' });
@@ -76,7 +91,7 @@ export function resolveChatActions(message: string): AiActionHint[] {
     actions.push({ label: 'Fiches locataires', route: '/tenants' });
   } else if (q.includes('locataire') && (q.includes('ajout') || q.includes('cre') || q.includes('comment'))) {
     actions.push({ label: 'Ajouter un locataire', route: '/tenants' });
-  } else   if (q.includes('locataire')) {
+  } else if (q.includes('locataire')) {
     actions.push({ label: 'Voir les locataires', route: '/tenants' });
   }
   if (
@@ -116,6 +131,54 @@ export function resolveChatActions(message: string): AiActionHint[] {
     .slice(0, 4);
 }
 
+/** Actions de navigation dérivées des outils réellement exécutés (routes ITC réelles). */
+export function actionsFromTools(toolsUsed: string[]): AiActionHint[] {
+  const actions: AiActionHint[] = [];
+  for (const name of toolsUsed) {
+    switch (name) {
+      case 'getOutstandingPayments':
+        actions.push({ label: 'Voir les impayés', route: '/payments?tab=unpaid' });
+        actions.push({ label: 'Voir les locataires', route: '/tenants' });
+        actions.push({ label: 'Tableau de bord', route: '/dashboard' });
+        break;
+      case 'getUnits':
+        actions.push({ label: 'Voir les logements', route: '/properties' });
+        actions.push({ label: 'Voir les vacants', route: '/properties' });
+        actions.push({ label: 'Résumé du patrimoine', route: '/dashboard' });
+        break;
+      case 'getVacantUnits':
+        actions.push({ label: 'Voir les vacants', route: '/properties' });
+        actions.push({ label: 'Voir les logements', route: '/properties' });
+        break;
+      case 'getBuildings':
+        actions.push({ label: 'Voir les immeubles', route: '/buildings' });
+        actions.push({ label: 'Voir les logements', route: '/properties' });
+        break;
+      case 'getDashboardSummary':
+      case 'getFinancialSummary':
+        actions.push({ label: 'Tableau de bord', route: '/dashboard' });
+        actions.push({ label: 'Voir les paiements', route: '/payments' });
+        actions.push({ label: 'Ouvrir les rapports', route: '/reports' });
+        break;
+      case 'getContracts':
+      case 'getExpiringContracts':
+      case 'proposeCreateLease':
+        actions.push({ label: 'Voir les contrats', route: '/leases' });
+        break;
+      case 'proposeSendTenantMessage':
+        actions.push({ label: 'Voir les locataires', route: '/tenants' });
+        actions.push({ label: 'Messagerie', route: '/notifications' });
+        break;
+      case 'getTeamMembers':
+        actions.push({ label: 'Voir l’équipe', route: '/team/agents' });
+        break;
+      default:
+        break;
+    }
+  }
+  return actions;
+}
+
 function portfolioSnapshot(ctx: AiOrganizationContext): string {
   const s = ctx.summary;
   return `• ${s.totalApartments} biens · occupation ${s.occupancyRate} %
@@ -129,6 +192,18 @@ function capabilitiesBlurb(): string {
 • Contrats (générer PDF, échéances)
 • Locataires (ajouter / retirer)
 • Risques et analyses LIA`;
+}
+
+export function isDailyPrioritiesMessage(message: string): boolean {
+  return isDailyPrioritiesIntent(normalizeQuery(message));
+}
+
+function isDailyPrioritiesIntent(q: string): boolean {
+  return (
+    q.includes('que dois') ||
+    q.includes('quoi faire') ||
+    (q.includes('aujourd') && (q.includes('faire') || q.includes('priorit')))
+  );
 }
 
 /** Réponses rule-based si OpenAI indisponible — basées uniquement sur le contexte org. */
@@ -167,6 +242,32 @@ ${capabilitiesBlurb()}
 Exemples : « Comment marche l’application ? », « Comment ajouter un locataire ? », « Voir mes impayés ».`;
   }
 
+  if (
+    q.includes('que dois') ||
+    q.includes('quoi faire') ||
+    (q.includes('aujourd') && (q.includes('faire') || q.includes('priorit')))
+  ) {
+    const focus =
+      s.latePayments > 0
+        ? `1. Traiter ${s.latePayments} impayé(s) (${fmt(s.collectedThisMonthXaf)} XAF déjà encaissés ce mois).`
+        : `1. Suivre les encaissements (${fmt(s.collectedThisMonthXaf)} XAF ce mois).`;
+    const focus2 =
+      s.availableApartments > 0
+        ? `2. Commercialiser ${s.availableApartments} logement(s) vacant(s).`
+        : `2. Maintenir l’occupation à ${s.occupancyRate} %.`;
+    const focus3 =
+      ctx.expiringLeases.length > 0
+        ? `3. Anticiper ${ctx.expiringLeases.length} contrat(s) bientôt à échéance.`
+        : `3. Suivre les ${s.activeLeases} contrat(s) actifs.`;
+    return `Priorités du jour pour « ${org} » :
+
+${focus}
+${focus2}
+${focus3}
+
+${portfolioSnapshot(ctx)}`;
+  }
+
   const howtoEarly = isAppHowtoIntent(message) ? resolveAppHowtoReply(message) : null;
   if (howtoEarly) return howtoEarly;
 
@@ -195,6 +296,22 @@ ${list}`;
 
   if (q.includes('occupation') || q.includes('occup')) {
     return `Taux d'occupation actuel : ${s.occupancyRate} % (${s.occupiedApartments} occupés / ${s.totalApartments} biens). ${s.availableApartments} vacant(s).`;
+  }
+
+  if (
+    q.includes('logement') ||
+    q.includes('appartement') ||
+    /\bappart\b/.test(q) ||
+    /\bmes biens\b/.test(q) ||
+    (/\bcombien\b/.test(q) && /\b(logement|appart|biens?)\b/.test(q))
+  ) {
+    return `Parc immobilier « ${org} » :
+• ${s.totalApartments} logement(s) au total
+• ${s.occupiedApartments} occupé(s) · ${s.availableApartments} vacant(s)
+• Occupation ${s.occupancyRate} %
+• ${s.totalBuildings} immeuble(s)
+
+Ouvrez Biens / Logements pour le détail unité par unité, ou demandez « logements vacants ».`;
   }
 
   if (q.includes('revenu') || q.includes('encaiss') || q.includes('collect')) {
@@ -288,33 +405,30 @@ Le document inclut identité, loyers et clauses. Vous pouvez aussi me demander u
     return `Contrats actifs : ${s.activeLeases}. Locataires : ${s.totalTenants}.`;
   }
 
-  // Question floue : répondre utilement sans dump générique froid
+  // Question floue : répondre avec données réelles + orientation — jamais « je n’ai pas compris »
   const focus =
     s.latePayments > 0
-      ? `Priorité suggérée : traiter les ${s.latePayments} impayé(s).`
+      ? `Priorité : traiter les ${s.latePayments} impayé(s).`
       : s.availableApartments > 0
-        ? `Priorité suggérée : commercialiser ${s.availableApartments} vacant(s).`
-        : `Priorité suggérée : suivre les ${s.activeLeases} contrat(s) actifs.`;
+        ? `Priorité : commercialiser ${s.availableApartments} vacant(s).`
+        : `Priorité : suivre les ${s.activeLeases} contrat(s) actifs.`;
 
-  return `Je n’ai pas reconnu une demande précise, mais voici l’état de « ${org} » :
+  return `Voici ce que confirment vos données ITC pour « ${org} » :
 
 ${portfolioSnapshot(ctx)}
 ${focus}
 
-Reformulez par ex. : « mes impayés », « logements vacants », « résumé patrimoine », « comment retirer un locataire ».`;
+Je peux détailler immédiatement : « mes logements », « mes impayés », « logements vacants », « mes agents », « résumé patrimoine », ou une procédure (« comment ajouter un locataire »).`;
 }
 
 /** Suggestions contextuelles (toujours basées sur les compteurs réels). */
 export function buildContextualSuggestions(ctx: AiOrganizationContext): string[] {
   const s = ctx.summary;
-  const list: string[] = ['Résumer mon patrimoine'];
+  const list: string[] = ['Que dois-je faire aujourd’hui ?', 'Mes logements', 'Résumer mon patrimoine'];
   if (s.latePayments > 0) list.push('Voir mes impayés');
   else list.push('Quels sont mes revenus ce mois-ci ?');
   if (s.availableApartments > 0) list.push('Quels logements sont vacants ?');
   else list.push('Quel est mon taux d\'occupation ?');
-  if (ctx.expiringLeases.length > 0) list.push('Contrats à échéance');
-  else list.push('Combien de contrats actifs ?');
-  list.push('Générer un contrat de location');
-  list.push('Comment retirer un locataire ?');
+  list.push('Comment ajouter un locataire ?');
   return list.slice(0, 6);
 }

@@ -6,6 +6,8 @@ export type PendingActionType =
   | 'GENERATE_LEASE_PDF'
   | 'GENERATE_PAYMENT_RECEIPT'
   | 'GENERATE_PAYMENT_NOTICE'
+  | 'CREATE_LEASE'
+  | 'SEND_TENANT_MESSAGE'
   | 'NAVIGATE_HINT';
 
 export interface PendingActionPayload {
@@ -16,6 +18,17 @@ export interface PendingActionPayload {
   periodLabel?: string;
   route?: string;
   summary?: string;
+  tenantId?: string;
+  apartmentId?: string;
+  startDate?: string;
+  endDate?: string;
+  monthlyRent?: number;
+  depositAmount?: number;
+  terms?: string;
+  activate?: boolean;
+  recipientUserId?: string;
+  subject?: string;
+  body?: string;
 }
 
 export interface PendingAction {

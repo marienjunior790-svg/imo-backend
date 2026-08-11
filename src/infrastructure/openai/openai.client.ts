@@ -89,17 +89,23 @@ export class OpenAiClient {
     if (env.TTS_PROVIDER === 'none') {
       throw new ValidationError('TTS désactivé (TTS_PROVIDER=none)');
     }
-    const client = this.getClient();
     const clipped = text.trim().slice(0, 3500);
     if (!clipped) throw new ValidationError('Texte TTS vide');
-    const response = await client.audio.speech.create({
-      model: 'tts-1',
-      voice,
-      input: clipped,
-      response_format: 'mp3',
-    });
-    const ab = await response.arrayBuffer();
-    return Buffer.from(ab);
+    try {
+      const client = this.getClient();
+      const response = await client.audio.speech.create({
+        model: 'tts-1',
+        voice,
+        input: clipped,
+        response_format: 'mp3',
+      });
+      const ab = await response.arrayBuffer();
+      return Buffer.from(ab);
+    } catch (err) {
+      if (err instanceof ValidationError) throw err;
+      const msg = err instanceof Error ? err.message : 'Erreur TTS OpenAI';
+      throw new ValidationError(`Synthèse vocale impossible : ${msg}`);
+    }
   }
 
   /**

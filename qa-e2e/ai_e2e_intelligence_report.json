@@ -1,0 +1,191 @@
+﻿{
+    "date":  "2026-08-11T16:23:00",
+    "account":  "ugcmanagemnet007@gmail.com",
+    "role":  "OWNER",
+    "organizationId":  "cmsjkfna100ud4ggtd8xfdv1m",
+    "userId":  "cmsjkfnaa00uf4ggtuud22sho",
+    "aiMode":  "openai",
+    "multimodal":  {
+                       "vision":  true,
+                       "stt":  true,
+                       "tts":  true
+                   },
+    "baseline":  {
+                     "apartments":  2,
+                     "buildings":  1,
+                     "unpaid":  0,
+                     "tenants":  3,
+                     "leases":  2,
+                     "agents":  0
+                 },
+    "summary":  {
+                    "partial":  1,
+                    "pass":  14,
+                    "fail":  4,
+                    "total":  23,
+                    "not_supported":  4
+                },
+    "results":  [
+                    {
+                        "id":  "PREP_STATUS",
+                        "status":  "PASS",
+                        "detail":  "mode=openai vision=True stt=True tts=True",
+                        "toolsUsed":  "",
+                        "evidence":  null
+                    },
+                    {
+                        "id":  "PREP_BASELINE",
+                        "status":  "PASS",
+                        "detail":  "buildings=1 apartments=2 tenants=3 leases=2 unpaid=0 agents=0",
+                        "toolsUsed":  "",
+                        "evidence":  null
+                    },
+                    {
+                        "id":  "R01_IMMEUBLES",
+                        "status":  "FAIL",
+                        "detail":  "Unrecognized-intent reply",
+                        "toolsUsed":  "",
+                        "evidence":  "Je n’ai pas reconnu une demande précise, mais voici l’état de « appartement 69 » :\n\n• 2 biens · occupation 50 %\n• 371 000 XAF encaissés ce mois\n• 0 impayé(s) · 0 vacant(s)\nPriorité suggérée : suivre les 2 contrat(s) acti"
+                    },
+                    {
+                        "id":  "R02_LOGEMENTS",
+                        "status":  "FAIL",
+                        "detail":  "Unrecognized-intent reply",
+                        "toolsUsed":  "",
+                        "evidence":  "Je n’ai pas reconnu une demande précise, mais voici l’état de « appartement 69 » :\n\n• 2 biens · occupation 50 %\n• 371 000 XAF encaissés ce mois\n• 0 impayé(s) · 0 vacant(s)\nPriorité suggérée : suivre les 2 contrat(s) acti"
+                    },
+                    {
+                        "id":  "R03_LOCATAIRES",
+                        "status":  "PASS",
+                        "detail":  "tools=[getTenants] dataHit=True",
+                        "toolsUsed":  "getTenants",
+                        "evidence":  "Locataires (3) :\n• fortune libolo — 057488148 · 1 bail(s)\n• yannick noah — 055719922 · 1 bail(s)\n• yannick noah — 06 571 99 22"
+                    },
+                    {
+                        "id":  "R04_AGENTS",
+                        "status":  "PASS",
+                        "detail":  "tools=[getTeamMembers] dataHit=True",
+                        "toolsUsed":  "getTeamMembers",
+                        "evidence":  "Vous avez actuellement 8 agents :\n\n1. Test Agent16490 — Agent terrain (maintenance) — Actif\n2. UiTest AgentCred — Agent terrain (maintenance) — Actif\n3. moi je — Agent terrain (maintenance) — Actif\n4. Thomas shelby — Age"
+                    },
+                    {
+                        "id":  "R05_CONTRATS",
+                        "status":  "PASS",
+                        "detail":  "tools=[getContracts] dataHit=True",
+                        "toolsUsed":  "getContracts",
+                        "evidence":  "Contrats (2) :\n• fortune libolo — big (ACTIVE) · id cmsl81slh00ufwnm1n30oqnkz\n• yannick noah — appartement 56 (ACTIVE) · id cmskw2miw00ufg9asq0cz2r2p"
+                    },
+                    {
+                        "id":  "R06_PAIEMENTS",
+                        "status":  "FAIL",
+                        "detail":  "Unrecognized-intent reply",
+                        "toolsUsed":  "",
+                        "evidence":  "Je n’ai pas reconnu une demande précise, mais voici l’état de « appartement 69 » :\n\n• 2 biens · occupation 50 %\n• 371 000 XAF encaissés ce mois\n• 0 impayé(s) · 0 vacant(s)\nPriorité suggérée : suivre les 2 contrat(s) acti"
+                    },
+                    {
+                        "id":  "R07_IMPAYES",
+                        "status":  "PASS",
+                        "detail":  "tools=[getOutstandingPayments] dataHit=True",
+                        "toolsUsed":  "getOutstandingPayments",
+                        "evidence":  "Aucun loyer en retard sur les données actuelles."
+                    },
+                    {
+                        "id":  "R08_VACANTS",
+                        "status":  "PASS",
+                        "detail":  "tools=[getVacantUnits] dataHit=True",
+                        "toolsUsed":  "getVacantUnits",
+                        "evidence":  "Aucun logement vacant."
+                    },
+                    {
+                        "id":  "R09_PATRIMOINE",
+                        "status":  "PASS",
+                        "detail":  "tools=[getDashboardSummary] dataHit=True",
+                        "toolsUsed":  "getDashboardSummary",
+                        "evidence":  "Résumé « appartement 69 » :\n• 2 biens · occupation 50 %\n• 371 000 XAF encaissés ce mois\n• 0 impayé(s) · 0 vacant(s)\n• 2 contrats · 3 locataires"
+                    },
+                    {
+                        "id":  "R10_ENCAISSE",
+                        "status":  "PASS",
+                        "detail":  "tools=[getFinancialSummary] dataHit=True",
+                        "toolsUsed":  "getFinancialSummary",
+                        "evidence":  "Synthèse financière :\n• Encaissé ce mois : 371 000 XAF\n• Potentiel mensuel : 370 000 XAF\n• Impayés : 0 · En attente : 0\n• Occupation : 50 %"
+                    },
+                    {
+                        "id":  "M01_CREATE_LEASE",
+                        "status":  "NOT_SUPPORTED",
+                        "detail":  "No lease.create via AI tools (PDF propose only if existing lease)",
+                        "toolsUsed":  "",
+                        "evidence":  "Voici les baux disponibles pour un contrat PDF professionnel.\nDemandez « génère le contrat \u003cid\u003e » ou ouvrez Contrats.\n\n1. fortune libolo — big (ACTIVE) · id `cmsl81slh00ufwnm1n30oqnkz`\n2. yannick noah — appartement 56 (A"
+                    },
+                    {
+                        "id":  "M02_CONSULT_CREATED",
+                        "status":  "PASS",
+                        "detail":  "Did not invent a new lease entity",
+                        "toolsUsed":  "",
+                        "evidence":  "Voici les baux disponibles pour un contrat PDF professionnel.\nDemandez « génère le contrat \u003cid\u003e » ou ouvrez Contrats.\n\n1. fortune libolo — big (ACTIVE) · id `cmsl81slh00ufwnm1n30oqnkz`\n2. yannick noah — appartement 56 (A"
+                    },
+                    {
+                        "id":  "M03_SEND_TEXT",
+                        "status":  "NOT_SUPPORTED",
+                        "detail":  "No AI tool to send tenant messages",
+                        "toolsUsed":  "",
+                        "evidence":  "Je n’ai pas reconnu une demande précise, mais voici l’état de « appartement 69 » :\n\n• 2 biens · occupation 50 %\n• 371 000 XAF encaissés ce mois\n• 0 impayé(s) · 0 vacant(s)\nPriorité suggérée : suivre les 2 contrat(s) acti"
+                    },
+                    {
+                        "id":  "M04_SEND_AUDIO",
+                        "status":  "NOT_SUPPORTED",
+                        "detail":  "No AI-to-tenant audio; /ai/transcribe is inbound only",
+                        "toolsUsed":  "",
+                        "evidence":  "Je n’ai pas reconnu une demande précise, mais voici l’état de « appartement 69 » :\n\n• 2 biens · occupation 50 %\n• 371 000 XAF encaissés ce mois\n• 0 impayé(s) · 0 vacant(s)\nPriorité suggérée : suivre les 2 contrat(s) acti"
+                    },
+                    {
+                        "id":  "M05_SEND_IMAGE",
+                        "status":  "NOT_SUPPORTED",
+                        "detail":  "No AI-to-tenant image; /ai/vision is inbound only",
+                        "toolsUsed":  "",
+                        "evidence":  "Je n’ai pas reconnu une demande précise, mais voici l’état de « appartement 69 » :\n\n• 2 biens · occupation 50 %\n• 371 000 XAF encaissés ce mois\n• 0 impayé(s) · 0 vacant(s)\nPriorité suggérée : suivre les 2 contrat(s) acti"
+                    },
+                    {
+                        "id":  "MM01_STT",
+                        "status":  "PASS",
+                        "detail":  "STT available via /ai/transcribe",
+                        "toolsUsed":  "",
+                        "evidence":  null
+                    },
+                    {
+                        "id":  "MM02_VISION",
+                        "status":  "PASS",
+                        "detail":  "Vision available via /ai/vision",
+                        "toolsUsed":  "",
+                        "evidence":  null
+                    },
+                    {
+                        "id":  "MM03_TTS",
+                        "status":  "PASS",
+                        "detail":  "TTS available via /ai/speak",
+                        "toolsUsed":  "",
+                        "evidence":  null
+                    },
+                    {
+                        "id":  "MM04_TTS_BYTES",
+                        "status":  "FAIL",
+                        "detail":  "Le serveur distant a retourné une erreur : (500) Erreur interne du serveur.",
+                        "toolsUsed":  "",
+                        "evidence":  null
+                    },
+                    {
+                        "id":  "C01_MULTITURN_REMINDER",
+                        "status":  "PASS",
+                        "detail":  "Follow-up did not fake send",
+                        "toolsUsed":  "",
+                        "evidence":  "Je n’ai pas reconnu une demande précise, mais voici l’état de « appartement 69 » :\n\n• 2 biens · occupation 50 %\n• 371 000 XAF encaissés ce mois\n• 0 impayé(s) · 0 vacant(s)\nPriorité suggérée : suivre les 2 contrat(s) acti"
+                    },
+                    {
+                        "id":  "A01_PROPOSE_LEASE_PDF",
+                        "status":  "PARTIAL",
+                        "detail":  "No pendingAction returned",
+                        "toolsUsed":  "",
+                        "evidence":  "Voici les baux disponibles pour un contrat PDF professionnel.\nDemandez « génère le contrat \u003cid\u003e » ou ouvrez Contrats.\n\n1. fortune libolo — big (ACTIVE) · id `cmsl81slh00ufwnm1n30oqnkz`\n2. yannick noah"
+                    }
+                ]
+}

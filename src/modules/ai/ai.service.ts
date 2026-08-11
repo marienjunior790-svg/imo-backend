@@ -5,8 +5,10 @@ import { OpenAiClient, ChatMessage } from '../../infrastructure/openai/openai.cl
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { AiContextService, type AiOrganizationContext } from './ai.context.service.js';
 import {
+  actionsFromTools,
   buildContextualSuggestions,
   buildLocalFallbackReply,
+  isDailyPrioritiesMessage,
   resolveChatActions,
   type AiActionHint,
 } from './ai.fallback.js';
@@ -26,8 +28,10 @@ import { listDocumentCapabilities } from './ai.documents.js';
 import { SubscriptionService } from '../subscriptions/subscription.service.js';
 import { LeaseService } from '../leases/lease.service.js';
 import { PaymentService } from '../payments/payment.service.js';
+import { NotificationCenterService } from '../notification-center/notification-center.service.js';
 import { PlanLimitError } from '../../shared/errors/subscription.error.js';
 import { ValidationError } from '../../shared/errors/app.error.js';
+import { decimalToNumber } from '../../shared/utils/response.util.js';
 import type { AiAnalyzeDto, AiChatInput, AiContractInput } from './ai.types.js';
 
 export interface AiPendingActionHint {
@@ -84,18 +88,24 @@ export interface AiForecastResponse {
   actions: AiActionHint[];
 }
 
-const ASSISTANT_PROMPT = `Tu es Intelligence ITC, copilote immobilier premium (ITC IMMO • TEC • CONSEIL).
+const ASSISTANT_PROMPT = `Tu es Intelligence ITC, copilote immobilier professionnel intégré à l’application ITC.
 
-Règles de réponse :
-- Français clair, pro, humain. Salutations → réponds naturellement, puis 2–4 indicateurs utiles, puis 2 actions. Pas de dump froid pour « bonjour ».
-- Utilise les outils pour les données ITC réelles. N'invente JAMAIS de chiffres. Monnaie : XAF.
-- Questions « comment faire / où aller » dans l’application → guide pas à pas (menus, boutons). Tu es aussi le mode d’emploi d’ITC.
-- Pour générer un contrat PDF : appelle proposeGenerateLeasePdf puis explique que l'utilisateur doit CONFIRMER dans l'app. Ne prétends jamais que le PDF est déjà créé.
-- Pour un reçu/quittance PDF : proposeGeneratePaymentReceipt (paiement déjà payé) + confirmation.
-- Pour un avis de paiement / rappel de loyer PDF : proposeGeneratePaymentNotice + confirmation.
-- Pour la liste des agents / équipe : appelle getTeamMembers (role=AGENT pour « mes agents »). N'invente jamais de noms.
-- Retirer un locataire : oriente vers fiche Locataires → « Retirer le locataire ».
-- 3 à 8 phrases max sauf listes / étapes utiles.
+Tu es une couche intelligente AU-DESSUS de toute l’app : immeubles, logements, locataires, agents, contrats, loyers, paiements, impayés, occupation, maintenance, paramètres.
+
+Règles ABSOLUES :
+- Français clair et pro. Monnaie : XAF.
+- N’invente JAMAIS de locataire, logement, montant, statut, fonctionnalité ou action.
+- Pour toute donnée métier : appelle les outils (getUnits, getOutstandingPayments, getBuildings, getDashboardSummary, etc.).
+- Si l’outil ne renvoie rien / pas d’accès : dis « Je n’ai pas accès à cette information dans vos données actuelles. »
+- Ne réponds JAMAIS « je n’ai pas compris » / « demande non reconnue » si la question concerne le patrimoine : utilise un outil ou le contexte JSON.
+- « mes logements », « combien de biens », « montre mon patrimoine » → getUnits (ou getDashboardSummary pour un résumé).
+- Impayés / qui n’a pas payé / à relancer → getOutstandingPayments (PENDING+PARTIAL+LATE).
+- Propose 2–4 actions concrètes (modules ITC) après une réponse data.
+- Questions « comment faire » → guide UI réel (menus / boutons), jamais une procédure inventée.
+- PDF contrat / reçu / avis : outils propose* puis confirmation utilisateur obligatoire.
+- Création de bail (enregistrement) et envoi de message locataire : proposeCreateLease / proposeSendTenantMessage puis confirmation — ne jamais inventer d’IDs, montants ou destinataires ; ne jamais prétendre succès sans outil / confirmation.
+- Agents : getTeamMembers(role=AGENT). N’invente jamais de noms.
+- Respecte le périmètre organisation du JWT ; tu n’as pas d’autre org.
 
 ${APP_GUIDE_PROMPT}`;
 
@@ -120,6 +130,7 @@ export class AiService {
     @inject(SubscriptionService) private readonly subscriptionService: SubscriptionService,
     @inject(LeaseService) private readonly leaseService: LeaseService,
     @inject(PaymentService) private readonly paymentService: PaymentService,
+    @inject(NotificationCenterService) private readonly notificationCenter: NotificationCenterService,
     @inject(PrismaService) private readonly prisma: PrismaService,
     @inject(AiToolsService) private readonly tools: AiToolsService,
   ) {}
@@ -189,7 +200,8 @@ export class AiService {
     if (this.isReceiptIntent(message)) {
       return this.proposePaymentReceipt(organizationId, userId, role, this.extractCuid(message));
     }
-    if (this.isContractIntent(message)) {
+    // PDF contrat uniquement — création de bail métier passe par les outils proposeCreateLease.
+    if (this.isContractPdfIntent(message)) {
       return this.proposeLeasePdf(organizationId, userId, role, this.extractCuid(message));
     }
 
@@ -212,7 +224,20 @@ export class AiService {
     const suggestions = buildContextualSuggestions(ctx);
     const actions = resolveChatActions(message);
 
-    if (!this.openai.isAvailable()) {
+    // Priorités du jour → analyse locale sur données org (pas de dump générique OpenAI).
+    if (isDailyPrioritiesMessage(message)) {
+      return {
+        reply: buildLocalFallbackReply(message, ctx),
+        suggestions,
+        actions: this.dedupeActions(actions),
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    // Intentions métier claires → outils locaux (données réelles, zéro hallucination).
+    const hasLocalDataIntent = this.tools.resolveLocalToolIntents(message).length > 0;
+    if (!this.openai.isAvailable() || hasLocalDataIntent) {
       return this.chatLocalWithTools(organizationId, userId, message, ctx, suggestions, actions);
     }
 
@@ -287,12 +312,22 @@ export class AiService {
         if (proposed.actions.length) actions = [...actions, ...proposed.actions];
         parts[parts.length - 1] = proposed.reply;
       }
+      if (name === 'proposeCreateLease') {
+        const proposed = this.attachPendingCreateLease(organizationId, userId, result);
+        if (proposed.pendingAction) pendingAction = proposed.pendingAction;
+        if (proposed.reply) parts[parts.length - 1] = proposed.reply;
+      }
+      if (name === 'proposeSendTenantMessage') {
+        const proposed = this.attachPendingSendTenantMessage(organizationId, userId, result);
+        if (proposed.pendingAction) pendingAction = proposed.pendingAction;
+        if (proposed.reply) parts[parts.length - 1] = proposed.reply;
+      }
     }
 
     return {
       reply: parts.join('\n\n'),
       suggestions,
-      actions: this.dedupeActions(actions),
+      actions: this.dedupeActions([...actions, ...resolveChatActions(message), ...actionsFromTools(toolsUsed)]),
       poweredBy: 'local',
       contextUsed: true,
       pendingAction,
@@ -329,7 +364,11 @@ export class AiService {
         return {
           reply: (msg.content ?? '').trim() || buildLocalFallbackReply(message, ctx),
           suggestions,
-          actions: this.dedupeActions(actions),
+          actions: this.dedupeActions([
+            ...actions,
+            ...resolveChatActions(message),
+            ...actionsFromTools(toolsUsed),
+          ]),
           poweredBy: 'openai',
           contextUsed: true,
           pendingAction,
@@ -393,6 +432,30 @@ export class AiService {
               note: 'PDF non généré — confirmation utilisateur obligatoire.',
             }),
           });
+        } else if (name === 'proposeCreateLease') {
+          const proposed = this.attachPendingCreateLease(organizationId, userId, result);
+          if (proposed.pendingAction) pendingAction = proposed.pendingAction;
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: JSON.stringify({
+              ...((typeof result === 'object' && result) || {}),
+              pendingActionId: proposed.pendingAction?.id,
+              note: 'Bail non créé — confirmation utilisateur obligatoire.',
+            }),
+          });
+        } else if (name === 'proposeSendTenantMessage') {
+          const proposed = this.attachPendingSendTenantMessage(organizationId, userId, result);
+          if (proposed.pendingAction) pendingAction = proposed.pendingAction;
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: JSON.stringify({
+              ...((typeof result === 'object' && result) || {}),
+              pendingActionId: proposed.pendingAction?.id,
+              note: 'Message non envoyé — confirmation utilisateur obligatoire.',
+            }),
+          });
         } else {
           messages.push({
             role: 'tool',
@@ -406,7 +469,11 @@ export class AiService {
     return {
       reply: buildLocalFallbackReply(message, ctx),
       suggestions,
-      actions: this.dedupeActions(actions),
+      actions: this.dedupeActions([
+        ...actions,
+        ...resolveChatActions(message),
+        ...actionsFromTools(toolsUsed),
+      ]),
       poweredBy: 'openai',
       contextUsed: true,
       pendingAction,
@@ -885,7 +952,210 @@ export class AiService {
       return this.executePaymentNotice(organizationId, action.payload.paymentId);
     }
 
+    if (action.type === 'CREATE_LEASE') {
+      return this.executeCreateLease(organizationId, userId, action.payload);
+    }
+
+    if (action.type === 'SEND_TENANT_MESSAGE') {
+      return this.executeSendTenantMessage(organizationId, userId, action.payload);
+    }
+
     throw new ValidationError('Type d’action non supporté');
+  }
+
+  private attachPendingCreateLease(
+    organizationId: string,
+    userId: string,
+    result: unknown,
+  ): { pendingAction?: AiPendingActionHint; reply?: string } {
+    const data = result as {
+      ready?: boolean;
+      preview?: PendingActionPayload & {
+        tenantName?: string;
+        apartmentLabel?: string;
+        monthlyRent?: number;
+        activate?: boolean;
+      };
+      summary?: string;
+    };
+    if (!data?.ready || !data.preview?.tenantId || !data.preview?.apartmentId) {
+      return { reply: formatToolResultForLocalReply('proposeCreateLease', result) };
+    }
+    const preview = data.preview;
+    const pending = createPendingAction({
+      organizationId,
+      userId,
+      type: 'CREATE_LEASE',
+      payload: {
+        tenantId: preview.tenantId,
+        apartmentId: preview.apartmentId,
+        startDate: preview.startDate,
+        endDate: preview.endDate,
+        monthlyRent: preview.monthlyRent,
+        depositAmount: preview.depositAmount,
+        terms: preview.terms,
+        activate: preview.activate === true,
+        tenantName: preview.tenantName,
+        apartmentLabel: preview.apartmentLabel,
+        summary:
+          data.summary ??
+          `Créer bail ${preview.tenantName ?? ''} — ${preview.apartmentLabel ?? ''}`.trim(),
+      },
+    });
+    return {
+      reply: formatToolResultForLocalReply('proposeCreateLease', result),
+      pendingAction: {
+        id: pending.id,
+        type: pending.type,
+        title: 'Créer le contrat',
+        summary: pending.payload.summary ?? '',
+        payload: pending.payload,
+      },
+    };
+  }
+
+  private attachPendingSendTenantMessage(
+    organizationId: string,
+    userId: string,
+    result: unknown,
+  ): { pendingAction?: AiPendingActionHint; reply?: string } {
+    const data = result as {
+      ready?: boolean;
+      preview?: {
+        recipientUserId?: string;
+        tenantId?: string;
+        tenantName?: string;
+        subject?: string;
+        body?: string;
+      };
+      summary?: string;
+    };
+    if (!data?.ready || !data.preview?.recipientUserId || !data.preview?.body) {
+      return { reply: formatToolResultForLocalReply('proposeSendTenantMessage', result) };
+    }
+    const preview = data.preview;
+    const pending = createPendingAction({
+      organizationId,
+      userId,
+      type: 'SEND_TENANT_MESSAGE',
+      payload: {
+        recipientUserId: preview.recipientUserId,
+        tenantId: preview.tenantId,
+        tenantName: preview.tenantName,
+        subject: preview.subject,
+        body: preview.body,
+        summary: data.summary ?? `Message à ${preview.tenantName ?? 'locataire'}`,
+      },
+    });
+    return {
+      reply: formatToolResultForLocalReply('proposeSendTenantMessage', result),
+      pendingAction: {
+        id: pending.id,
+        type: pending.type,
+        title: 'Envoyer le message',
+        summary: pending.payload.summary ?? '',
+        payload: pending.payload,
+      },
+    };
+  }
+
+  private async executeCreateLease(
+    organizationId: string,
+    userId: string,
+    payload: PendingActionPayload,
+  ): Promise<AiChatResponse> {
+    if (!payload.tenantId || !payload.apartmentId || !payload.startDate || !payload.endDate) {
+      throw new ValidationError('Données bail incomplètes (tenantId, apartmentId, dates)');
+    }
+    try {
+      const lease = await this.leaseService.create(organizationId, {
+        tenantId: payload.tenantId,
+        apartmentId: payload.apartmentId,
+        startDate: payload.startDate,
+        endDate: payload.endDate,
+        monthlyRent: payload.monthlyRent,
+        depositAmount: payload.depositAmount,
+        terms: payload.terms,
+      });
+
+      let statusNote = `Statut : ${lease.status}`;
+      if (payload.activate === true) {
+        const activated = await this.leaseService.activate(organizationId, lease.id, userId);
+        statusNote = `Statut : ${activated.status} (activé)`;
+      }
+
+      const tenantName =
+        payload.tenantName ??
+        `${lease.tenant.firstName} ${lease.tenant.lastName}`;
+      const apartmentLabel = payload.apartmentLabel ?? lease.apartment.label;
+      const rent = decimalToNumber(lease.monthlyRent);
+
+      return {
+        reply:
+          `Contrat créé avec succès.\n` +
+          `• ID : ${lease.id}\n` +
+          `• Locataire : ${tenantName}\n` +
+          `• Logement : ${apartmentLabel}\n` +
+          `• Période : ${payload.startDate} → ${payload.endDate}\n` +
+          `• Loyer : ${rent.toLocaleString('fr-FR')} XAF/mois\n` +
+          `• ${statusNote}`,
+        suggestions: ['Générer le contrat PDF', 'Voir les contrats'],
+        actions: [
+          { label: 'Voir le contrat', route: `/leases/${lease.id}` },
+          { label: 'Voir les contrats', route: '/leases' },
+        ],
+        poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+        contextUsed: true,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Création impossible';
+      return {
+        reply: `Impossible de créer le contrat : ${msg}`,
+        suggestions: ['Voir les contrats', 'Voir les logements'],
+        actions: [{ label: 'Voir les contrats', route: '/leases' }],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+  }
+
+  private async executeSendTenantMessage(
+    organizationId: string,
+    userId: string,
+    payload: PendingActionPayload,
+  ): Promise<AiChatResponse> {
+    if (!payload.recipientUserId || !payload.body) {
+      throw new ValidationError('Destinataire ou corps du message manquant');
+    }
+    try {
+      const message = await this.notificationCenter.sendMessage(organizationId, userId, {
+        recipientId: payload.recipientUserId,
+        subject: payload.subject,
+        body: payload.body,
+      });
+      return {
+        reply:
+          `Message envoyé à ${payload.tenantName ?? 'le locataire'}.\n` +
+          `• ID message : ${message.id}\n` +
+          `• Objet : ${payload.subject ?? '(sans objet)'}`,
+        suggestions: ['Voir les locataires', 'Voir les impayés'],
+        actions: [
+          { label: 'Messagerie', route: '/notifications' },
+          { label: 'Voir les locataires', route: '/tenants' },
+        ],
+        poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+        contextUsed: true,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Envoi impossible';
+      return {
+        reply: `Impossible d’envoyer le message : ${msg}`,
+        suggestions: ['Voir les locataires'],
+        actions: [{ label: 'Voir les locataires', route: '/tenants' }],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
   }
 
   private async executeLeasePdf(
@@ -1143,25 +1413,27 @@ export class AiService {
     return (q.includes('recu') || q.includes('quittance')) && verb;
   }
 
-  private isContractIntent(message: string): boolean {
+  private isContractPdfIntent(message: string): boolean {
     if (this.isReceiptIntent(message) || this.isNoticeIntent(message)) return false;
-    const q = message.toLowerCase();
+    const q = message
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '');
+    if (!(q.includes('contrat') || q.includes('bail'))) return false;
+    // Création métier (sans PDF) → outils proposeCreateLease, pas short-circuit PDF.
+    const wantsCreateRecord =
+      (q.includes('cree') || q.includes('creer') || q.includes('nouveau') || q.includes('ouvrir')) &&
+      !q.includes('pdf') &&
+      !q.includes('gener');
+    if (wantsCreateRecord) return false;
     const verb =
-      q.includes('génér') ||
       q.includes('gener') ||
-      q.includes('crée') ||
-      q.includes('cree') ||
-      q.includes('établ') ||
-      q.includes('etabl') ||
+      q.includes('pdf') ||
+      q.includes('prepar') ||
       q.includes('fais') ||
       q.includes('fait') ||
-      q.includes('pdf');
-    // "génère un contrat" / "contrat de location pdf" / "générer le contrat clxxxx"
-    if ((q.includes('contrat') || q.includes('bail')) && verb) return true;
-    if (q.includes('contrat de location') && (q.includes('génér') || q.includes('gener') || q.includes('pdf'))) {
-      return true;
-    }
-    return false;
+      q.includes('etabl');
+    return verb;
   }
 
   private extractCuid(message: string): string | undefined {

@@ -12,6 +12,8 @@ export type AiToolName =
   | 'getDashboardSummary'
   | 'getOutstandingPayments'
   | 'getVacantUnits'
+  | 'getUnits'
+  | 'getBuildings'
   | 'getContracts'
   | 'getTenants'
   | 'getFinancialSummary'
@@ -19,7 +21,9 @@ export type AiToolName =
   | 'getTeamMembers'
   | 'proposeGenerateLeasePdf'
   | 'proposeGeneratePaymentReceipt'
-  | 'proposeGeneratePaymentNotice';
+  | 'proposeGeneratePaymentNotice'
+  | 'proposeCreateLease'
+  | 'proposeSendTenantMessage';
 
 /** Intent local avec arguments (organizationId jamais dans args — injecté côté service). */
 export type LocalToolIntent = {
@@ -40,7 +44,8 @@ export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool
     type: 'function',
     function: {
       name: 'getOutstandingPayments',
-      description: 'Liste les loyers en retard (impayés) de l’organisation.',
+      description:
+        'Liste les loyers à encaisser : PENDING + PARTIAL + LATE (impayés / à payer / partiels). Montants restants réels.',
       parameters: { type: 'object', properties: {}, additionalProperties: false },
     },
   },
@@ -48,7 +53,34 @@ export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool
     type: 'function',
     function: {
       name: 'getVacantUnits',
-      description: 'Logements vacants / disponibles.',
+      description: 'Logements vacants / disponibles (statut AVAILABLE).',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getUnits',
+      description:
+        'Liste les logements / appartements du parc (occupés, vacants, maintenance…). ' +
+        'Utiliser pour « mes logements », « combien de biens », « montre mon patrimoine détaillé ».',
+      parameters: {
+        type: 'object',
+        properties: {
+          status: {
+            type: 'string',
+            description: 'Filtre optionnel : AVAILABLE | OCCUPIED | MAINTENANCE | UNAVAILABLE',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getBuildings',
+      description: 'Liste les immeubles de l’organisation avec effectifs logements.',
       parameters: { type: 'object', properties: {}, additionalProperties: false },
     },
   },
@@ -165,6 +197,52 @@ export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'proposeCreateLease',
+      description:
+        'Propose la création d’un contrat/bail (enregistrement métier, pas PDF). ' +
+        'Valide locataire + logement dans l’org. Ne crée PAS immédiatement — confirmation obligatoire. ' +
+        'Ne jamais inventer d’IDs ni de montants.',
+      parameters: {
+        type: 'object',
+        properties: {
+          tenantId: { type: 'string', description: 'ID locataire (cuid)' },
+          apartmentId: { type: 'string', description: 'ID logement (cuid)' },
+          startDate: { type: 'string', description: 'Date début ISO (YYYY-MM-DD)' },
+          endDate: { type: 'string', description: 'Date fin ISO (YYYY-MM-DD)' },
+          monthlyRent: { type: 'number', description: 'Loyer mensuel XAF (optionnel — défaut = loyer du logement)' },
+          depositAmount: { type: 'number', description: 'Caution XAF (optionnel)' },
+          terms: { type: 'string', description: 'Clauses particulières (optionnel)' },
+          activate: {
+            type: 'boolean',
+            description: 'Si true, activer le bail après création. Défaut false (brouillon).',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'proposeSendTenantMessage',
+      description:
+        'Propose d’envoyer un message interne au locataire (compte portail). ' +
+        'Pas un avis PDF. Confirmation utilisateur obligatoire. Ne jamais inventer de destinataire.',
+      parameters: {
+        type: 'object',
+        properties: {
+          tenantId: { type: 'string', description: 'ID locataire (cuid)' },
+          tenantName: { type: 'string', description: 'Nom à rechercher si pas d’ID' },
+          subject: { type: 'string', description: 'Objet du message' },
+          body: { type: 'string', description: 'Corps du message' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 @injectable()
@@ -198,6 +276,10 @@ export class AiToolsService {
           return await this.getOutstandingPayments(organizationId);
         case 'getVacantUnits':
           return await this.getVacantUnits(organizationId);
+        case 'getUnits':
+          return await this.getUnits(organizationId, typeof args.status === 'string' ? args.status : undefined);
+        case 'getBuildings':
+          return await this.getBuildings(organizationId);
         case 'getContracts':
           return await this.getContracts(organizationId, typeof args.status === 'string' ? args.status : undefined);
         case 'getTenants':
@@ -220,6 +302,10 @@ export class AiToolsService {
             organizationId,
             typeof args.paymentId === 'string' ? args.paymentId : undefined,
           );
+        case 'proposeCreateLease':
+          return await this.proposeCreateLease(organizationId, args);
+        case 'proposeSendTenantMessage':
+          return await this.proposeSendTenantMessage(organizationId, args);
         default:
           return { error: `Outil inconnu: ${toolName}`, code: 404 };
       }
@@ -236,23 +322,69 @@ export class AiToolsService {
       .replace(/\p{M}/gu, '');
 
     const tools: LocalToolIntent[] = [];
+    const isHowto = q.includes('comment') || q.includes('comment faire') || q.includes('ou aller');
+
     if (
       q.includes('impay') ||
       q.includes('retard') ||
-      (q.includes('pas encore pay') && q.includes('locataire'))
+      q.includes('relanc') ||
+      (q.includes('pas pay') && (q.includes('qui') || q.includes('locataire') || q.includes('encore'))) ||
+      (q.includes('pas') && q.includes('pay') && (q.includes('encore') || q.includes('locataire') || q.includes('qui'))) ||
+      (q.includes('doivent') && q.includes('payer')) ||
+      (q.includes('montant') && (q.includes('impay') || q.includes('du')))
     ) {
       tools.push({ name: 'getOutstandingPayments' });
     }
-    if (q.includes('vacant') || q.includes('disponib') || q.includes('libre')) {
+
+    const wantsVacant =
+      q.includes('vacant') ||
+      ((q.includes('libre') || q.includes('disponib')) &&
+        (q.includes('logement') || q.includes('appart') || q.includes('bien') || q.includes('unit')));
+    if (wantsVacant) {
       tools.push({ name: 'getVacantUnits' });
     }
-    if (q.includes('expir') || q.includes('echeanc')) {
+
+    const wantsUnits =
+      !isHowto &&
+      !wantsVacant &&
+      (q.includes('logement') ||
+        q.includes('appartement') ||
+        /\bappart\b/.test(q) ||
+        /\bmes biens\b/.test(q) ||
+        /\bcombien\b.*\b(logement|appart|biens?)\b/.test(q) ||
+        /\b(logement|appart|biens?).*\bcombien\b/.test(q) ||
+        (q.includes('montre') && (q.includes('patrimoine') || q.includes('parc'))) ||
+        q.includes('liste des biens') ||
+        q.includes('liste des logements'));
+    if (wantsUnits) {
+      tools.push({ name: 'getUnits' });
+    }
+
+    if (
+      !isHowto &&
+      (q.includes('immeuble') || q.includes('residence') || q.includes('résidence')) &&
+      !q.includes('plus') &&
+      !q.includes('genere')
+    ) {
+      tools.push({ name: 'getBuildings' });
+    }
+
+    if (q.includes('expir') || q.includes('echeanc') || (q.includes('bientot') && q.includes('loyer'))) {
       tools.push({ name: 'getExpiringContracts' });
     }
-    if (
+
+    const wantsLeasePdf =
       (q.includes('contrat') || q.includes('bail')) &&
-      (q.includes('gener') || q.includes('cree') || q.includes('pdf') || q.includes('prepar'))
-    ) {
+      (q.includes('gener') || q.includes('pdf') || q.includes('prepar'));
+    const wantsCreateLease =
+      (q.includes('contrat') || q.includes('bail')) &&
+      (q.includes('cree') || q.includes('creer') || q.includes('nouveau') || q.includes('ouvrir')) &&
+      !q.includes('pdf') &&
+      !q.includes('gener');
+
+    if (wantsCreateLease) {
+      tools.push({ name: 'proposeCreateLease' });
+    } else if (wantsLeasePdf) {
       tools.push({ name: 'proposeGenerateLeasePdf' });
     } else if (q.includes('contrat') || q.includes('bail')) {
       tools.push({ name: 'getContracts' });
@@ -263,24 +395,46 @@ export class AiToolsService {
     ) {
       tools.push({ name: 'proposeGeneratePaymentReceipt' });
     }
-    if (
+    const wantsPdfNotice =
       (q.includes('avis de paiement') || (q.includes('avis') && q.includes('loyer')) || q.includes('rappel de loyer')) &&
-      (q.includes('gener') || q.includes('cree') || q.includes('pdf') || q.includes('prepar') || q.includes('envoie') || q.includes('fais'))
-    ) {
+      (q.includes('gener') || q.includes('cree') || q.includes('pdf') || q.includes('prepar') || q.includes('envoie') || q.includes('fais'));
+    if (wantsPdfNotice) {
       tools.push({ name: 'proposeGeneratePaymentNotice' });
     }
-    if (q.includes('locataire') && !q.includes('retirer') && !q.includes('ajout') && !q.includes('comment') && !q.includes('creer') && !q.includes('cree')) {
+    const wantsTenantMessage =
+      !wantsPdfNotice &&
+      ((q.includes('message') &&
+        (q.includes('envoie') ||
+          q.includes('envoyer') ||
+          q.includes('ecrire') ||
+          q.includes('ecris') ||
+          q.includes('locataire'))) ||
+        (q.includes('envoie') && q.includes('rappel') && !q.includes('avis') && !q.includes('loyer')) ||
+        (q.includes('envoyer') && q.includes('rappel') && !q.includes('avis') && !q.includes('loyer')));
+    if (wantsTenantMessage) {
+      tools.push({ name: 'proposeSendTenantMessage' });
+    }
+    if (
+      q.includes('locataire') &&
+      !q.includes('retirer') &&
+      !q.includes('ajout') &&
+      !q.includes('comment') &&
+      !q.includes('creer') &&
+      !q.includes('cree') &&
+      !q.includes('pas encore pay') &&
+      !q.includes('doivent')
+    ) {
       tools.push({ name: 'getTenants' });
     }
     if (q.includes('revenu') || q.includes('financ') || q.includes('encaiss')) {
       tools.push({ name: 'getFinancialSummary' });
     }
     if (
-      q.includes('patrimoine') ||
       q.includes('resume') ||
       q.includes('situation') ||
       q.includes('dashboard') ||
-      q.includes('parc')
+      (q.includes('patrimoine') && !wantsUnits) ||
+      (q.includes('parc') && !wantsUnits && !q.includes('logement'))
     ) {
       tools.push({ name: 'getDashboardSummary' });
     }
@@ -340,23 +494,37 @@ export class AiToolsService {
 
   private async getOutstandingPayments(organizationId: string) {
     const rows = await this.prisma.payment.findMany({
-      where: { organizationId, status: PaymentStatus.LATE },
-      take: 20,
+      where: {
+        organizationId,
+        status: { in: [PaymentStatus.PENDING, PaymentStatus.PARTIAL, PaymentStatus.LATE] },
+      },
+      take: 40,
       orderBy: { dueDate: 'asc' },
       include: {
         lease: { include: { tenant: true, apartment: true } },
       },
     });
-    return {
-      count: rows.length,
-      items: rows.map((p) => ({
+    const items = rows.map((p) => {
+      const amount = decimalToNumber(p.amount);
+      const paid = decimalToNumber(p.amountPaid);
+      const remaining = Math.max(0, amount - paid);
+      return {
         id: p.id,
-        amountXaf: decimalToNumber(p.amount),
+        status: p.status,
+        amountXaf: amount,
+        amountPaidXaf: paid,
+        remainingXaf: remaining,
         dueDate: p.dueDate.toISOString().slice(0, 10),
         period: `${p.periodMonth}/${p.periodYear}`,
         tenantName: `${p.lease.tenant.firstName} ${p.lease.tenant.lastName}`,
         apartmentLabel: p.lease.apartment.label,
-      })),
+      };
+    });
+    const totalRemainingXaf = items.reduce((sum, p) => sum + p.remainingXaf, 0);
+    return {
+      count: items.length,
+      totalRemainingXaf,
+      items,
     };
   }
 
@@ -380,6 +548,101 @@ export class AiToolsService {
         buildingId: a.building?.id,
         buildingName: a.building?.name,
       })),
+    };
+  }
+
+  private async getUnits(organizationId: string, status?: string) {
+    const whereStatus =
+      status && Object.values(ApartmentStatus).includes(status as ApartmentStatus)
+        ? { status: status as ApartmentStatus }
+        : {};
+
+    const rows = await this.prisma.apartment.findMany({
+      where: { organizationId, ...whereStatus },
+      take: 60,
+      orderBy: [{ building: { name: 'asc' } }, { label: 'asc' }],
+      select: {
+        id: true,
+        label: true,
+        status: true,
+        rentAmount: true,
+        building: { select: { id: true, name: true } },
+      },
+    });
+
+    const byBuilding = new Map<
+      string,
+      { buildingId: string | null; buildingName: string; units: Array<Record<string, unknown>> }
+    >();
+    for (const a of rows) {
+      const key = a.building?.id ?? '_none';
+      if (!byBuilding.has(key)) {
+        byBuilding.set(key, {
+          buildingId: a.building?.id ?? null,
+          buildingName: a.building?.name ?? 'Sans immeuble',
+          units: [],
+        });
+      }
+      byBuilding.get(key)!.units.push({
+        id: a.id,
+        label: a.label,
+        status: a.status,
+        rentXaf: decimalToNumber(a.rentAmount),
+      });
+    }
+
+    const occupied = rows.filter((a) => a.status === ApartmentStatus.OCCUPIED).length;
+    const vacant = rows.filter((a) => a.status === ApartmentStatus.AVAILABLE).length;
+    const maintenance = rows.filter((a) => a.status === ApartmentStatus.MAINTENANCE).length;
+
+    return {
+      count: rows.length,
+      occupied,
+      vacant,
+      maintenance,
+      buildings: [...byBuilding.values()],
+      items: rows.map((a) => ({
+        id: a.id,
+        label: a.label,
+        status: a.status,
+        rentXaf: decimalToNumber(a.rentAmount),
+        buildingId: a.building?.id,
+        buildingName: a.building?.name,
+      })),
+    };
+  }
+
+  private async getBuildings(organizationId: string) {
+    const rows = await this.prisma.building.findMany({
+      where: { organizationId },
+      take: 40,
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        city: true,
+        address: true,
+        _count: { select: { apartments: true } },
+        apartments: {
+          select: { status: true },
+        },
+      },
+    });
+    return {
+      count: rows.length,
+      items: rows.map((b) => {
+        const occupied = b.apartments.filter((a) => a.status === ApartmentStatus.OCCUPIED).length;
+        const vacant = b.apartments.filter((a) => a.status === ApartmentStatus.AVAILABLE).length;
+        return {
+          id: b.id,
+          name: b.name,
+          city: b.city,
+          address: b.address,
+          apartmentsTotal: b._count.apartments,
+          occupied,
+          vacant,
+        };
+      }),
     };
   }
 
@@ -613,6 +876,258 @@ export class AiToolsService {
       requiresUserConfirmation: true,
     };
   }
+
+  /** Valide une proposition de création de bail — ne mute pas. */
+  private async proposeCreateLease(organizationId: string, args: Record<string, unknown>) {
+    const tenantId = typeof args.tenantId === 'string' ? args.tenantId.trim() : '';
+    const apartmentId = typeof args.apartmentId === 'string' ? args.apartmentId.trim() : '';
+    const startDate = typeof args.startDate === 'string' ? args.startDate.trim() : '';
+    const endDate = typeof args.endDate === 'string' ? args.endDate.trim() : '';
+    const monthlyRent =
+      typeof args.monthlyRent === 'number' && Number.isFinite(args.monthlyRent) ? args.monthlyRent : undefined;
+    const depositAmount =
+      typeof args.depositAmount === 'number' && Number.isFinite(args.depositAmount)
+        ? args.depositAmount
+        : undefined;
+    const terms = typeof args.terms === 'string' ? args.terms : undefined;
+    const activate = args.activate === true;
+
+    const missing: string[] = [];
+    if (!tenantId) missing.push('tenantId');
+    if (!apartmentId) missing.push('apartmentId');
+    if (!startDate) missing.push('startDate');
+    if (!endDate) missing.push('endDate');
+
+    let tenant: { id: string; firstName: string; lastName: string } | null = null;
+    let apartment: {
+      id: string;
+      label: string;
+      status: ApartmentStatus;
+      rentAmount: unknown;
+    } | null = null;
+
+    if (tenantId) {
+      tenant = await this.prisma.tenant.findFirst({
+        where: { id: tenantId, organizationId },
+        select: { id: true, firstName: true, lastName: true },
+      });
+      if (!tenant) {
+        return {
+          ready: false,
+          error: 'Locataire introuvable dans votre organisation.',
+          missing,
+          requiresUserConfirmation: true,
+        };
+      }
+    }
+
+    if (apartmentId) {
+      apartment = await this.prisma.apartment.findFirst({
+        where: { id: apartmentId, organizationId },
+        select: { id: true, label: true, status: true, rentAmount: true },
+      });
+      if (!apartment) {
+        return {
+          ready: false,
+          error: 'Logement introuvable dans votre organisation.',
+          missing,
+          requiresUserConfirmation: true,
+        };
+      }
+      if (apartment.status !== ApartmentStatus.AVAILABLE) {
+        return {
+          ready: false,
+          error: `Logement non disponible (statut : ${apartment.status}). Choisissez un logement AVAILABLE.`,
+          missing,
+          preview: {
+            tenantId: tenant?.id,
+            tenantName: tenant ? `${tenant.firstName} ${tenant.lastName}` : undefined,
+            apartmentId: apartment.id,
+            apartmentLabel: apartment.label,
+            apartmentStatus: apartment.status,
+          },
+          requiresUserConfirmation: true,
+        };
+      }
+    }
+
+    const rentFromApartment = apartment ? decimalToNumber(apartment.rentAmount as never) : undefined;
+    const resolvedRent = monthlyRent ?? rentFromApartment;
+
+    const preview = {
+      tenantId: tenant?.id,
+      tenantName: tenant ? `${tenant.firstName} ${tenant.lastName}` : undefined,
+      apartmentId: apartment?.id,
+      apartmentLabel: apartment?.label,
+      apartmentStatus: apartment?.status,
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+      monthlyRent: resolvedRent,
+      depositAmount,
+      terms,
+      activate,
+    };
+
+    if (missing.length) {
+      return {
+        ready: false,
+        missing,
+        preview,
+        note: 'Indiquez les champs manquants — aucun ID ni montant inventé.',
+        requiresUserConfirmation: true,
+      };
+    }
+
+    if (startDate && endDate && new Date(endDate) <= new Date(startDate)) {
+      return {
+        ready: false,
+        missing: ['endDate'],
+        error: 'La date de fin doit être après la date de début.',
+        preview,
+        requiresUserConfirmation: true,
+      };
+    }
+
+    return {
+      ready: true,
+      missing: [],
+      preview,
+      summary: `Créer le bail ${preview.tenantName} → ${preview.apartmentLabel} (${startDate} → ${endDate})${
+        resolvedRent != null ? ` · ${resolvedRent.toLocaleString('fr-FR')} XAF/mois` : ''
+      }${activate ? ' · activation demandée' : ' · brouillon'}`,
+      requiresUserConfirmation: true,
+    };
+  }
+
+  /** Valide une proposition d’envoi de message locataire — ne mute pas. */
+  private async proposeSendTenantMessage(organizationId: string, args: Record<string, unknown>) {
+    const tenantId = typeof args.tenantId === 'string' ? args.tenantId.trim() : '';
+    const tenantNameSearch = typeof args.tenantName === 'string' ? args.tenantName.trim() : '';
+    const subject = typeof args.subject === 'string' ? args.subject.trim() : '';
+    const body = typeof args.body === 'string' ? args.body.trim() : '';
+
+    const missing: string[] = [];
+    if (!body) missing.push('body');
+    if (!tenantId && !tenantNameSearch) missing.push('tenantId|tenantName');
+
+    let tenant: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      userId: string | null;
+    } | null = null;
+
+    if (tenantId) {
+      tenant = await this.prisma.tenant.findFirst({
+        where: { id: tenantId, organizationId },
+        select: { id: true, firstName: true, lastName: true, userId: true },
+      });
+      if (!tenant) {
+        return {
+          ready: false,
+          error: 'Locataire introuvable dans votre organisation.',
+          missing,
+          requiresUserConfirmation: true,
+        };
+      }
+    } else if (tenantNameSearch) {
+      const parts = tenantNameSearch.split(/\s+/).filter(Boolean);
+      const candidates = await this.prisma.tenant.findMany({
+        where: {
+          organizationId,
+          OR: [
+            { firstName: { contains: tenantNameSearch, mode: 'insensitive' } },
+            { lastName: { contains: tenantNameSearch, mode: 'insensitive' } },
+            ...(parts.length >= 2
+              ? [
+                  {
+                    AND: [
+                      { firstName: { contains: parts[0], mode: 'insensitive' as const } },
+                      { lastName: { contains: parts.slice(1).join(' '), mode: 'insensitive' as const } },
+                    ],
+                  },
+                ]
+              : []),
+          ],
+        },
+        take: 8,
+        select: { id: true, firstName: true, lastName: true, userId: true },
+      });
+      if (candidates.length === 0) {
+        return {
+          ready: false,
+          error: `Aucun locataire trouvé pour « ${tenantNameSearch} ».`,
+          missing,
+          requiresUserConfirmation: true,
+        };
+      }
+      if (candidates.length > 1) {
+        return {
+          ready: false,
+          error: 'Plusieurs locataires correspondent — précisez tenantId.',
+          candidates: candidates.map((t) => ({
+            id: t.id,
+            name: `${t.firstName} ${t.lastName}`,
+            hasPortalUser: Boolean(t.userId),
+          })),
+          missing: ['tenantId'],
+          requiresUserConfirmation: true,
+        };
+      }
+      tenant = candidates[0];
+    }
+
+    if (!tenant) {
+      return {
+        ready: false,
+        missing,
+        note: 'Indiquez le locataire (tenantId ou nom) et le corps du message.',
+        requiresUserConfirmation: true,
+      };
+    }
+
+    if (!tenant.userId) {
+      return {
+        ready: false,
+        error:
+          `Le locataire ${tenant.firstName} ${tenant.lastName} n’a pas de compte portail (userId). ` +
+          `Impossible d’envoyer un message interne — créez d’abord l’accès portail.`,
+        preview: {
+          tenantId: tenant.id,
+          tenantName: `${tenant.firstName} ${tenant.lastName}`,
+          subject: subject || undefined,
+          body: body || undefined,
+        },
+        missing: ['recipientUserId'],
+        requiresUserConfirmation: true,
+      };
+    }
+
+    const preview = {
+      recipientUserId: tenant.userId,
+      tenantId: tenant.id,
+      tenantName: `${tenant.firstName} ${tenant.lastName}`,
+      subject: subject || undefined,
+      body: body || undefined,
+    };
+
+    if (missing.length) {
+      return {
+        ready: false,
+        missing,
+        preview,
+        requiresUserConfirmation: true,
+      };
+    }
+
+    return {
+      ready: true,
+      missing: [],
+      preview,
+      summary: `Message à ${preview.tenantName}${subject ? ` — ${subject}` : ''}`,
+      requiresUserConfirmation: true,
+    };
+  }
 }
 
 export function formatToolResultForLocalReply(toolName: string, result: unknown): string {
@@ -628,15 +1143,17 @@ export function formatToolResultForLocalReply(toolName: string, result: unknown)
   }
   if (toolName === 'getOutstandingPayments') {
     const items = (data.items as Array<Record<string, unknown>>) ?? [];
-    if (!items.length) return 'Aucun loyer en retard sur les données actuelles.';
+    const total = Number(data.totalRemainingXaf ?? 0);
+    if (!items.length) return 'Aucun loyer à encaisser (PENDING / PARTIAL / LATE) sur vos données actuelles.';
     const list = items
-      .slice(0, 10)
-      .map(
-        (p) =>
-          `• ${p.tenantName} (${p.apartmentLabel}) : ${Number(p.amountXaf).toLocaleString('fr-FR')} XAF — échéance ${p.dueDate}`,
-      )
+      .slice(0, 12)
+      .map((p) => {
+        const remaining = Number(p.remainingXaf ?? p.amountXaf ?? 0);
+        return `• ${p.tenantName} (${p.apartmentLabel}) — ${remaining.toLocaleString('fr-FR')} XAF · ${p.status} · échéance ${p.dueDate}`;
+      })
       .join('\n');
-    return `${data.count} impayé(s) :\n${list}`;
+    return `Vous avez ${data.count} loyer(s) à suivre${total > 0 ? ` pour un total restant de ${total.toLocaleString('fr-FR')} XAF` : ''} :
+${list}`;
   }
   if (toolName === 'getVacantUnits') {
     const items = (data.items as Array<Record<string, unknown>>) ?? [];
@@ -649,12 +1166,71 @@ export function formatToolResultForLocalReply(toolName: string, result: unknown)
       .join('\n');
     return `${data.count} logement(s) vacant(s) :\n${list}`;
   }
+  if (toolName === 'getUnits') {
+    const buildings = (data.buildings as Array<Record<string, unknown>>) ?? [];
+    if (!Number(data.count)) return 'Aucun logement enregistré dans votre organisation.';
+    const statusLabel = (s: unknown) => {
+      switch (String(s)) {
+        case 'OCCUPIED':
+          return 'Occupé';
+        case 'AVAILABLE':
+          return 'Vacant';
+        case 'MAINTENANCE':
+          return 'Maintenance';
+        case 'UNAVAILABLE':
+          return 'Indisponible';
+        default:
+          return String(s ?? '—');
+      }
+    };
+    const blocks = buildings.map((b) => {
+      const units = (b.units as Array<Record<string, unknown>>) ?? [];
+      const lines = units
+        .map((u) => `• ${u.label} — ${statusLabel(u.status)}`)
+        .join('\n');
+      return `${b.buildingName}\n${lines}`;
+    });
+    return `Voici vos logements :
+
+${blocks.join('\n\n')}
+
+${data.count} logement(s) au total
+${data.occupied} occupé(s) · ${data.vacant} vacant(s)${Number(data.maintenance) > 0 ? ` · ${data.maintenance} en maintenance` : ''}`;
+  }
+  if (toolName === 'getBuildings') {
+    const items = (data.items as Array<Record<string, unknown>>) ?? [];
+    if (!items.length) return 'Aucun immeuble enregistré.';
+    const list = items
+      .map(
+        (b) =>
+          `• ${b.name}${b.city ? ` (${b.city})` : ''} — ${b.apartmentsTotal} logement(s) · ${b.occupied} occupé(s) · ${b.vacant} vacant(s)`,
+      )
+      .join('\n');
+    return `Immeubles (${data.count}) :\n${list}`;
+  }
   if (toolName === 'getFinancialSummary') {
+    const collected = Number(data.collectedThisMonthXaf);
+    const potential = Number(data.potentialMonthlyRentXaf);
+    const late = Number(data.latePayments ?? 0);
+    const pending = Number(data.pendingPayments ?? 0);
+    const gap = Math.max(0, potential - collected);
+    const drivers: string[] = [];
+    if (late > 0) drivers.push(`${late} loyer(s) en retard`);
+    if (pending > 0) drivers.push(`${pending} paiement(s) encore en attente`);
+    if (Number(data.occupancyRate) < 100) {
+      drivers.push(`occupation à ${data.occupancyRate} % (vacance possible)`);
+    }
+    const analysis =
+      gap > 0 && drivers.length
+        ? `\nÉcart vs potentiel : ${gap.toLocaleString('fr-FR')} XAF. Facteurs observables dans vos données : ${drivers.join(', ')}.`
+        : gap > 0
+          ? `\nÉcart vs potentiel : ${gap.toLocaleString('fr-FR')} XAF (d’après vos données actuelles).`
+          : '';
     return `Synthèse financière :
-• Encaissé ce mois : ${Number(data.collectedThisMonthXaf).toLocaleString('fr-FR')} XAF
-• Potentiel mensuel : ${Number(data.potentialMonthlyRentXaf).toLocaleString('fr-FR')} XAF
-• Impayés : ${data.latePayments} · En attente : ${data.pendingPayments}
-• Occupation : ${data.occupancyRate} %`;
+• Encaissé ce mois : ${collected.toLocaleString('fr-FR')} XAF
+• Potentiel mensuel : ${potential.toLocaleString('fr-FR')} XAF
+• Impayés : ${late} · En attente : ${pending}
+• Occupation : ${data.occupancyRate} %${analysis}`;
   }
   if (toolName === 'getExpiringContracts') {
     const items = (data.items as Array<Record<string, unknown>>) ?? [];
@@ -711,6 +1287,64 @@ Confirmez pour générer l’avis de paiement PDF.`;
       )
       .join('\n');
     return `Loyers à rappeler (${data.count}) :\n${list}`;
+  }
+  if (toolName === 'proposeCreateLease') {
+    if (typeof data.error === 'string') {
+      return `${data.error}${
+        Array.isArray(data.missing) && data.missing.length
+          ? `\nChamps manquants : ${(data.missing as string[]).join(', ')}.`
+          : ''
+      }`;
+    }
+    const preview = (data.preview as Record<string, unknown>) ?? {};
+    const missing = (data.missing as string[]) ?? [];
+    if (data.ready) {
+      return (
+        `Proposition de création de bail :\n` +
+        `• Locataire : ${preview.tenantName ?? '—'} (${preview.tenantId})\n` +
+        `• Logement : ${preview.apartmentLabel ?? '—'} (${preview.apartmentId})\n` +
+        `• Période : ${preview.startDate} → ${preview.endDate}\n` +
+        `• Loyer : ${
+          preview.monthlyRent != null
+            ? `${Number(preview.monthlyRent).toLocaleString('fr-FR')} XAF/mois`
+            : '— (sera pris sur le logement)'
+        }\n` +
+        `• Mode : ${preview.activate ? 'activation après création' : 'brouillon'}\n\n` +
+        `Confirmez pour créer le contrat, ou annulez.`
+      );
+    }
+    return (
+      `Création de bail incomplète.\n` +
+      (missing.length ? `Champs manquants : ${missing.join(', ')}.\n` : '') +
+      `Indiquez locataire, logement, date de début et de fin — sans inventer d’identifiants.`
+    );
+  }
+  if (toolName === 'proposeSendTenantMessage') {
+    if (typeof data.error === 'string') {
+      const candidates = (data.candidates as Array<Record<string, unknown>>) ?? [];
+      const list = candidates.length
+        ? `\nCorrespondances :\n${candidates
+            .map((c) => `• ${c.name} · id ${c.id}${c.hasPortalUser ? '' : ' (pas de compte portail)'}`)
+            .join('\n')}`
+        : '';
+      return `${data.error}${list}`;
+    }
+    const preview = (data.preview as Record<string, unknown>) ?? {};
+    const missing = (data.missing as string[]) ?? [];
+    if (data.ready) {
+      return (
+        `Message proposé :\n` +
+        `• Destinataire : ${preview.tenantName} (compte portail)\n` +
+        `• Objet : ${preview.subject ?? '(sans objet)'}\n` +
+        `• Corps : ${String(preview.body ?? '').slice(0, 280)}\n\n` +
+        `Confirmez pour envoyer, ou annulez.`
+      );
+    }
+    return (
+      `Envoi de message incomplet.\n` +
+      (missing.length ? `Champs manquants : ${missing.join(', ')}.\n` : '') +
+      `Précisez le locataire et le texte du message.`
+    );
   }
   if (toolName === 'getTenants') {
     const items = (data.items as Array<Record<string, unknown>>) ?? [];
