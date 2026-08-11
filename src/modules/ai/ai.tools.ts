@@ -373,17 +373,19 @@ export class AiToolsService {
       tools.push({ name: 'getExpiringContracts' });
     }
 
+    const mentionsPdfDoc =
+      q.includes('pdf') && !q.includes('sans pdf') && !q.includes('pas de pdf') && !q.includes('sans le pdf');
     const wantsLeasePdf =
       (q.includes('contrat') || q.includes('bail')) &&
-      (q.includes('gener') || q.includes('pdf') || q.includes('prepar'));
+      (q.includes('gener') || mentionsPdfDoc || q.includes('prepar'));
     const wantsCreateLease =
       (q.includes('contrat') || q.includes('bail')) &&
       (q.includes('cree') || q.includes('creer') || q.includes('nouveau') || q.includes('ouvrir')) &&
-      !q.includes('pdf') &&
-      !q.includes('gener');
+      !q.includes('gener') &&
+      (!q.includes('pdf') || q.includes('sans pdf') || q.includes('pas de pdf') || q.includes('sans le pdf'));
 
     if (wantsCreateLease) {
-      tools.push({ name: 'proposeCreateLease' });
+      tools.push({ name: 'proposeCreateLease', args: extractCreateLeaseArgsFromMessage(message) });
     } else if (wantsLeasePdf) {
       tools.push({ name: 'proposeGenerateLeasePdf' });
     } else if (q.includes('contrat') || q.includes('bail')) {
@@ -412,7 +414,7 @@ export class AiToolsService {
         (q.includes('envoie') && q.includes('rappel') && !q.includes('avis') && !q.includes('loyer')) ||
         (q.includes('envoyer') && q.includes('rappel') && !q.includes('avis') && !q.includes('loyer')));
     if (wantsTenantMessage) {
-      tools.push({ name: 'proposeSendTenantMessage' });
+      tools.push({ name: 'proposeSendTenantMessage', args: extractSendTenantMessageArgsFromMessage(message) });
     }
     if (
       q.includes('locataire') &&
@@ -1451,6 +1453,45 @@ export function resolveTeamMembersLocalIntent(qNormalized: string): LocalToolInt
   }
 
   return null;
+}
+
+function extractCreateLeaseArgsFromMessage(message: string): Record<string, unknown> {
+  const args: Record<string, unknown> = {};
+  const tenantId = message.match(/tenantId\s*[:=]?\s*(c[a-z0-9]{20,})/i)?.[1];
+  const apartmentId = message.match(/apartmentId\s*[:=]?\s*(c[a-z0-9]{20,})/i)?.[1];
+  const startDate = message.match(/startDate\s*[:=]?\s*(\d{4}-\d{2}-\d{2})/i)?.[1]
+    ?? message.match(/\bdu\s+(\d{4}-\d{2}-\d{2})\b/i)?.[1];
+  const endDate = message.match(/endDate\s*[:=]?\s*(\d{4}-\d{2}-\d{2})/i)?.[1]
+    ?? message.match(/\bau\s+(\d{4}-\d{2}-\d{2})\b/i)?.[1];
+  if (tenantId) args.tenantId = tenantId;
+  if (apartmentId) args.apartmentId = apartmentId;
+  if (startDate) args.startDate = startDate;
+  if (endDate) args.endDate = endDate;
+  return args;
+}
+
+function extractSendTenantMessageArgsFromMessage(message: string): Record<string, unknown> {
+  const args: Record<string, unknown> = {};
+  const tenantId = message.match(/tenantId\s*[:=]?\s*(c[a-z0-9]{20,})/i)?.[1];
+  if (tenantId) args.tenantId = tenantId;
+
+  // « Envoie un message ... à Prénom Nom : corps » ou « : corps »
+  const named = message.match(
+    /(?:message|rappel)[^\n]*?(?:a|à)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+)+)\s*[:\-–]\s*(.+)$/i,
+  );
+  if (named) {
+    args.tenantName = named[1].trim();
+    args.body = named[2].trim();
+  } else {
+    const colon = message.match(/:\s*(.+)$/s);
+    if (colon?.[1]?.trim()) args.body = colon[1].trim();
+    const nameOnly = message.match(
+      /(?:a|à)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+)+)/i,
+    );
+    if (nameOnly) args.tenantName = nameOnly[1].trim();
+  }
+  if (!args.subject && args.body) args.subject = 'Message ITC';
+  return args;
 }
 
 function mapToolError(err: unknown): { error: string; code: number } {

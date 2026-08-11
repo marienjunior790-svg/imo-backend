@@ -1423,12 +1423,12 @@ export class AiService {
     // Création métier (sans PDF) → outils proposeCreateLease, pas short-circuit PDF.
     const wantsCreateRecord =
       (q.includes('cree') || q.includes('creer') || q.includes('nouveau') || q.includes('ouvrir')) &&
-      !q.includes('pdf') &&
-      !q.includes('gener');
+      !q.includes('gener') &&
+      (!q.includes('pdf') || q.includes('sans pdf') || q.includes('pas de pdf') || q.includes('sans le pdf'));
     if (wantsCreateRecord) return false;
     const verb =
       q.includes('gener') ||
-      q.includes('pdf') ||
+      (q.includes('pdf') && !q.includes('sans pdf') && !q.includes('pas de pdf')) ||
       q.includes('prepar') ||
       q.includes('fais') ||
       q.includes('fait') ||
