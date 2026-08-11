@@ -426,7 +426,18 @@ export class AiToolsService {
     ) {
       tools.push({ name: 'getTenants' });
     }
-    if (q.includes('revenu') || q.includes('financ') || q.includes('encaiss')) {
+    if (
+      q.includes('revenu') ||
+      q.includes('financ') ||
+      q.includes('encaiss') ||
+      (/\bpaiements?\b/.test(q) &&
+        !q.includes('avis') &&
+        !q.includes('recu') &&
+        !q.includes('quittance') &&
+        !q.includes('gener') &&
+        !q.includes('cree') &&
+        !q.includes('creer'))
+    ) {
       tools.push({ name: 'getFinancialSummary' });
     }
     if (

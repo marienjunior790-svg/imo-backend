@@ -104,6 +104,11 @@ export class OpenAiClient {
     } catch (err) {
       if (err instanceof ValidationError) throw err;
       const msg = err instanceof Error ? err.message : 'Erreur TTS OpenAI';
+      if (/429|credit|billing|quota/i.test(msg)) {
+        throw new ValidationError(
+          'Synthèse vocale impossible : crédits OpenAI épuisés. Rechargez le compte OpenAI (billing) pour /ai/speak.',
+        );
+      }
       throw new ValidationError(`Synthèse vocale impossible : ${msg}`);
     }
   }
