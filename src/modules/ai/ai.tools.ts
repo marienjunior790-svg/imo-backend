@@ -1475,20 +1475,26 @@ function extractSendTenantMessageArgsFromMessage(message: string): Record<string
   const tenantId = message.match(/tenantId\s*[:=]?\s*(c[a-z0-9]{20,})/i)?.[1];
   if (tenantId) args.tenantId = tenantId;
 
-  // « Envoie un message ... à Prénom Nom : corps » ou « : corps »
+  // « au locataire Prénom Nom : corps » / « à Prénom Nom : corps »
   const named = message.match(
-    /(?:message|rappel)[^\n]*?(?:a|à)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+)+)\s*[:\-–]\s*(.+)$/i,
+    /(?:au\s+locataire|a\s+locataire|à\s+locataire|message[^\n]*?(?:a|à)|rappel[^\n]*?(?:a|à))\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+)+)\s*[:\-–]\s*(.+)$/i,
   );
   if (named) {
     args.tenantName = named[1].trim();
     args.body = named[2].trim();
   } else {
+    const locataire = message.match(
+      /locataire\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+)+)/i,
+    );
+    if (locataire) args.tenantName = locataire[1].trim();
     const colon = message.match(/:\s*(.+)$/s);
     if (colon?.[1]?.trim()) args.body = colon[1].trim();
-    const nameOnly = message.match(
-      /(?:a|à)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+)+)/i,
-    );
-    if (nameOnly) args.tenantName = nameOnly[1].trim();
+    if (!args.tenantName) {
+      const nameOnly = message.match(
+        /(?:a|à)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+)+)/i,
+      );
+      if (nameOnly) args.tenantName = nameOnly[1].trim();
+    }
   }
   if (!args.subject && args.body) args.subject = 'Message ITC';
   return args;
