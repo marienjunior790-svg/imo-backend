@@ -370,12 +370,36 @@ export class MaintenanceService {
 
     const updated = await this.get(organizationId, id);
     const org = await this.prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } });
+    const payload = this.toWebhookPayload(updated, org?.name);
     this.n8n.emit({
       event: AutomationEvent.MAINTENANCE_CLOSED,
       organizationId,
       organizationName: org?.name,
-      data: this.toWebhookPayload(updated, org?.name),
+      data: payload,
     });
+
+    // P2-002/018 : ne pas laisser les notifs « confirmez la résolution » actives après clôture
+    await this.notifications.resolveCompletedMaintenanceNotifs(organizationId, id, updated.title);
+    await this.notifications.notifyOrganizationStaff({
+      organizationId,
+      type: NotificationType.SYSTEM,
+      title: 'Ticket clôturé',
+      message: `${updated.title} — archivé`,
+      data: payload,
+    });
+    const tenantUserId =
+      (updated.tenant as { userId?: string | null } | null)?.userId ?? updated.reportedById ?? null;
+    if (tenantUserId) {
+      await this.notifications.notifyUser({
+        organizationId,
+        userId: tenantUserId,
+        type: NotificationType.SYSTEM,
+        title: 'Votre demande est clôturée',
+        message: `« ${updated.title} » a été clôturée. Merci pour votre retour.`,
+        data: { ...payload, ticketId: id },
+      });
+    }
+
     return updated;
   }
 

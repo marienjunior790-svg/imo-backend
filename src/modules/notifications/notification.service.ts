@@ -116,6 +116,37 @@ export class NotificationService {
     return this.create({ ...input, userId: input.userId });
   }
 
+  /**
+   * Après clôture d'un ticket : réécrit les notifs MAINTENANCE_COMPLETED liées
+   * (titre « confirmez… ») et les marque lues pour éviter un CTA périmé.
+   */
+  async resolveCompletedMaintenanceNotifs(organizationId: string, ticketId: string, ticketTitle: string) {
+    const title = 'Intervention clôturée';
+    const message = `« ${ticketTitle} » est clôturée — plus aucune confirmation requise.`;
+    const now = new Date();
+
+    // Notifs perso (tenant / staff) avec data.ticketId
+    await this.prisma.notification.updateMany({
+      where: {
+        organizationId,
+        type: NotificationType.MAINTENANCE_COMPLETED,
+        data: { path: ['ticketId'], equals: ticketId },
+      },
+      data: { title, message, readAt: now },
+    });
+
+    // Broadcast staff éventuel (même payload)
+    await this.prisma.notification.updateMany({
+      where: {
+        organizationId,
+        type: NotificationType.MAINTENANCE_COMPLETED,
+        userId: null,
+        data: { path: ['ticketId'], equals: ticketId },
+      },
+      data: { title, message, readAt: now },
+    });
+  }
+
   /** Notifie le propriétaire et les gestionnaires actifs de l'organisation */
   async notifyOrganizationStaff(input: Omit<CreateNotificationInput, 'userId'>) {
     const staff = await this.prisma.user.findMany({
