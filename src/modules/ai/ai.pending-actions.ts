@@ -9,7 +9,18 @@ export type PendingActionType =
   | 'CREATE_LEASE'
   | 'SEND_TENANT_MESSAGE'
   | 'SEND_WHATSAPP_MESSAGE'
+  | 'SEND_BATCH_TENANT_REMINDERS'
   | 'NAVIGATE_HINT';
+
+export interface BatchTenantReminderItem {
+  tenantId: string;
+  tenantName: string;
+  recipientUserId?: string;
+  toPhone?: string;
+  body: string;
+  subject?: string;
+  channel: 'IN_APP' | 'WHATSAPP';
+}
 
 export interface PendingActionPayload {
   leaseId?: string;
@@ -32,6 +43,8 @@ export interface PendingActionPayload {
   body?: string;
   toPhone?: string;
   providerChannel?: 'WHATSAPP' | 'IN_APP' | 'EMAIL' | 'SMS';
+  /** Brouillons de relance batch (SEND_BATCH_TENANT_REMINDERS) — pas d’envoi tant que non confirmé. */
+  items?: BatchTenantReminderItem[];
 }
 
 export interface PendingAction {

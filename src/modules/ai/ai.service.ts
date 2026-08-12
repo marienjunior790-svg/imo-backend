@@ -27,8 +27,10 @@ import {
   consumePendingAction,
   createPendingAction,
   getLatestPendingForUser,
+  type BatchTenantReminderItem,
   type PendingActionPayload,
 } from './ai.pending-actions.js';
+import { detectPaymentReminderPlan, runPaymentReminderPlan, type AiPlanStep } from './ai.orchestrator.js';
 import { listDocumentCapabilities } from './ai.documents.js';
 import { SubscriptionService } from '../subscriptions/subscription.service.js';
 import { LeaseService } from '../leases/lease.service.js';
@@ -59,6 +61,9 @@ export interface AiChatResponse {
   documentUrl?: string;
   pendingAction?: AiPendingActionHint;
   toolsUsed?: string[];
+  /** Étapes visibles d’un plan multi-outils (Phase E) */
+  steps?: AiPlanStep[];
+  planSummary?: string;
 }
 
 export interface AiStatusResponse {
@@ -270,6 +275,7 @@ export class AiService {
 
     // Intentions métier claires → outils locaux (données réelles, zéro hallucination).
     const hasLocalDataIntent =
+      detectPaymentReminderPlan(message) ||
       this.tools.resolveLocalToolIntents(message, sessionEntities, history).length > 0;
     const refFlags = detectReferentialIntent(message);
     const forceLocalConversational =
@@ -352,6 +358,41 @@ export class AiService {
         actions,
         poweredBy: 'local',
         contextUsed: true,
+      };
+    }
+
+    // Phase E — plan multi-étapes relances impayés (avant la boucle d’intents génériques).
+    if (detectPaymentReminderPlan(message)) {
+      const plan = await runPaymentReminderPlan({
+        organizationId,
+        userId,
+        role,
+        tools: this.tools,
+        prisma: this.prisma,
+        memory: this.memory,
+      });
+      void this.persistConversationSession(
+        organizationId,
+        userId,
+        message,
+        plan.toolsUsed,
+        plan.reply,
+      );
+      return {
+        reply: plan.reply,
+        suggestions,
+        actions: this.dedupeActions([
+          ...actions,
+          ...resolveChatActions(message),
+          ...plan.actions,
+          ...actionsFromTools(plan.toolsUsed),
+        ]),
+        poweredBy: 'local',
+        contextUsed: true,
+        pendingAction: plan.pendingAction,
+        toolsUsed: plan.toolsUsed,
+        steps: plan.steps,
+        planSummary: plan.planSummary,
       };
     }
 
@@ -1298,6 +1339,11 @@ export class AiService {
       return this.executeSendWhatsAppMessage(organizationId, userId, action.payload);
     }
 
+    if (action.type === 'SEND_BATCH_TENANT_REMINDERS') {
+      await this.rbac.assertPermission(role, 'MESSAGE_SEND');
+      return this.executeSendBatchTenantReminders(organizationId, userId, action.payload);
+    }
+
     throw new ValidationError('Type d’action non supporté');
   }
 
@@ -1594,6 +1640,130 @@ export class AiService {
         contextUsed: true,
       };
     }
+  }
+
+  private async executeSendBatchTenantReminders(
+    organizationId: string,
+    userId: string,
+    payload: PendingActionPayload,
+  ): Promise<AiChatResponse> {
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) {
+      throw new ValidationError('Aucune relance à envoyer dans cette action');
+    }
+
+    const successes: Array<{
+      tenantName: string;
+      channel: string;
+      messageId?: string;
+      providerMessageId?: string;
+    }> = [];
+    const failures: Array<{ tenantName: string; channel: string; error: string }> = [];
+
+    for (const item of items as BatchTenantReminderItem[]) {
+      if (!item?.tenantId || !item.body || !item.channel) {
+        failures.push({
+          tenantName: item?.tenantName ?? 'locataire',
+          channel: item?.channel ?? '?',
+          error: 'Données de relance incomplètes',
+        });
+        continue;
+      }
+
+      try {
+        if (item.channel === 'IN_APP') {
+          if (!item.recipientUserId) {
+            failures.push({
+              tenantName: item.tenantName,
+              channel: 'IN_APP',
+              error: 'recipientUserId manquant',
+            });
+            continue;
+          }
+          const message = await this.notificationCenter.sendMessage(organizationId, userId, {
+            recipientId: item.recipientUserId,
+            subject: item.subject,
+            body: item.body,
+          });
+          successes.push({
+            tenantName: item.tenantName,
+            channel: 'IN_APP',
+            messageId: message.id,
+          });
+        } else if (item.channel === 'WHATSAPP') {
+          if (!item.toPhone) {
+            failures.push({
+              tenantName: item.tenantName,
+              channel: 'WHATSAPP',
+              error: 'toPhone manquant',
+            });
+            continue;
+          }
+          const { message, providerMessageId } = await this.notificationCenter.sendWhatsAppMessage(
+            organizationId,
+            userId,
+            {
+              tenantId: item.tenantId,
+              toPhone: item.toPhone,
+              body: item.body,
+              subject: item.subject,
+              recipientUserId: item.recipientUserId,
+            },
+          );
+          const messageId =
+            message && typeof message === 'object' && 'id' in message
+              ? String((message as { id: string }).id)
+              : undefined;
+          successes.push({
+            tenantName: item.tenantName,
+            channel: 'WHATSAPP',
+            messageId,
+            providerMessageId,
+          });
+        } else {
+          failures.push({
+            tenantName: item.tenantName,
+            channel: String(item.channel),
+            error: 'Canal non supporté',
+          });
+        }
+      } catch (err) {
+        failures.push({
+          tenantName: item.tenantName,
+          channel: item.channel,
+          error: err instanceof Error ? err.message : 'Envoi impossible',
+        });
+      }
+    }
+
+    const lines: string[] = [
+      `Relances batch : ${successes.length} envoyée(s), ${failures.length} échec(s) sur ${items.length}.`,
+    ];
+    for (const s of successes.slice(0, 12)) {
+      lines.push(
+        `• OK ${s.tenantName} (${s.channel})` +
+          (s.providerMessageId ? ` — WA ${s.providerMessageId}` : '') +
+          (s.messageId && !s.providerMessageId ? ` — ${s.messageId}` : ''),
+      );
+    }
+    for (const f of failures.slice(0, 8)) {
+      lines.push(`• Échec ${f.tenantName} (${f.channel}) : ${f.error}`);
+    }
+    if (successes.length === 0) {
+      lines.push('Aucun envoi réussi — rien n’a été marqué comme envoyé.');
+    }
+
+    return {
+      reply: lines.join('\n'),
+      suggestions: ['Voir les impayés', 'Voir les locataires'],
+      actions: [
+        { label: 'Voir les impayés', route: '/payments?tab=unpaid' },
+        { label: 'Messagerie', route: '/notifications' },
+        { label: 'Voir les locataires', route: '/tenants' },
+      ],
+      poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+      contextUsed: true,
+    };
   }
 
   private async executeLeasePdf(
