@@ -1,0 +1,43 @@
+﻿{
+    "phase":  "F_ANALYTICS",
+    "pass":  5,
+    "fail":  0,
+    "note":  "Exact occupancy/revenue math vs API is PARTIAL without seed; assert toolsUsed + numeric reply.",
+    "results":  [
+                    {
+                        "id":  "F01_PORTFOLIO",
+                        "status":  "PASS",
+                        "detail":  "tools=[analyzePortfolio]",
+                        "toolsUsed":  "analyzePortfolio",
+                        "evidence":  "Synthèse parc (au 2026-08-12, XAF) :\n• 1 immeuble(s) · 3 logement(s) · occupation 33.3 %\n• Occupés 1 · vacants 1 · locataires 3\n• Baux actifs 2 · brouillons 2\n• Impayés : 0 · 0 XAF\n• Encaissé ce mois : 371 000 XAF\n• Revenus 7/2026 → 8/2026 : 0 → 370 000 XAF (Δ 370 000 · hausse)\n\n"
+                    },
+                    {
+                        "id":  "F02_COMPARE",
+                        "status":  "PASS",
+                        "detail":  "tools=[compareRevenue]",
+                        "toolsUsed":  "compareRevenue",
+                        "evidence":  "Comparaison revenus (XAF) :\n• Période A 7/2026 : 0 XAF\n• Période B 8/2026 : 370 000 XAF\n• Écart : 370 000 XAF (n/a (période A = 0)) · tendance hausse"
+                    },
+                    {
+                        "id":  "F03_RANK",
+                        "status":  "PASS",
+                        "detail":  "tools=[rankBuildingsByOutstanding]",
+                        "toolsUsed":  "rankBuildingsByOutstanding",
+                        "evidence":  "Aucun impayé à classer par immeuble (au 2026-08-12)."
+                    },
+                    {
+                        "id":  "F04_EXPLAIN",
+                        "status":  "PASS",
+                        "detail":  "tools=[explainRevenueChange]",
+                        "toolsUsed":  "explainRevenueChange",
+                        "evidence":  "Explication à partir des données ITC (outil explainRevenueChange) :\nÉvolution encaissements (au 2026-08-12, XAF) :\n• 7/2026 : 0 XAF\n• 8/2026 : 370 000 XAF\n• Δ 370 000 XAF · hausse\n\nFacteurs mesurés :\n• Encaissements (PAID/PARTIAL via periodMonth/periodYear) : 0 → 370 000 (Δ 370 0"
+                    },
+                    {
+                        "id":  "F05_URGENT",
+                        "status":  "PASS",
+                        "detail":  "tools=[listUrgentIssues]",
+                        "toolsUsed":  "listUrgentIssues",
+                        "evidence":  "Aucun problème urgent détecté dans vos données (au 2026-08-12)."
+                    }
+                ]
+}
