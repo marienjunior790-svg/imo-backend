@@ -50,6 +50,37 @@ router.get(
   }),
 );
 
+/** GET /ai/memory — mémoires USER (soi) + ORGANIZATION */
+router.get(
+  '/memory',
+  requirePermission(Permission.AI_USE),
+  requireFeature(FeatureKey.ACCESS_AI),
+  asyncHandler(async (req, res) => {
+    const result = await service.listMemories(
+      getOrganizationId(req),
+      req.user!.userId,
+      req.user!.role,
+    );
+    sendSuccess(res, result);
+  }),
+);
+
+/** DELETE /ai/memory/:id — oublier une mémoire autorisée */
+router.delete(
+  '/memory/:id',
+  requirePermission(Permission.AI_USE),
+  requireFeature(FeatureKey.ACCESS_AI),
+  asyncHandler(async (req, res) => {
+    const result = await service.forgetMemory(
+      getOrganizationId(req),
+      req.user!.userId,
+      req.user!.role,
+      req.params.id,
+    );
+    sendSuccess(res, result);
+  }),
+);
+
 /** GET /ai/suggestions — questions suggérées (contextuelles si org dispo) */
 router.get(
   '/suggestions',

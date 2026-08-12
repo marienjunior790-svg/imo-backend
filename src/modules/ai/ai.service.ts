@@ -1,6 +1,6 @@
 import { inject, injectable } from 'tsyringe';
 import { LeaseStatus, UserRole } from '@prisma/client';
-import { env } from '../../config/env.js';
+import { env, isAiMemoryEnabled } from '../../config/env.js';
 import { OpenAiClient, ChatMessage } from '../../infrastructure/openai/openai.client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { AiContextService, type AiOrganizationContext } from './ai.context.service.js';
@@ -18,6 +18,7 @@ import {
   OPENAI_TOOL_DEFINITIONS,
   formatToolResultForLocalReply,
 } from './ai.tools.js';
+import { AiMemoryService, type AiSessionEntities } from './ai.memory.service.js';
 import {
   cancelPendingAction,
   consumePendingAction,
@@ -96,7 +97,8 @@ Tu es une couche intelligente AU-DESSUS de toute l’app : immeubles, logements,
 Règles ABSOLUES :
 - Français clair et pro. Monnaie : XAF.
 - N’invente JAMAIS de locataire, logement, montant, statut, fonctionnalité ou action.
-- Pour toute donnée métier : appelle les outils (getUnits, getOutstandingPayments, getBuildings, getDashboardSummary, etc.).
+- Pour toute donnée métier : appelle les outils (getUnits, getOutstandingPayments, getBuildings, getDashboardSummary, etc.). Les faits métier viennent de Prisma / outils — jamais de la mémoire.
+- Mémoire explicite uniquement : rememberMemory / recallMemories / forgetMemory (préférences, habitudes, notes). Ne sauvegarde pas automatiquement les conversations. Si conflit mémoire vs outil/DB → croit les outils/DB.
 - Si l’outil ne renvoie rien / pas d’accès : dis « Je n’ai pas accès à cette information dans vos données actuelles. »
 - Ne réponds JAMAIS « je n’ai pas compris » / « demande non reconnue » si la question concerne le patrimoine : utilise un outil ou le contexte JSON.
 - « mes logements », « combien de biens », « montre mon patrimoine » → getUnits (ou getDashboardSummary pour un résumé).
@@ -135,6 +137,7 @@ export class AiService {
     @inject(NotificationCenterService) private readonly notificationCenter: NotificationCenterService,
     @inject(PrismaService) private readonly prisma: PrismaService,
     @inject(AiToolsService) private readonly tools: AiToolsService,
+    @inject(AiMemoryService) private readonly memory: AiMemoryService,
     @inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
@@ -150,6 +153,16 @@ export class AiService {
       'Générer un contrat de location',
       'Comment utiliser Intelligence ITC ?',
     ];
+  }
+
+  async listMemories(organizationId: string, userId: string, role: UserRole) {
+    await this.assertAiAccess(organizationId, userId, role);
+    return this.memory.listForUser(organizationId, userId, role);
+  }
+
+  async forgetMemory(organizationId: string, userId: string, role: UserRole, memoryId: string) {
+    await this.assertAiAccess(organizationId, userId, role);
+    return this.memory.forget({ organizationId, userId, role, memoryId });
   }
 
   getAnalysisTypes(): Array<{ key: string; label: string; description: string }> {
@@ -241,20 +254,30 @@ export class AiService {
     // Intentions métier claires → outils locaux (données réelles, zéro hallucination).
     const hasLocalDataIntent = this.tools.resolveLocalToolIntents(message).length > 0;
     if (!this.openai.isAvailable() || hasLocalDataIntent) {
-      return this.chatLocalWithTools(organizationId, userId, message, ctx, suggestions, actions);
+      return this.chatLocalWithTools(organizationId, userId, role, message, ctx, suggestions, actions);
     }
 
     try {
-      return await this.chatWithOpenAiTools(organizationId, userId, message, input.history, ctx, suggestions, actions);
+      return await this.chatWithOpenAiTools(
+        organizationId,
+        userId,
+        role,
+        message,
+        input.history,
+        ctx,
+        suggestions,
+        actions,
+      );
     } catch (err) {
       console.error('[ai.chat] OpenAI failed, falling back to local:', err instanceof Error ? err.message : err);
-      return this.chatLocalWithTools(organizationId, userId, message, ctx, suggestions, actions);
+      return this.chatLocalWithTools(organizationId, userId, role, message, ctx, suggestions, actions);
     }
   }
 
   private async chatLocalWithTools(
     organizationId: string,
     userId: string,
+    role: UserRole,
     message: string,
     ctx: AiOrganizationContext,
     suggestions: string[],
@@ -287,12 +310,32 @@ export class AiService {
     const toolsUsed: string[] = [];
     const parts: string[] = [];
     let pendingAction: AiPendingActionHint | undefined;
+    const toolCtx = { userId, role };
+    const memoryToolCalled = intents.some(
+      (i) => i.name === 'rememberMemory' || i.name === 'recallMemories' || i.name === 'forgetMemory',
+    );
+
+    if (isAiMemoryEnabled && !memoryToolCalled) {
+      try {
+        const memories = await this.memory.recall({
+          organizationId,
+          userId,
+          role,
+          limit: 8,
+        });
+        const note = this.memory.formatMemoriesForPrompt(memories);
+        if (note) parts.push(`(Contexte mémoire)\n${note}`);
+      } catch {
+        /* best-effort */
+      }
+    }
 
     for (const intent of intents) {
       const name = intent.name;
-      const result = await this.tools.execute(organizationId, name, intent.args ?? {});
+      const result = await this.tools.execute(organizationId, name, intent.args ?? {}, toolCtx);
       toolsUsed.push(name);
       parts.push(formatToolResultForLocalReply(name, result));
+      void this.maybeMergeSessionFromToolResult(organizationId, userId, name, result);
 
       if (name === 'proposeGenerateLeasePdf') {
         const leaseId = this.extractCuid(message);
@@ -349,6 +392,7 @@ export class AiService {
   private async chatWithOpenAiTools(
     organizationId: string,
     userId: string,
+    role: UserRole,
     message: string,
     history: AiChatInput['history'],
     ctx: AiOrganizationContext,
@@ -359,13 +403,29 @@ export class AiService {
     const messages: ChatMessage[] = [
       { role: 'system', content: ASSISTANT_PROMPT },
       { role: 'system', content: `Contexte organisation (JSON):\n${contextJson}` },
+    ];
+
+    if (isAiMemoryEnabled) {
+      try {
+        const memories = await this.memory.recall({ organizationId, userId, role, limit: 8 });
+        const memPrompt = this.memory.formatMemoriesForPrompt(memories);
+        if (memPrompt) {
+          messages.push({ role: 'system', content: memPrompt });
+        }
+      } catch {
+        /* best-effort */
+      }
+    }
+
+    messages.push(
       ...(history ?? []).slice(-env.AI_MAX_HISTORY).map((h) => ({ role: h.role, content: h.content }) as ChatMessage),
       { role: 'user', content: message },
-    ];
+    );
 
     const toolsUsed: string[] = [];
     let pendingAction: AiPendingActionHint | undefined;
     const maxRounds = 4;
+    const toolCtx = { userId, role };
 
     for (let round = 0; round < maxRounds; round++) {
       const msg = await this.openai.chatWithTools(messages, OPENAI_TOOL_DEFINITIONS);
@@ -398,7 +458,8 @@ export class AiService {
         const name = call.function.name;
         const args = call.function.arguments;
         toolsUsed.push(name);
-        const result = await this.tools.execute(organizationId, name, args);
+        const result = await this.tools.execute(organizationId, name, args, toolCtx);
+        void this.maybeMergeSessionFromToolResult(organizationId, userId, name, result);
 
         if (name === 'proposeGenerateLeasePdf') {
           let leaseId: string | undefined;
@@ -508,6 +569,60 @@ export class AiService {
       pendingAction,
       toolsUsed,
     };
+  }
+
+  /** Best-effort : mémorise la dernière entité unique renvoyée par un outil data. */
+  private async maybeMergeSessionFromToolResult(
+    organizationId: string,
+    userId: string,
+    toolName: string,
+    result: unknown,
+  ): Promise<void> {
+    if (!isAiMemoryEnabled || !result || typeof result !== 'object') return;
+    const data = result as Record<string, unknown>;
+    if (typeof data.error === 'string') return;
+    const entities: AiSessionEntities = { lastIntent: toolName };
+
+    try {
+      if (toolName === 'getTenants' && Number(data.count) === 1) {
+        const item = ((data.items as Array<Record<string, unknown>>) ?? [])[0];
+        if (item?.id) {
+          entities.lastTenantId = String(item.id);
+          if (item.name) entities.lastTenantName = String(item.name);
+        }
+      } else if (toolName === 'getBuildings' && Number(data.count) === 1) {
+        const item = ((data.items as Array<Record<string, unknown>>) ?? [])[0];
+        if (item?.id) entities.lastBuildingId = String(item.id);
+      } else if (
+        (toolName === 'getContracts' || toolName === 'proposeGenerateLeasePdf') &&
+        data.found &&
+        data.lease
+      ) {
+        const lease = data.lease as Record<string, unknown>;
+        if (lease.id) entities.lastLeaseId = String(lease.id);
+      } else if (toolName === 'getContracts' && Number(data.count) === 1) {
+        const item = ((data.items as Array<Record<string, unknown>>) ?? [])[0];
+        if (item?.id) entities.lastLeaseId = String(item.id);
+        if (item?.tenantId) entities.lastTenantId = String(item.tenantId);
+        if (item?.apartmentId) entities.lastApartmentId = String(item.apartmentId);
+      } else if (
+        (toolName === 'proposeGeneratePaymentReceipt' || toolName === 'proposeGeneratePaymentNotice') &&
+        data.found &&
+        data.payment
+      ) {
+        const payment = data.payment as Record<string, unknown>;
+        if (payment.id) entities.lastPaymentId = String(payment.id);
+      } else if (toolName === 'getVacantUnits' && Number(data.count) === 1) {
+        const item = ((data.items as Array<Record<string, unknown>>) ?? [])[0];
+        if (item?.id) entities.lastApartmentId = String(item.id);
+        if (item?.buildingId) entities.lastBuildingId = String(item.buildingId);
+      } else {
+        return;
+      }
+      await this.memory.mergeEntities({ organizationId, userId, entities });
+    } catch {
+      /* never fail chat */
+    }
   }
 
   private dedupeActions(actions: AiActionHint[]): AiActionHint[] {
@@ -744,7 +859,10 @@ export class AiService {
     await this.assertAiAccess(organizationId, userId, role);
 
     if (!paymentId) {
-      const listed = await this.tools.execute(organizationId, 'proposeGeneratePaymentReceipt', {});
+      const listed = await this.tools.execute(organizationId, 'proposeGeneratePaymentReceipt', {}, {
+        userId,
+        role,
+      });
       const data = listed as { count?: number; items?: Array<{ id: string; tenantName: string; apartmentLabel: string; period: string }> };
       const items = data.items ?? [];
       if (!items.length) {
@@ -853,7 +971,10 @@ export class AiService {
     await this.assertAiAccess(organizationId, userId, role);
 
     if (!paymentId) {
-      const listed = await this.tools.execute(organizationId, 'proposeGeneratePaymentNotice', {});
+      const listed = await this.tools.execute(organizationId, 'proposeGeneratePaymentNotice', {}, {
+        userId,
+        role,
+      });
       const data = listed as {
         count?: number;
         items?: Array<{ id: string; tenantName: string; apartmentLabel: string; period: string; amountDueXaf: number }>;

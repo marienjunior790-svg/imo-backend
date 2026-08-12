@@ -105,6 +105,23 @@ describe('AiToolsService.resolveLocalToolIntents', () => {
     const intents = tools.resolveLocalToolIntents('donne-moi mes immeubles');
     expect(intents.map((i) => i.name)).toContain('getBuildings');
   });
+
+  it('détecte rememberMemory (retiens que…)', () => {
+    const intents = tools.resolveLocalToolIntents('Retiens que je préfère WhatsApp pour les rappels');
+    const mem = intents.find((i) => i.name === 'rememberMemory');
+    expect(mem).toBeDefined();
+    expect(String(mem?.args?.content ?? '')).toMatch(/WhatsApp/i);
+  });
+
+  it('détecte recallMemories (mes préférences)', () => {
+    const intents = tools.resolveLocalToolIntents('Quelles sont mes préférences mémorisées ?');
+    expect(intents.map((i) => i.name)).toContain('recallMemories');
+  });
+
+  it('détecte forgetMemory', () => {
+    const intents = tools.resolveLocalToolIntents('Oublie ma préférence clé preferred_reminder_channel');
+    expect(intents.map((i) => i.name)).toContain('forgetMemory');
+  });
 });
 
 describe('formatToolResultForLocalReply', () => {

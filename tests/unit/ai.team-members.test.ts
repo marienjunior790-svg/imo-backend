@@ -245,6 +245,7 @@ describe('AiToolsService.execute getTeamMembers', () => {
       {} as never,
       {} as never,
       { listOrganizationMembers } as unknown as TeamMembersService,
+      {} as never,
     );
 
     const result = (await tools.execute('org-jwt', 'getTeamMembers', {
@@ -269,6 +270,7 @@ describe('AiToolsService.execute getTeamMembers', () => {
       {
         listOrganizationMembers: jest.fn().mockRejectedValue(new ForbiddenError('Organisation requise')),
       } as unknown as TeamMembersService,
+      {} as never,
     );
     const result = (await tools.execute('', 'getTeamMembers', { role: 'AGENT' })) as {
       error: string;

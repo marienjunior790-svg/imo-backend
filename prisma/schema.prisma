@@ -17,6 +17,25 @@ enum OrganizationType {
   OWNER  // Propriétaire particulier ou société
 }
 
+enum AiMemoryScope {
+  USER
+  ORGANIZATION
+}
+
+enum AiMemoryKind {
+  PREFERENCE
+  FACT
+  HABIT
+  DECISION
+  CONTEXT
+  NOTE
+}
+
+enum AiMemorySource {
+  EXPLICIT
+  SYSTEM
+}
+
 enum UserRole {
   SUPER_ADMIN
   OWNER       // Propriétaire / agence — pilotage complet de l'organisation
@@ -189,6 +208,8 @@ model Organization {
   staffTasks      StaffTask[]
   reminders       Reminder[]
   buildingExpenses BuildingExpense[]
+  aiMemoryEntries   AiMemoryEntry[]
+  aiSessionContexts AiSessionContext[]
 
   @@index([type])
   @@index([subscriptionStatus])
@@ -278,6 +299,10 @@ model User {
   invitationsSent      Invitation[]        @relation("InvitationsSent")
   memberships          Membership[]        @relation("UserMemberships")
   buildingExpenses     BuildingExpense[]   @relation("ExpenseCreatedBy")
+  aiMemoryEntries      AiMemoryEntry[]     @relation("AiMemoryOwner")
+  aiMemoryCreated      AiMemoryEntry[]     @relation("AiMemoryCreatedBy")
+  aiMemoryUpdated      AiMemoryEntry[]     @relation("AiMemoryUpdatedBy")
+  aiSessionContexts    AiSessionContext[]
 
   @@index([organizationId])
   @@index([role])
@@ -1009,4 +1034,54 @@ model Reminder {
 
   @@index([organizationId, status, scheduledAt])
   @@map("reminders")
+}
+
+// ─── Mémoire intelligente ITC (Phase C) ───────────────────────────────────────
+
+model AiMemoryEntry {
+  id             String         @id @default(cuid())
+  organizationId String
+  /// Requis si scope=USER (propriétaire de la mémoire) ; null pour ORGANIZATION
+  userId         String?
+  scope          AiMemoryScope
+  kind           AiMemoryKind   @default(FACT)
+  /// Clé stable optionnelle (ex. preferred_reminder_channel) — upsert si fournie
+  key            String?
+  content        String
+  source         AiMemorySource @default(EXPLICIT)
+  createdById    String
+  updatedById    String?
+  expiresAt      DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation("AiMemoryOwner", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("AiMemoryCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  updatedBy    User?        @relation("AiMemoryUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, scope])
+  @@index([organizationId, userId])
+  @@index([organizationId, key])
+  @@map("ai_memory_entries")
+}
+
+model AiSessionContext {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  /// Clé session client ; défaut = hash(userId) côté service
+  sessionKey     String
+  /// { lastTenantId, lastTenantName, lastBuildingId, lastApartmentId, lastLeaseId, lastPaymentId, lastIntent, notes? }
+  entitiesJson   Json?
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId, sessionKey])
+  @@index([expiresAt])
+  @@map("ai_session_contexts")
 }

@@ -1,5 +1,12 @@
 import { inject, injectable } from 'tsyringe';
-import { ApartmentStatus, LeaseStatus, PaymentStatus, UserRole } from '@prisma/client';
+import {
+  AiMemoryKind,
+  AiMemoryScope,
+  ApartmentStatus,
+  LeaseStatus,
+  PaymentStatus,
+  UserRole,
+} from '@prisma/client';
 import type OpenAI from 'openai';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { AppError, ForbiddenError } from '../../shared/errors/app.error.js';
@@ -7,7 +14,8 @@ import { normalizeRole } from '../../shared/auth/roles.js';
 import { decimalToNumber } from '../../shared/utils/response.util.js';
 import { TeamMembersService } from '../admin/team-members.service.js';
 import { AiContextService } from './ai.context.service.js';
-import { env, isWhatsAppConfigured } from '../../config/env.js';
+import { AiMemoryService } from './ai.memory.service.js';
+import { env, isAiMemoryEnabled, isWhatsAppConfigured } from '../../config/env.js';
 import { isValidWhatsAppPhone, normalizePhoneE164 } from '../../shared/utils/phone.util.js';
 
 export type AiToolName =
@@ -27,7 +35,12 @@ export type AiToolName =
   | 'proposeCreateLease'
   | 'proposeSendTenantMessage'
   | 'proposeSendWhatsAppMessage'
-  | 'proposeSendWhatsAppMedia';
+  | 'proposeSendWhatsAppMedia'
+  | 'rememberMemory'
+  | 'recallMemories'
+  | 'forgetMemory';
+
+export type AiToolExecuteCtx = { userId: string; role: UserRole };
 
 /** Intent local avec arguments (organizationId jamais dans args — injecté côté service). */
 export type LocalToolIntent = {
@@ -285,6 +298,60 @@ export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'rememberMemory',
+      description:
+        'Mémorise explicitement une préférence / fait / note utilisateur (pas de données métier inventées). ' +
+        'scope USER (défaut) ou ORGANIZATION (OWNER uniquement). Ne remplace pas Prisma.',
+      parameters: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', description: 'Texte à mémoriser (≤ 2000 car.)' },
+          scope: { type: 'string', description: 'USER | ORGANIZATION (défaut USER)' },
+          kind: {
+            type: 'string',
+            description: 'PREFERENCE | FACT | HABIT | DECISION | CONTEXT | NOTE',
+          },
+          key: { type: 'string', description: 'Clé stable optionnelle (upsert)' },
+        },
+        required: ['content'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'recallMemories',
+      description:
+        'Rappelle les mémoires USER de l’utilisateur + ORGANIZATION de l’org. Ne jamais inventer.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Filtre texte optionnel (contenu / clé)' },
+          scope: { type: 'string', description: 'USER | ORGANIZATION (optionnel)' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'forgetMemory',
+      description: 'Oublie une mémoire par id ou clé (uniquement si autorisé).',
+      parameters: {
+        type: 'object',
+        properties: {
+          memoryId: { type: 'string' },
+          key: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 @injectable()
@@ -293,12 +360,14 @@ export class AiToolsService {
     @inject(PrismaService) private readonly prisma: PrismaService,
     @inject(AiContextService) private readonly contextService: AiContextService,
     @inject(TeamMembersService) private readonly teamMembers: TeamMembersService,
+    @inject(AiMemoryService) private readonly memory: AiMemoryService,
   ) {}
 
   async execute(
     organizationId: string,
     toolName: string,
     rawArgs: string | Record<string, unknown> | undefined,
+    ctx?: AiToolExecuteCtx,
   ): Promise<unknown> {
     const args =
       typeof rawArgs === 'string'
@@ -357,12 +426,95 @@ export class AiToolsService {
             error:
               'Envoi WhatsApp audio/image non encore disponible. Utilisez un message texte (proposeSendWhatsAppMessage).',
           };
+        case 'rememberMemory':
+          return await this.rememberMemory(organizationId, args, ctx);
+        case 'recallMemories':
+          return await this.recallMemories(organizationId, args, ctx);
+        case 'forgetMemory':
+          return await this.forgetMemory(organizationId, args, ctx);
         default:
           return { error: `Outil inconnu: ${toolName}`, code: 404 };
       }
     } catch (err) {
       return mapToolError(err);
     }
+  }
+
+  private requireToolUser(ctx?: AiToolExecuteCtx): AiToolExecuteCtx {
+    if (!ctx?.userId || !ctx.role) {
+      throw new ForbiddenError('Contexte utilisateur requis pour la mémoire IA');
+    }
+    return ctx;
+  }
+
+  private async rememberMemory(
+    organizationId: string,
+    args: Record<string, unknown>,
+    ctx?: AiToolExecuteCtx,
+  ) {
+    if (!isAiMemoryEnabled) return { enabled: false, error: 'Mémoire IA désactivée' };
+    const user = this.requireToolUser(ctx);
+    const content = typeof args.content === 'string' ? args.content : '';
+    const scopeRaw = typeof args.scope === 'string' ? args.scope : 'USER';
+    const kind = typeof args.kind === 'string' ? args.kind : undefined;
+    const key = typeof args.key === 'string' ? args.key : undefined;
+    const entry = await this.memory.remember({
+      organizationId,
+      userId: user.userId,
+      role: user.role,
+      scope: scopeRaw.toUpperCase() === 'ORGANIZATION' ? AiMemoryScope.ORGANIZATION : AiMemoryScope.USER,
+      kind: kind as AiMemoryKind | undefined,
+      key,
+      content,
+    });
+    return {
+      enabled: true,
+      remembered: true,
+      id: entry.id,
+      scope: entry.scope,
+      kind: entry.kind,
+      key: entry.key,
+      content: entry.content,
+    };
+  }
+
+  private async recallMemories(
+    organizationId: string,
+    args: Record<string, unknown>,
+    ctx?: AiToolExecuteCtx,
+  ) {
+    if (!isAiMemoryEnabled) return { enabled: false, error: 'Mémoire IA désactivée' };
+    const user = this.requireToolUser(ctx);
+    const query = typeof args.query === 'string' ? args.query : undefined;
+    const scope = typeof args.scope === 'string' ? args.scope : undefined;
+    const items = await this.memory.recall({
+      organizationId,
+      userId: user.userId,
+      role: user.role,
+      query,
+      scope: scope as AiMemoryScope | undefined,
+      limit: 20,
+    });
+    return { enabled: true, count: items.length, items };
+  }
+
+  private async forgetMemory(
+    organizationId: string,
+    args: Record<string, unknown>,
+    ctx?: AiToolExecuteCtx,
+  ) {
+    if (!isAiMemoryEnabled) return { enabled: false, error: 'Mémoire IA désactivée' };
+    const user = this.requireToolUser(ctx);
+    const memoryId = typeof args.memoryId === 'string' ? args.memoryId : undefined;
+    const key = typeof args.key === 'string' ? args.key : undefined;
+    const result = await this.memory.forget({
+      organizationId,
+      userId: user.userId,
+      role: user.role,
+      memoryId,
+      key,
+    });
+    return { enabled: true, ...result };
   }
 
   /** Intent routing sans LLM — données réelles uniquement. */
@@ -546,6 +698,9 @@ export class AiToolsService {
 
     const teamIntent = resolveTeamMembersLocalIntent(q);
     if (teamIntent) tools.push(teamIntent);
+
+    const memoryIntent = resolveMemoryLocalIntent(message, q);
+    if (memoryIntent) tools.push(memoryIntent);
 
     const seen = new Set<string>();
     return tools.filter((t) => {
@@ -1645,6 +1800,36 @@ Confirmez pour générer l’avis de paiement PDF.`;
       'Envoi WhatsApp audio/image non encore disponible. Utilisez un message texte.'
     );
   }
+  if (toolName === 'rememberMemory') {
+    if (data.enabled === false) return String(data.error ?? 'Mémoire IA désactivée');
+    if (typeof data.error === 'string') return data.error;
+    if (data.remembered) {
+      const scope = data.scope === 'ORGANIZATION' ? 'organisation' : 'utilisateur';
+      return `C’est noté (mémoire ${scope})${data.key ? ` · clé « ${data.key} »` : ''} : « ${String(data.content ?? '').slice(0, 200)} ».`;
+    }
+    return 'Mémoire non enregistrée.';
+  }
+  if (toolName === 'recallMemories') {
+    if (data.enabled === false) return String(data.error ?? 'Mémoire IA désactivée');
+    if (typeof data.error === 'string') return data.error;
+    const items = (data.items as Array<Record<string, unknown>>) ?? [];
+    if (!items.length) return 'Aucune mémoire enregistrée pour vous / votre organisation.';
+    const list = items
+      .slice(0, 12)
+      .map((m) => {
+        const tag = m.key ? `${m.scope}/${m.kind}:${m.key}` : `${m.scope}/${m.kind}`;
+        return `• [${tag}] ${String(m.content ?? '').slice(0, 180)}`;
+      })
+      .join('\n');
+    return `Mémoires (${data.count}) :\n${list}\n\n(Ne pas confondre avec les données métier Prisma.)`;
+  }
+  if (toolName === 'forgetMemory') {
+    if (data.enabled === false) return String(data.error ?? 'Mémoire IA désactivée');
+    if (typeof data.error === 'string') return data.error;
+    if (data.deleted) return `Mémoire oubliée${data.key ? ` (« ${data.key} »)` : ''}.`;
+    if (data.reason === 'not_found') return 'Aucune mémoire correspondante à oublier.';
+    return 'Suppression mémoire non effectuée.';
+  }
   if (toolName === 'getTenants') {
     const items = (data.items as Array<Record<string, unknown>>) ?? [];
     if (!items.length) return 'Aucun locataire enregistré.';
@@ -1699,6 +1884,78 @@ Confirmez pour générer l’avis de paiement PDF.`;
     return `Vous avez actuellement ${data.count} ${noun} :\n\n${list.join('\n')}`;
   }
   return JSON.stringify(result).slice(0, 1200);
+}
+
+/** Intent mémoire — retien / rappelle / oublie (FR). */
+export function resolveMemoryLocalIntent(
+  originalMessage: string,
+  qNormalized: string,
+): LocalToolIntent | null {
+  const q = qNormalized;
+
+  const wantsForget =
+    q.includes('oublie') ||
+    q.includes('supprime de ta memoire') ||
+    q.includes('supprime de ta mémoire') ||
+    /\bforget\b/.test(q);
+  if (wantsForget) {
+    const keyMatch =
+      originalMessage.match(/(?:clé|cle|key)\s*[:=]?\s*([a-zA-Z0-9_.-]+)/i)?.[1] ||
+      originalMessage.match(/(?:mémoire|memoire)\s+(?:id\s*)?(c[a-z0-9]{20,})/i)?.[1];
+    const args: Record<string, unknown> = {};
+    if (keyMatch) {
+      if (keyMatch.startsWith('c') && keyMatch.length >= 20) args.memoryId = keyMatch;
+      else args.key = keyMatch;
+    }
+    return { name: 'forgetMemory', args };
+  }
+
+  const wantsRecall =
+    q.includes('rappelle') ||
+    q.includes('souvenir') ||
+    q.includes('que retiens') ||
+    q.includes('mes preferences') ||
+    q.includes('mes préférences') ||
+    q.includes('preferences memoris') ||
+    q.includes('préférences mémoris') ||
+    q.includes('preferences memorise') ||
+    q.includes('ce que tu retiens');
+  if (wantsRecall) {
+    return { name: 'recallMemories', args: {} };
+  }
+
+  const wantsRemember =
+    /\bretien\b/.test(q) ||
+    /\bretiens\b/.test(q) ||
+    q.includes('memorise') ||
+    q.includes('mémorise') ||
+    q.includes('souviens-toi') ||
+    q.includes('souviens toi');
+  if (wantsRemember) {
+    let content = '';
+    const afterQue = originalMessage.match(
+      /(?:retiens?|m[ée]morise|souviens[- ]toi)\s+(?:que\s+|:\s*)([\s\S]+)/i,
+    );
+    if (afterQue?.[1]) content = afterQue[1].trim();
+    else {
+      const afterColon = originalMessage.match(/:\s*([\s\S]+)/);
+      if (afterColon?.[1]) content = afterColon[1].trim();
+    }
+    if (!content) {
+      content = originalMessage
+        .replace(/^(retiens?|m[ée]morise|souviens[- ]toi)\s*/i, '')
+        .trim();
+    }
+    const scope = /organisation|organization|org\b/i.test(originalMessage)
+      ? 'ORGANIZATION'
+      : 'USER';
+    return {
+      name: 'rememberMemory',
+      args: { content, scope },
+    };
+  }
+
+  return null;
 }
 
 /** Intent équipe / agents — hors questions maintenance d’affectation. */

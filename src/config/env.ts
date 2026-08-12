@@ -68,6 +68,9 @@ const envSchema = z.object({
   SENTRY_DSN: z.string().url().optional(),
   // Cache IA (ms)
   AI_CONTEXT_CACHE_TTL_MS: z.coerce.number().default(60_000),
+  // Mémoire intelligente ITC (Phase C)
+  AI_MEMORY_ENABLED: z.coerce.boolean().default(true),
+  AI_SESSION_TTL_HOURS: z.coerce.number().default(24),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -90,6 +93,8 @@ export const isN8nConfigured = Boolean(
 export const isAutomationApiConfigured = Boolean(env.N8N_API_KEY);
 
 export const isOpenAiConfigured = Boolean(env.OPENAI_API_KEY);
+
+export const isAiMemoryEnabled = env.AI_MEMORY_ENABLED;
 
 export const isMailerConfigured = Boolean(
   (env.RESEND_API_KEY && env.MAIL_FROM) ||
