@@ -16,6 +16,10 @@ import { TeamMembersService } from '../admin/team-members.service.js';
 import { AiContextService } from './ai.context.service.js';
 import { AiAnalyticsService } from './ai.analytics.service.js';
 import { utcLastMonth, utcThisMonth } from './ai.analytics.math.js';
+import {
+  AiDocumentsIntelService,
+  extractCuidFromText,
+} from './ai.documents-intel.service.js';
 import { AiMemoryService, type AiSessionEntities } from './ai.memory.service.js';
 import {
   detectReferentialIntent,
@@ -41,6 +45,12 @@ export type AiToolName =
   | 'rankBuildingsByOutstanding'
   | 'explainRevenueChange'
   | 'listUrgentIssues'
+  | 'listDocumentsForAi'
+  | 'summarizeDocument'
+  | 'extractDocumentFacts'
+  | 'askAboutDocument'
+  | 'checkLeaseDocumentConsistency'
+  | 'compareDocuments'
   | 'proposeGenerateLeasePdf'
   | 'proposeGeneratePaymentReceipt'
   | 'proposeGeneratePaymentNotice'
@@ -279,6 +289,105 @@ export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool
   {
     type: 'function',
     function: {
+      name: 'listDocumentsForAi',
+      description:
+        'Liste les documents analysables de l’organisation (table Document + baux avec contractPdfUrl + paiements avec receiptPdfUrl). ' +
+        'Métadonnées uniquement — pas d’OCR PDF ni de RAG.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'summarizeDocument',
+      description:
+        'Résume un document / contrat / reçu à partir des métadonnées Prisma liées (locataire, logement, montants, dates, URL Cloudinary). ' +
+        'N’invente pas le contenu OCR du PDF.',
+      parameters: {
+        type: 'object',
+        properties: {
+          documentId: { type: 'string' },
+          leaseId: { type: 'string' },
+          paymentId: { type: 'string' },
+          kind: { type: 'string', description: 'LEASE_PDF | PAYMENT_RECEIPT | PAYMENT_NOTICE (optionnel)' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'extractDocumentFacts',
+      description:
+        'Extrait des faits structurés (parties, loyer, dates, statut) depuis Document/bail/paiement. Jamais inventés.',
+      parameters: {
+        type: 'object',
+        properties: {
+          documentId: { type: 'string' },
+          leaseId: { type: 'string' },
+          paymentId: { type: 'string' },
+          kind: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'askAboutDocument',
+      description:
+        'Répond à une question UNIQUEMENT à partir des faits extraits du dossier ITC. ' +
+        'Si l’info n’est pas dans les faits : message d’indisponibilité explicite.',
+      parameters: {
+        type: 'object',
+        properties: {
+          question: { type: 'string' },
+          documentId: { type: 'string' },
+          leaseId: { type: 'string' },
+          paymentId: { type: 'string' },
+          kind: { type: 'string' },
+        },
+        required: ['question'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'checkLeaseDocumentConsistency',
+      description:
+        'Vérifie des incohérences règle-based sur un bail : loyer vs logement, locataire concurrent, statut vs dates.',
+      parameters: {
+        type: 'object',
+        properties: {
+          leaseId: { type: 'string', description: 'ID du bail (cuid)' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'compareDocuments',
+      description:
+        'Compare deux baux (leaseIdA + leaseIdB) sur faits structurés. Sans deux leaseId : NOT_SUPPORTED.',
+      parameters: {
+        type: 'object',
+        properties: {
+          leaseIdA: { type: 'string' },
+          leaseIdB: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'proposeGenerateLeasePdf',
 
       description:
@@ -468,6 +577,7 @@ export class AiToolsService {
     @inject(PrismaService) private readonly prisma: PrismaService,
     @inject(AiContextService) private readonly contextService: AiContextService,
     @inject(AiAnalyticsService) private readonly analytics: AiAnalyticsService,
+    @inject(AiDocumentsIntelService) private readonly documentsIntel: AiDocumentsIntelService,
     @inject(TeamMembersService) private readonly teamMembers: TeamMembersService,
     @inject(AiMemoryService) private readonly memory: AiMemoryService,
   ) {}
@@ -559,6 +669,59 @@ export class AiToolsService {
               : 5;
           return await this.analytics.topUrgentIssues(organizationId, limit);
         }
+        case 'listDocumentsForAi':
+          return await this.documentsIntel.listAnalyzableDocuments(organizationId);
+        case 'summarizeDocument':
+          return await this.documentsIntel.summarizeDocument(organizationId, {
+            documentId: typeof args.documentId === 'string' ? args.documentId : undefined,
+            leaseId: typeof args.leaseId === 'string' ? args.leaseId : undefined,
+            paymentId: typeof args.paymentId === 'string' ? args.paymentId : undefined,
+            kind: typeof args.kind === 'string' ? args.kind : undefined,
+          });
+        case 'extractDocumentFacts':
+          return await this.documentsIntel.extractDocumentFacts(organizationId, {
+            documentId: typeof args.documentId === 'string' ? args.documentId : undefined,
+            leaseId: typeof args.leaseId === 'string' ? args.leaseId : undefined,
+            paymentId: typeof args.paymentId === 'string' ? args.paymentId : undefined,
+            kind: typeof args.kind === 'string' ? args.kind : undefined,
+          });
+        case 'askAboutDocument':
+          return await this.documentsIntel.answerDocumentQuestion(
+            organizationId,
+            typeof args.question === 'string' ? args.question : '',
+            {
+              documentId: typeof args.documentId === 'string' ? args.documentId : undefined,
+              leaseId: typeof args.leaseId === 'string' ? args.leaseId : undefined,
+              paymentId: typeof args.paymentId === 'string' ? args.paymentId : undefined,
+              kind: typeof args.kind === 'string' ? args.kind : undefined,
+            },
+          );
+        case 'checkLeaseDocumentConsistency': {
+          let leaseId =
+            typeof args.leaseId === 'string' && args.leaseId.trim()
+              ? args.leaseId.trim()
+              : undefined;
+          if (!leaseId) {
+            const recent = await this.prisma.lease.findFirst({
+              where: { organizationId },
+              orderBy: { updatedAt: 'desc' },
+              select: { id: true },
+            });
+            leaseId = recent?.id;
+          }
+          if (!leaseId) {
+            return {
+              found: false,
+              error: 'Aucun bail dans votre organisation pour vérifier les incohérences.',
+            };
+          }
+          return await this.documentsIntel.detectInconsistencies(organizationId, leaseId);
+        }
+        case 'compareDocuments':
+          return await this.documentsIntel.compareDocuments(organizationId, {
+            leaseIdA: typeof args.leaseIdA === 'string' ? args.leaseIdA : undefined,
+            leaseIdB: typeof args.leaseIdB === 'string' ? args.leaseIdB : undefined,
+          });
         case 'proposeGenerateLeasePdf':
           return await this.listLeasesForPdf(organizationId, typeof args.leaseId === 'string' ? args.leaseId : undefined);
         case 'proposeGeneratePaymentReceipt':
@@ -733,8 +896,75 @@ export class AiToolsService {
       tools.push({ name: 'listUrgentIssues' });
     }
 
+    // ── Phase G document intel (avant résumé dashboard / getContracts) ──
+    const wantsDocCompare =
+      q.includes('compar') && (q.includes('contrat') || q.includes('document') || q.includes('bail'));
+    const wantsDocInconsistency =
+      q.includes('incoher') ||
+      q.includes('incoherent') ||
+      (q.includes('verifie') && (q.includes('contrat') || q.includes('bail') || q.includes('document')));
+    const wantsDocExtract =
+      (q.includes('extrait') || q.includes('extraire') || q.includes('extraction')) &&
+      (q.includes('document') ||
+        q.includes('contrat') ||
+        q.includes('pdf') ||
+        q.includes('recu') ||
+        q.includes('bail'));
+    const wantsDocSummarize =
+      (q.includes('resume') || q.includes('resumer') || q.includes('synthese') || q.includes('synthetis')) &&
+      (q.includes('contrat') ||
+        q.includes('document') ||
+        q.includes('pdf') ||
+        q.includes('recu') ||
+        q.includes('quittance') ||
+        (q.includes('avis') && q.includes('paiement')));
+    const wantsDocQa =
+      q.includes('dans le contrat') ||
+      q.includes('dans mon contrat') ||
+      q.includes('sur le recu') ||
+      q.includes('sur mon recu') ||
+      q.includes('dans le document') ||
+      q.includes('sur le document') ||
+      q.includes('dans le pdf') ||
+      q.includes('sur le pdf') ||
+      q.includes('dans le bail') ||
+      q.includes('sur le bail');
+    const wantsListDocs =
+      (q.includes('documents') &&
+        (q.includes('liste') ||
+          q.includes('mes ') ||
+          q.includes('analys') ||
+          q.includes('disponib') ||
+          q.includes('montre'))) ||
+      q.includes('documents analysables') ||
+      q.includes('quels documents') ||
+      q.includes('liste des documents');
+
+    const docRefArgs = extractDocumentRefArgsFromMessage(message, q);
+
+    if (wantsDocCompare) {
+      tools.push({ name: 'compareDocuments', args: docRefArgs });
+    } else if (wantsDocInconsistency) {
+      tools.push({
+        name: 'checkLeaseDocumentConsistency',
+        args: docRefArgs.leaseId ? { leaseId: docRefArgs.leaseId } : docRefArgs,
+      });
+    } else if (wantsDocExtract) {
+      tools.push({ name: 'extractDocumentFacts', args: docRefArgs });
+    } else if (wantsDocQa) {
+      tools.push({
+        name: 'askAboutDocument',
+        args: { question: message.trim(), ...docRefArgs },
+      });
+    } else if (wantsDocSummarize) {
+      tools.push({ name: 'summarizeDocument', args: docRefArgs });
+    } else if (wantsListDocs) {
+      tools.push({ name: 'listDocumentsForAi' });
+    }
+
     if (
       !wantsBuildingOutstandingRank &&
+      !wantsDocInconsistency &&
       (q.includes('impay') ||
         q.includes('retard') ||
         q.includes('relanc') ||
@@ -799,7 +1029,15 @@ export class AiToolsService {
       tools.push({ name: 'proposeCreateLease', args: extractCreateLeaseArgsFromMessage(message) });
     } else if (wantsLeasePdf) {
       tools.push({ name: 'proposeGenerateLeasePdf' });
-    } else if (q.includes('contrat') || q.includes('bail')) {
+    } else if (
+      (q.includes('contrat') || q.includes('bail')) &&
+      !wantsDocCompare &&
+      !wantsDocInconsistency &&
+      !wantsDocExtract &&
+      !wantsDocQa &&
+      !wantsDocSummarize &&
+      !wantsListDocs
+    ) {
       tools.push({ name: 'getContracts' });
     }
     if (
@@ -898,6 +1136,9 @@ export class AiToolsService {
     }
     if (
       !wantsPortfolioAnalysis &&
+      !wantsDocSummarize &&
+      !wantsDocQa &&
+      !wantsDocExtract &&
       (q.includes('resume') ||
         q.includes('situation') ||
         q.includes('dashboard') ||
@@ -2280,6 +2521,100 @@ Confirmez pour générer l’avis de paiement PDF.`;
       .join('\n');
     return `Problèmes les plus urgents (au ${String(data.asOf).slice(0, 10)}) :\n${list}`;
   }
+  if (toolName === 'listDocumentsForAi') {
+    const items = (data.items as Array<Record<string, unknown>>) ?? [];
+    if (!items.length) {
+      return (
+        'Aucun document analysable dans votre organisation (table Document, contractPdfUrl ou receiptPdfUrl).\n' +
+        'Extraction OCR PDF : NOT_SUPPORTED · RAG : NOT_SUPPORTED.'
+      );
+    }
+    const list = items
+      .slice(0, 15)
+      .map((d) => {
+        const ids = [
+          d.documentId ? `doc ${d.documentId}` : null,
+          d.leaseId ? `lease ${d.leaseId}` : null,
+          d.paymentId ? `pay ${d.paymentId}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        return `• [${d.sourceType}] ${d.title}${ids ? ` (${ids})` : ''}${
+          d.sourceUrl ? `\n  URL : ${d.sourceUrl}` : ''
+        }`;
+      })
+      .join('\n');
+    return (
+      `Documents analysables (${data.count}) — métadonnées ITC uniquement :\n${list}\n\n` +
+      `Extraction texte PDF : NOT_SUPPORTED (sauf clauses/terms déjà en base). RAG / recherche sémantique : NOT_SUPPORTED.`
+    );
+  }
+  if (toolName === 'summarizeDocument') {
+    if (data.found === false) {
+      return `${String(data.error ?? 'Document introuvable.')}\nExtraction OCR PDF : NOT_SUPPORTED.`;
+    }
+    return String(data.summary ?? 'Résumé indisponible.');
+  }
+  if (toolName === 'extractDocumentFacts') {
+    if (data.found === false) {
+      return `${String(data.error ?? 'Faits introuvables.')}\nExtraction OCR PDF : NOT_SUPPORTED.`;
+    }
+    const f = (data.facts as Record<string, unknown>) ?? {};
+    const parties = (f.parties as Record<string, unknown>) ?? {};
+    const rent = (f.rent as Record<string, unknown>) ?? {};
+    const dates = (f.dates as Record<string, unknown>) ?? {};
+    const status = (f.status as Record<string, unknown>) ?? {};
+    const lines = [
+      `Faits documentaires (Prisma) — ${f.title ?? 'document'}`,
+      parties.tenantName ? `• Locataire : ${parties.tenantName}` : null,
+      parties.apartmentLabel ? `• Logement : ${parties.apartmentLabel}` : null,
+      rent.monthlyRentXaf != null
+        ? `• Loyer : ${Number(rent.monthlyRentXaf).toLocaleString('fr-FR')} XAF/mois`
+        : null,
+      dates.startDate || dates.endDate
+        ? `• Période : ${dates.startDate ?? '—'} → ${dates.endDate ?? '—'}`
+        : null,
+      status.leaseStatus ? `• Statut bail : ${status.leaseStatus}` : null,
+      f.sourceUrl ? `• URL : ${f.sourceUrl}` : null,
+      f.leaseId ? `• leaseId : ${f.leaseId}` : null,
+      f.paymentId ? `• paymentId : ${f.paymentId}` : null,
+      f.documentId ? `• documentId : ${f.documentId}` : null,
+      `• Extraction texte PDF : ${f.textExtraction === 'BUFFER_EXCERPT' ? 'extrait (terms)' : 'NOT_SUPPORTED / METADATA_ONLY'}`,
+    ].filter(Boolean);
+    return lines.join('\n');
+  }
+  if (toolName === 'askAboutDocument') {
+    return String(
+      data.answer ??
+        'Je ne dispose pas de cette information dans le document / dossier ITC.',
+    );
+  }
+  if (toolName === 'checkLeaseDocumentConsistency') {
+    if (data.found === false) {
+      return String(data.error ?? 'Bail introuvable.');
+    }
+    const items = (data.inconsistencies as Array<Record<string, unknown>>) ?? [];
+    if (!items.length) {
+      return `Aucune incohérence détectée sur le bail ${data.leaseId} (règles loyer / locataire / statut-dates).`;
+    }
+    const list = items
+      .map((i) => `• [${i.severity}/${i.code}] ${i.message}`)
+      .join('\n');
+    return `Incohérences dossier (${data.count}) pour leaseId ${data.leaseId} :\n${list}`;
+  }
+  if (toolName === 'compareDocuments') {
+    if (data.supported === false) {
+      return `${String(data.message ?? 'Comparaison documentaire non encore disponible.')} (NOT_SUPPORTED)`;
+    }
+    const diffs = (data.differences as Array<Record<string, unknown>>) ?? [];
+    if (data.identical || !diffs.length) {
+      return `Comparaison baux ${data.leaseIdA} vs ${data.leaseIdB} : faits structurés identiques sur les champs comparés.`;
+    }
+    const list = diffs
+      .map((d) => `• ${d.field} : ${d.a ?? '—'} → ${d.b ?? '—'}`)
+      .join('\n');
+    return `Comparaison baux ${data.leaseIdA} vs ${data.leaseIdB} :\n${list}`;
+  }
   return JSON.stringify(result).slice(0, 1200);
 }
 
@@ -2407,6 +2742,44 @@ function extractCreateLeaseArgsFromMessage(message: string): Record<string, unkn
   if (apartmentId) args.apartmentId = apartmentId;
   if (startDate) args.startDate = startDate;
   if (endDate) args.endDate = endDate;
+  return args;
+}
+
+/** Refs documentaires depuis le message (cuid + kind lexical). */
+function extractDocumentRefArgsFromMessage(
+  message: string,
+  qNormalized: string,
+): Record<string, unknown> {
+  const args: Record<string, unknown> = {};
+  const q = qNormalized;
+  const documentId = message.match(/documentId\s*[:=]?\s*(c[a-z0-9]{20,})/i)?.[1];
+  const leaseId = message.match(/leaseId\s*[:=]?\s*(c[a-z0-9]{20,})/i)?.[1];
+  const paymentId = message.match(/paymentId\s*[:=]?\s*(c[a-z0-9]{20,})/i)?.[1];
+  const leaseIdA = message.match(/leaseIdA\s*[:=]?\s*(c[a-z0-9]{20,})/i)?.[1];
+  const leaseIdB = message.match(/leaseIdB\s*[:=]?\s*(c[a-z0-9]{20,})/i)?.[1];
+  if (documentId) args.documentId = documentId;
+  if (leaseId) args.leaseId = leaseId;
+  if (paymentId) args.paymentId = paymentId;
+  if (leaseIdA) args.leaseIdA = leaseIdA;
+  if (leaseIdB) args.leaseIdB = leaseIdB;
+
+  if (!args.documentId && !args.leaseId && !args.paymentId) {
+    const cuid = extractCuidFromText(message);
+    if (cuid) {
+      if (q.includes('recu') || q.includes('quittance') || q.includes('paiement') || q.includes('avis')) {
+        args.paymentId = cuid;
+      } else if (q.includes('document')) {
+        args.documentId = cuid;
+      } else {
+        args.leaseId = cuid;
+      }
+    }
+  }
+
+  if (q.includes('recu') || q.includes('quittance')) args.kind = 'PAYMENT_RECEIPT';
+  else if (q.includes('avis') && q.includes('paiement')) args.kind = 'PAYMENT_NOTICE';
+  else if (q.includes('contrat') || q.includes('bail')) args.kind = 'LEASE_PDF';
+
   return args;
 }
 
