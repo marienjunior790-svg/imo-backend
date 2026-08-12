@@ -14,7 +14,12 @@ import { normalizeRole } from '../../shared/auth/roles.js';
 import { decimalToNumber } from '../../shared/utils/response.util.js';
 import { TeamMembersService } from '../admin/team-members.service.js';
 import { AiContextService } from './ai.context.service.js';
-import { AiMemoryService } from './ai.memory.service.js';
+import { AiMemoryService, type AiSessionEntities } from './ai.memory.service.js';
+import {
+  detectReferentialIntent,
+  enrichLocalIntents,
+  type ChatHistoryTurn,
+} from './ai.context-manager.js';
 import { env, isAiMemoryEnabled, isWhatsAppConfigured } from '../../config/env.js';
 import { isValidWhatsAppPhone, normalizePhoneE164 } from '../../shared/utils/phone.util.js';
 
@@ -62,8 +67,23 @@ export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool
     function: {
       name: 'getOutstandingPayments',
       description:
-        'Liste les loyers à encaisser : PENDING + PARTIAL + LATE (impayés / à payer / partiels). Montants restants réels.',
-      parameters: { type: 'object', properties: {}, additionalProperties: false },
+        'Liste les loyers à encaisser : PENDING + PARTIAL + LATE (impayés / à payer / partiels). Montants restants réels. ' +
+        'period optionnel : last_month | this_month (filtre periodMonth/periodYear).',
+      parameters: {
+        type: 'object',
+        properties: {
+          period: {
+            type: 'string',
+            enum: ['last_month', 'this_month'],
+            description: 'Filtre la période de loyer (mois calendaire UTC).',
+          },
+          tenantId: {
+            type: 'string',
+            description: 'Filtrer sur un locataire (cuid) si connu.',
+          },
+        },
+        additionalProperties: false,
+      },
     },
   },
   {
@@ -384,7 +404,7 @@ export class AiToolsService {
         case 'getDashboardSummary':
           return await this.getDashboardSummary(organizationId);
         case 'getOutstandingPayments':
-          return await this.getOutstandingPayments(organizationId);
+          return await this.getOutstandingPayments(organizationId, args);
         case 'getVacantUnits':
           return await this.getVacantUnits(organizationId);
         case 'getUnits':
@@ -517,8 +537,12 @@ export class AiToolsService {
     return { enabled: true, ...result };
   }
 
-  /** Intent routing sans LLM — données réelles uniquement. */
-  resolveLocalToolIntents(message: string): LocalToolIntent[] {
+  /** Intent routing sans LLM — données réelles uniquement. Session = enrichissement référentiel. */
+  resolveLocalToolIntents(
+    message: string,
+    session?: AiSessionEntities,
+    history?: ChatHistoryTurn[],
+  ): LocalToolIntent[] {
     const q = message
       .toLowerCase()
       .normalize('NFD')
@@ -526,6 +550,12 @@ export class AiToolsService {
 
     const tools: LocalToolIntent[] = [];
     const isHowto = q.includes('comment') || q.includes('comment faire') || q.includes('ou aller');
+    const ref = detectReferentialIntent(message);
+
+    // Annulation / pourquoi : gérés dans AiService (pas d’intent outil ici si purs).
+    if (ref.wantsCancelLast && tools.length === 0) {
+      return [];
+    }
 
     if (
       q.includes('impay') ||
@@ -703,12 +733,52 @@ export class AiToolsService {
     if (memoryIntent) tools.push(memoryIntent);
 
     const seen = new Set<string>();
-    return tools.filter((t) => {
+    const deduped = tools.filter((t) => {
       const key = `${t.name}:${JSON.stringify(t.args ?? {})}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
+
+    // Phase D : enrichissement session / historique (référents, période, fais pareil).
+    const enriched = enrichLocalIntents({
+      message,
+      intents: deduped,
+      session,
+      history,
+    });
+
+    // Clarification seule : pas d’outil inventé
+    if (enriched.needsClarification && enriched.intents.length === 0) {
+      return [];
+    }
+
+    const seen2 = new Set<string>();
+    return enriched.intents
+      .filter((t) => {
+        const key = `${t.name}:${JSON.stringify(t.args ?? {})}`;
+        if (seen2.has(key)) return false;
+        seen2.add(key);
+        return true;
+      })
+      .map((t) => ({ name: t.name as AiToolName, args: t.args }));
+  }
+
+  /**
+   * Clarification référentielle (appelant) — si message pronominal sans session.
+   */
+  resolveReferentialClarification(
+    message: string,
+    session?: AiSessionEntities,
+    history?: ChatHistoryTurn[],
+  ): string | undefined {
+    const enriched = enrichLocalIntents({
+      message,
+      intents: [],
+      session,
+      history,
+    });
+    return enriched.needsClarification;
   }
 
   private async getTeamMembers(organizationId: string, args: Record<string, unknown>) {
@@ -752,11 +822,32 @@ export class AiToolsService {
     return { organization: ctx.organization, summary: ctx.summary };
   }
 
-  private async getOutstandingPayments(organizationId: string) {
+  private async getOutstandingPayments(organizationId: string, args: Record<string, unknown> = {}) {
+    const periodRaw = typeof args.period === 'string' ? args.period.trim() : undefined;
+    const period =
+      periodRaw === 'last_month' || periodRaw === 'this_month' ? periodRaw : undefined;
+    const tenantId = typeof args.tenantId === 'string' && args.tenantId.trim() ? args.tenantId.trim() : undefined;
+
+    const now = new Date();
+    let periodMonth: number | undefined;
+    let periodYear: number | undefined;
+    if (period === 'this_month') {
+      periodMonth = now.getUTCMonth() + 1;
+      periodYear = now.getUTCFullYear();
+    } else if (period === 'last_month') {
+      const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+      periodMonth = last.getUTCMonth() + 1;
+      periodYear = last.getUTCFullYear();
+    }
+
     const rows = await this.prisma.payment.findMany({
       where: {
         organizationId,
         status: { in: [PaymentStatus.PENDING, PaymentStatus.PARTIAL, PaymentStatus.LATE] },
+        ...(periodMonth != null && periodYear != null
+          ? { periodMonth, periodYear }
+          : {}),
+        ...(tenantId ? { lease: { tenantId } } : {}),
       },
       take: 40,
       orderBy: { dueDate: 'asc' },
@@ -776,6 +867,7 @@ export class AiToolsService {
         remainingXaf: remaining,
         dueDate: p.dueDate.toISOString().slice(0, 10),
         period: `${p.periodMonth}/${p.periodYear}`,
+        tenantId: p.lease.tenantId,
         tenantName: `${p.lease.tenant.firstName} ${p.lease.tenant.lastName}`,
         apartmentLabel: p.lease.apartment.label,
       };
@@ -784,6 +876,12 @@ export class AiToolsService {
     return {
       count: items.length,
       totalRemainingXaf,
+      filter: {
+        period: period ?? null,
+        periodMonth: periodMonth ?? null,
+        periodYear: periodYear ?? null,
+        tenantId: tenantId ?? null,
+      },
       items,
     };
   }
@@ -1564,7 +1662,16 @@ export function formatToolResultForLocalReply(toolName: string, result: unknown)
   if (toolName === 'getOutstandingPayments') {
     const items = (data.items as Array<Record<string, unknown>>) ?? [];
     const total = Number(data.totalRemainingXaf ?? 0);
-    if (!items.length) return 'Aucun loyer à encaisser (PENDING / PARTIAL / LATE) sur vos données actuelles.';
+    const filter = (data.filter as { period?: string | null; periodMonth?: number | null; periodYear?: number | null }) ?? {};
+    const periodNote =
+      filter.period === 'last_month'
+        ? ` (mois dernier${filter.periodMonth && filter.periodYear ? ` ${filter.periodMonth}/${filter.periodYear}` : ''})`
+        : filter.period === 'this_month'
+          ? ` (ce mois${filter.periodMonth && filter.periodYear ? ` ${filter.periodMonth}/${filter.periodYear}` : ''})`
+          : '';
+    if (!items.length) {
+      return `Aucun loyer à encaisser (PENDING / PARTIAL / LATE)${periodNote} sur vos données actuelles.`;
+    }
     const list = items
       .slice(0, 12)
       .map((p) => {
@@ -1572,7 +1679,7 @@ export function formatToolResultForLocalReply(toolName: string, result: unknown)
         return `• ${p.tenantName} (${p.apartmentLabel}) — ${remaining.toLocaleString('fr-FR')} XAF · ${p.status} · échéance ${p.dueDate}`;
       })
       .join('\n');
-    return `Vous avez ${data.count} loyer(s) à suivre${total > 0 ? ` pour un total restant de ${total.toLocaleString('fr-FR')} XAF` : ''} :
+    return `Vous avez ${data.count} loyer(s) à suivre${periodNote}${total > 0 ? ` pour un total restant de ${total.toLocaleString('fr-FR')} XAF` : ''} :
 ${list}`;
   }
   if (toolName === 'getVacantUnits') {

@@ -98,6 +98,20 @@ export function cancelPendingAction(id: string, organizationId: string, userId: 
   store.delete(id);
 }
 
+/** Pending le plus récent pour cet utilisateur (non expiré), ou null. */
+export function getLatestPendingForUser(
+  organizationId: string,
+  userId: string,
+): PendingAction | null {
+  purgeExpired();
+  let latest: PendingAction | null = null;
+  for (const action of store.values()) {
+    if (action.organizationId !== organizationId || action.userId !== userId) continue;
+    if (!latest || action.createdAt > latest.createdAt) latest = action;
+  }
+  return latest;
+}
+
 /** Exposed for unit tests */
 export function _resetPendingActionsForTests(): void {
   store.clear();

@@ -20,9 +20,13 @@ import {
 } from './ai.tools.js';
 import { AiMemoryService, type AiSessionEntities } from './ai.memory.service.js';
 import {
+  detectReferentialIntent,
+} from './ai.context-manager.js';
+import {
   cancelPendingAction,
   consumePendingAction,
   createPendingAction,
+  getLatestPendingForUser,
   type PendingActionPayload,
 } from './ai.pending-actions.js';
 import { listDocumentCapabilities } from './ai.documents.js';
@@ -251,10 +255,42 @@ export class AiService {
       };
     }
 
+    // Session conversationnelle (Phase D) — pour intents locaux + référents.
+    let sessionEntities: AiSessionEntities = {};
+    if (isAiMemoryEnabled) {
+      try {
+        const row = await this.memory.getSession({ organizationId, userId });
+        sessionEntities = (row?.entitiesJson as AiSessionEntities | null) ?? {};
+      } catch {
+        sessionEntities = {};
+      }
+    }
+
+    const history = input.history;
+
     // Intentions métier claires → outils locaux (données réelles, zéro hallucination).
-    const hasLocalDataIntent = this.tools.resolveLocalToolIntents(message).length > 0;
-    if (!this.openai.isAvailable() || hasLocalDataIntent) {
-      return this.chatLocalWithTools(organizationId, userId, role, message, ctx, suggestions, actions);
+    const hasLocalDataIntent =
+      this.tools.resolveLocalToolIntents(message, sessionEntities, history).length > 0;
+    const refFlags = detectReferentialIntent(message);
+    const forceLocalConversational =
+      refFlags.wantsCancelLast ||
+      refFlags.wantsWhy ||
+      refFlags.wantsExplainOtherwise ||
+      refFlags.wantsSameAction ||
+      (refFlags.wantsPreviousEntity && !!sessionEntities.lastIntent);
+
+    if (!this.openai.isAvailable() || hasLocalDataIntent || forceLocalConversational) {
+      return this.chatLocalWithTools(
+        organizationId,
+        userId,
+        role,
+        message,
+        ctx,
+        suggestions,
+        actions,
+        history,
+        sessionEntities,
+      );
     }
 
     try {
@@ -263,14 +299,24 @@ export class AiService {
         userId,
         role,
         message,
-        input.history,
+        history,
         ctx,
         suggestions,
         actions,
       );
     } catch (err) {
       console.error('[ai.chat] OpenAI failed, falling back to local:', err instanceof Error ? err.message : err);
-      return this.chatLocalWithTools(organizationId, userId, role, message, ctx, suggestions, actions);
+      return this.chatLocalWithTools(
+        organizationId,
+        userId,
+        role,
+        message,
+        ctx,
+        suggestions,
+        actions,
+        history,
+        sessionEntities,
+      );
     }
   }
 
@@ -282,8 +328,65 @@ export class AiService {
     ctx: AiOrganizationContext,
     suggestions: string[],
     actions: AiActionHint[],
+    history?: AiChatInput['history'],
+    sessionEntities: AiSessionEntities = {},
   ): Promise<AiChatResponse> {
-    const intents = this.tools.resolveLocalToolIntents(message);
+    const ref = detectReferentialIntent(message);
+
+    // Annuler la dernière action pending
+    if (ref.wantsCancelLast) {
+      const latest = getLatestPendingForUser(organizationId, userId);
+      if (latest) {
+        cancelPendingAction(latest.id, organizationId, userId);
+        return {
+          reply: `Action annulée : ${latest.type}${latest.payload.summary ? ` — ${latest.payload.summary}` : ''}.`,
+          suggestions,
+          actions,
+          poweredBy: 'local',
+          contextUsed: true,
+        };
+      }
+      return {
+        reply: 'Aucune action en attente à annuler.',
+        suggestions,
+        actions,
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    const intents = this.tools.resolveLocalToolIntents(message, sessionEntities, history);
+
+    // Référent ambigu sans session → une seule question
+    if (intents.length === 0 && (ref.wantsPreviousEntity || ref.wantsSameAction)) {
+      const clarification = this.tools.resolveReferentialClarification(
+        message,
+        sessionEntities,
+        history,
+      );
+      if (clarification) {
+        return {
+          reply: clarification,
+          suggestions,
+          actions,
+          poweredBy: 'local',
+          contextUsed: true,
+        };
+      }
+    }
+
+    // « pourquoi / explique autrement » sans outil : tip contextuel
+    if (intents.length === 0 && (ref.wantsWhy || ref.wantsExplainOtherwise)) {
+      const tip = this.buildWhyFallbackReply(sessionEntities);
+      return {
+        reply: tip,
+        suggestions,
+        actions,
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
     // Si « comment / où » → guide app, pas dump d’outils
     if (isAppHowtoIntent(message)) {
       const howto = resolveAppHowtoReply(message);
@@ -334,25 +437,38 @@ export class AiService {
       const name = intent.name;
       const result = await this.tools.execute(organizationId, name, intent.args ?? {}, toolCtx);
       toolsUsed.push(name);
-      parts.push(formatToolResultForLocalReply(name, result));
+      let formatted = formatToolResultForLocalReply(name, result);
+      if (ref.wantsWhy || ref.wantsExplainOtherwise) {
+        formatted = this.wrapWhyExplanation(formatted, name, sessionEntities);
+      }
+      parts.push(formatted);
       void this.maybeMergeSessionFromToolResult(organizationId, userId, name, result);
 
       if (name === 'proposeGenerateLeasePdf') {
-        const leaseId = this.extractCuid(message);
+        const leaseId =
+          (typeof intent.args?.leaseId === 'string' ? intent.args.leaseId : undefined) ||
+          this.extractCuid(message) ||
+          sessionEntities.lastLeaseId;
         const proposed = await this.proposeLeasePdf(organizationId, userId, UserRole.OWNER, leaseId);
         if (proposed.pendingAction) pendingAction = proposed.pendingAction;
         if (proposed.actions.length) actions = [...actions, ...proposed.actions];
         parts[parts.length - 1] = proposed.reply;
       }
       if (name === 'proposeGeneratePaymentReceipt') {
-        const paymentId = this.extractCuid(message);
+        const paymentId =
+          (typeof intent.args?.paymentId === 'string' ? intent.args.paymentId : undefined) ||
+          this.extractCuid(message) ||
+          sessionEntities.lastPaymentId;
         const proposed = await this.proposePaymentReceipt(organizationId, userId, UserRole.OWNER, paymentId);
         if (proposed.pendingAction) pendingAction = proposed.pendingAction;
         if (proposed.actions.length) actions = [...actions, ...proposed.actions];
         parts[parts.length - 1] = proposed.reply;
       }
       if (name === 'proposeGeneratePaymentNotice') {
-        const paymentId = this.extractCuid(message);
+        const paymentId =
+          (typeof intent.args?.paymentId === 'string' ? intent.args.paymentId : undefined) ||
+          this.extractCuid(message) ||
+          sessionEntities.lastPaymentId;
         const proposed = await this.proposePaymentNotice(organizationId, userId, UserRole.OWNER, paymentId);
         if (proposed.pendingAction) pendingAction = proposed.pendingAction;
         if (proposed.actions.length) actions = [...actions, ...proposed.actions];
@@ -378,8 +494,11 @@ export class AiService {
       }
     }
 
+    const reply = parts.join('\n\n');
+    void this.persistConversationSession(organizationId, userId, message, toolsUsed, reply);
+
     return {
-      reply: parts.join('\n\n'),
+      reply,
       suggestions,
       actions: this.dedupeActions([...actions, ...resolveChatActions(message), ...actionsFromTools(toolsUsed)]),
       poweredBy: 'local',
@@ -571,6 +690,64 @@ export class AiService {
     };
   }
 
+  /** Persiste lastIntent / lastToolsUsed / digest pour follow-ups (« pourquoi », « fais pareil »). */
+  private async persistConversationSession(
+    organizationId: string,
+    userId: string,
+    message: string,
+    toolsUsed: string[],
+    reply: string,
+  ): Promise<void> {
+    if (!isAiMemoryEnabled || !toolsUsed.length) return;
+    try {
+      await this.memory.mergeEntities({
+        organizationId,
+        userId,
+        entities: {
+          lastIntent: toolsUsed[toolsUsed.length - 1],
+          lastToolsUsed: toolsUsed.slice(-6),
+          lastUserMessage: message.slice(0, 400),
+          lastReplyDigest: reply.slice(0, 280),
+        },
+      });
+    } catch {
+      /* never fail chat */
+    }
+  }
+
+  private buildWhyFallbackReply(session: AiSessionEntities): string {
+    const digest = session.lastReplyDigest?.trim();
+    const last = session.lastIntent;
+    if (digest) {
+      return (
+        `Voici le contexte de ma dernière réponse (données ITC, sans invention) :\n${digest}\n\n` +
+        `Pour un détail métier précis, reformulez la question (ex. impayés, locataires, logements).`
+      );
+    }
+    if (last) {
+      return (
+        `Ma dernière action portait sur « ${last} ». Relancez la même demande pour obtenir à nouveau les chiffres ITC, ` +
+        `ou précisez ce que vous voulez comprendre.`
+      );
+    }
+    return (
+      'Je n’ai pas assez de contexte conversationnel pour expliquer davantage. ' +
+      'Posez une question métier (impayés, locataires, logements…) et je m’appuierai sur les données ITC.'
+    );
+  }
+
+  private wrapWhyExplanation(
+    formatted: string,
+    toolName: string,
+    session: AiSessionEntities,
+  ): string {
+    const intro =
+      session.lastReplyDigest
+        ? `Explication à partir des données ITC (outil ${toolName}) :`
+        : `Voici les données ITC qui justifient la réponse (outil ${toolName}) :`;
+    return `${intro}\n${formatted}`;
+  }
+
   /** Best-effort : mémorise la dernière entité unique renvoyée par un outil data. */
   private async maybeMergeSessionFromToolResult(
     organizationId: string,
@@ -616,6 +793,11 @@ export class AiService {
         const item = ((data.items as Array<Record<string, unknown>>) ?? [])[0];
         if (item?.id) entities.lastApartmentId = String(item.id);
         if (item?.buildingId) entities.lastBuildingId = String(item.buildingId);
+      } else if (toolName === 'getOutstandingPayments' && Number(data.count) === 1) {
+        const item = ((data.items as Array<Record<string, unknown>>) ?? [])[0];
+        if (item?.id) entities.lastPaymentId = String(item.id);
+        if (item?.tenantId) entities.lastTenantId = String(item.tenantId);
+        if (item?.tenantName) entities.lastTenantName = String(item.tenantName);
       } else {
         return;
       }

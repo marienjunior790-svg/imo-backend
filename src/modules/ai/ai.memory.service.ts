@@ -22,6 +22,11 @@ export type AiSessionEntities = {
   lastLeaseId?: string;
   lastPaymentId?: string;
   lastIntent?: string;
+  /** Derniers outils exécutés (pour « pourquoi » / « fais pareil »). */
+  lastToolsUsed?: string[];
+  lastUserMessage?: string;
+  /** Digest court de la dernière réponse (contexte conversationnel). */
+  lastReplyDigest?: string;
   notes?: string;
 };
 
