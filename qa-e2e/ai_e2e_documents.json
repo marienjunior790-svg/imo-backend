@@ -1,0 +1,27 @@
+﻿{
+    "generatedAt":  "2026-08-13T00:57:07.3955138+01:00",
+    "phase":  "G_DOCUMENTS",
+    "results":  [
+                    {
+                        "id":  "G1_list_docs",
+                        "status":  "PARTIAL",
+                        "detail":  "tool OK but empty org / no docs â€” [listDocumentsForAi]",
+                        "toolsUsed":  "listDocumentsForAi",
+                        "evidence":  "Aucun document analysable dans votre organisation (table Document, contractPdfUrl ou receiptPdfUrl).\nExtraction OCR PDF : NOT_SUPPORTED · RAG : NOT_SUPPORTED."
+                    },
+                    {
+                        "id":  "G2_resume_contrat",
+                        "status":  "PASS",
+                        "detail":  "tools=[summarizeDocument]",
+                        "toolsUsed":  "summarizeDocument",
+                        "evidence":  "Résumé documentaire (métadonnées ITC) — Contrat — fortune libolo\n• Locataire : fortune libolo (057488148)\n• Logement : E2E-AI-7385 — rose\n• Loyer bail : 120 000 XAF/mois\n• Période bail : 2026-08-11 → 2027-08-11\n• Statut bail : DRAFT\n• leaseId : cmsova6ru00ubwh6klids1jw7\n• Extraction texte PDF : NOT_SUPPORTED (métadonné"
+                    },
+                    {
+                        "id":  "G3_compare_unsupported",
+                        "status":  "PASS",
+                        "detail":  "tools=[compareDocuments]",
+                        "toolsUsed":  "compareDocuments",
+                        "evidence":  "Comparaison documentaire non encore disponible. (NOT_SUPPORTED)"
+                    }
+                ]
+}
