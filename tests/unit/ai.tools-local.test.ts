@@ -31,9 +31,9 @@ describe('AiToolsService.resolveLocalToolIntents', () => {
     expect(intents.map((i) => i.name)).toContain('getOutstandingPayments');
   });
 
-  it('détecte le patrimoine', () => {
+  it('détecte le patrimoine via analyzePortfolio (Phase F)', () => {
     const intents = tools.resolveLocalToolIntents('Résumer mon patrimoine');
-    expect(intents.map((i) => i.name)).toContain('getDashboardSummary');
+    expect(intents.map((i) => i.name)).toContain('analyzePortfolio');
   });
 
   it('détecte la génération de contrat', () => {

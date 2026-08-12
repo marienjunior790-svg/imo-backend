@@ -14,6 +14,8 @@ import { normalizeRole } from '../../shared/auth/roles.js';
 import { decimalToNumber } from '../../shared/utils/response.util.js';
 import { TeamMembersService } from '../admin/team-members.service.js';
 import { AiContextService } from './ai.context.service.js';
+import { AiAnalyticsService } from './ai.analytics.service.js';
+import { utcLastMonth, utcThisMonth } from './ai.analytics.math.js';
 import { AiMemoryService, type AiSessionEntities } from './ai.memory.service.js';
 import {
   detectReferentialIntent,
@@ -34,6 +36,11 @@ export type AiToolName =
   | 'getFinancialSummary'
   | 'getExpiringContracts'
   | 'getTeamMembers'
+  | 'analyzePortfolio'
+  | 'compareRevenue'
+  | 'rankBuildingsByOutstanding'
+  | 'explainRevenueChange'
+  | 'listUrgentIssues'
   | 'proposeGenerateLeasePdf'
   | 'proposeGeneratePaymentReceipt'
   | 'proposeGeneratePaymentNotice'
@@ -192,7 +199,88 @@ export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool
   {
     type: 'function',
     function: {
+      name: 'analyzePortfolio',
+      description:
+        'Synthèse analytique du parc (KPIs calculés Prisma) : occupation, impayés, encaissements, ' +
+        'top immeubles en impayés, problèmes urgents, comparaison mois. Ne jamais inventer de chiffres.',
+      parameters: {
+        type: 'object',
+        properties: {
+          mode: {
+            type: 'string',
+            enum: ['synthesis', 'snapshot'],
+            description: 'synthesis (défaut) = vue croisée ; snapshot = KPIs seuls',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'compareRevenue',
+      description:
+        'Compare les encaissements (somme amountPaid PAID|PARTIAL) entre deux périodes periodMonth/periodYear UTC. ' +
+        'Sans args : mois dernier vs ce mois.',
+      parameters: {
+        type: 'object',
+        properties: {
+          periodAMonth: { type: 'number', description: 'Mois 1-12 période A (défaut = mois dernier)' },
+          periodAYear: { type: 'number', description: 'Année période A' },
+          periodBMonth: { type: 'number', description: 'Mois 1-12 période B (défaut = ce mois)' },
+          periodBYear: { type: 'number', description: 'Année période B' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'rankBuildingsByOutstanding',
+      description:
+        'Classe les immeubles par total d’impayés restants (PENDING+PARTIAL+LATE). Calcul Prisma réel.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'Nombre max d’immeubles (défaut 5)' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'explainRevenueChange',
+      description:
+        'Explique l’évolution des encaissements ce mois vs mois dernier à partir de facteurs mesurés ' +
+        '(encaissé, impayés, occupation, LATE). Si données insuffisantes : sufficient=false.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'listUrgentIssues',
+      description:
+        'Liste priorisée de problèmes urgents réels : LATE, PENDING hors délai, baux expirés / bientôt finis, ' +
+        'maintenance haute priorité, vacants sans bail.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'Nombre max (défaut 5)' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'proposeGenerateLeasePdf',
+
       description:
         'Propose la génération d’un contrat PDF professionnel. Ne génère PAS immédiatement — l’utilisateur doit confirmer.',
       parameters: {
@@ -379,6 +467,7 @@ export class AiToolsService {
   constructor(
     @inject(PrismaService) private readonly prisma: PrismaService,
     @inject(AiContextService) private readonly contextService: AiContextService,
+    @inject(AiAnalyticsService) private readonly analytics: AiAnalyticsService,
     @inject(TeamMembersService) private readonly teamMembers: TeamMembersService,
     @inject(AiMemoryService) private readonly memory: AiMemoryService,
   ) {}
@@ -421,6 +510,55 @@ export class AiToolsService {
           return await this.getExpiringContracts(organizationId);
         case 'getTeamMembers':
           return await this.getTeamMembers(organizationId, args);
+        case 'analyzePortfolio': {
+          const mode = args.mode === 'snapshot' ? 'snapshot' : 'synthesis';
+          if (mode === 'snapshot') {
+            return await this.analytics.portfolioSnapshot(organizationId);
+          }
+          return await this.analytics.portfolioSynthesis(organizationId);
+        }
+        case 'compareRevenue': {
+          const now = new Date();
+          const defaultA = utcLastMonth(now);
+          const defaultB = utcThisMonth(now);
+          const periodA = {
+            month:
+              typeof args.periodAMonth === 'number' && args.periodAMonth >= 1 && args.periodAMonth <= 12
+                ? Math.floor(args.periodAMonth)
+                : defaultA.month,
+            year:
+              typeof args.periodAYear === 'number' && args.periodAYear >= 2000
+                ? Math.floor(args.periodAYear)
+                : defaultA.year,
+          };
+          const periodB = {
+            month:
+              typeof args.periodBMonth === 'number' && args.periodBMonth >= 1 && args.periodBMonth <= 12
+                ? Math.floor(args.periodBMonth)
+                : defaultB.month,
+            year:
+              typeof args.periodBYear === 'number' && args.periodBYear >= 2000
+                ? Math.floor(args.periodBYear)
+                : defaultB.year,
+          };
+          return await this.analytics.compareRevenuePeriods(organizationId, periodA, periodB);
+        }
+        case 'rankBuildingsByOutstanding': {
+          const limit =
+            typeof args.limit === 'number' && Number.isFinite(args.limit)
+              ? Math.max(1, Math.min(20, Math.floor(args.limit)))
+              : 5;
+          return await this.analytics.buildingsOutstandingRanking(organizationId, limit);
+        }
+        case 'explainRevenueChange':
+          return await this.analytics.revenueDropExplanation(organizationId);
+        case 'listUrgentIssues': {
+          const limit =
+            typeof args.limit === 'number' && Number.isFinite(args.limit)
+              ? Math.max(1, Math.min(20, Math.floor(args.limit)))
+              : 5;
+          return await this.analytics.topUrgentIssues(organizationId, limit);
+        }
         case 'proposeGenerateLeasePdf':
           return await this.listLeasesForPdf(organizationId, typeof args.leaseId === 'string' ? args.leaseId : undefined);
         case 'proposeGeneratePaymentReceipt':
@@ -557,14 +695,53 @@ export class AiToolsService {
       return [];
     }
 
+    // ── Phase F analytics (avant listes génériques pour éviter le vol d’intent) ──
+    const wantsBuildingOutstandingRank =
+      q.includes('immeuble') &&
+      q.includes('quel') &&
+      (q.includes('impay') || q.includes('retard'));
+    const wantsCompareRevenue =
+      q.includes('compar') &&
+      (q.includes('revenu') || q.includes('encaiss') || q.includes('mois'));
+    const wantsExplainRevenue =
+      q.includes('pourquoi') &&
+      (q.includes('revenu') || q.includes('baisse') || q.includes('encaiss'));
+    const wantsPortfolioAnalysis =
+      (q.includes('resume') &&
+        (q.includes('parc') || q.includes('situation') || q.includes('patrimoine'))) ||
+      (q.includes('situation') && q.includes('parc')) ||
+      q.includes('situation de mon parc');
+    const wantsUrgentIssues =
+      /\b(5|cinq)?\s*problemes?\s*urgents?\b/.test(q) ||
+      q.includes('plus urgents') ||
+      (q.includes('problemes') && q.includes('urgent')) ||
+      (q.includes('probleme') && q.includes('urgent'));
+
+    if (wantsBuildingOutstandingRank) {
+      tools.push({ name: 'rankBuildingsByOutstanding' });
+    }
+    if (wantsCompareRevenue) {
+      tools.push({ name: 'compareRevenue' });
+    }
+    if (wantsExplainRevenue) {
+      tools.push({ name: 'explainRevenueChange' });
+    }
+    if (wantsPortfolioAnalysis) {
+      tools.push({ name: 'analyzePortfolio' });
+    }
+    if (wantsUrgentIssues) {
+      tools.push({ name: 'listUrgentIssues' });
+    }
+
     if (
-      q.includes('impay') ||
-      q.includes('retard') ||
-      q.includes('relanc') ||
-      (q.includes('pas pay') && (q.includes('qui') || q.includes('locataire') || q.includes('encore'))) ||
-      (q.includes('pas') && q.includes('pay') && (q.includes('encore') || q.includes('locataire') || q.includes('qui'))) ||
-      (q.includes('doivent') && q.includes('payer')) ||
-      (q.includes('montant') && (q.includes('impay') || q.includes('du')))
+      !wantsBuildingOutstandingRank &&
+      (q.includes('impay') ||
+        q.includes('retard') ||
+        q.includes('relanc') ||
+        (q.includes('pas pay') && (q.includes('qui') || q.includes('locataire') || q.includes('encore'))) ||
+        (q.includes('pas') && q.includes('pay') && (q.includes('encore') || q.includes('locataire') || q.includes('qui'))) ||
+        (q.includes('doivent') && q.includes('payer')) ||
+        (q.includes('montant') && (q.includes('impay') || q.includes('du'))))
     ) {
       tools.push({ name: 'getOutstandingPayments' });
     }
@@ -595,6 +772,7 @@ export class AiToolsService {
 
     if (
       !isHowto &&
+      !wantsBuildingOutstandingRank &&
       (q.includes('immeuble') || q.includes('residence') || q.includes('résidence')) &&
       !q.includes('plus') &&
       !q.includes('genere')
@@ -703,25 +881,28 @@ export class AiToolsService {
       tools.push({ name: 'getTenants' });
     }
     if (
-      q.includes('revenu') ||
-      q.includes('financ') ||
-      q.includes('encaiss') ||
-      (/\bpaiements?\b/.test(q) &&
-        !q.includes('avis') &&
-        !q.includes('recu') &&
-        !q.includes('quittance') &&
-        !q.includes('gener') &&
-        !q.includes('cree') &&
-        !q.includes('creer'))
+      !wantsCompareRevenue &&
+      !wantsExplainRevenue &&
+      (q.includes('revenu') ||
+        q.includes('financ') ||
+        q.includes('encaiss') ||
+        (/\bpaiements?\b/.test(q) &&
+          !q.includes('avis') &&
+          !q.includes('recu') &&
+          !q.includes('quittance') &&
+          !q.includes('gener') &&
+          !q.includes('cree') &&
+          !q.includes('creer')))
     ) {
       tools.push({ name: 'getFinancialSummary' });
     }
     if (
-      q.includes('resume') ||
-      q.includes('situation') ||
-      q.includes('dashboard') ||
-      (q.includes('patrimoine') && !wantsUnits) ||
-      (q.includes('parc') && !wantsUnits && !q.includes('logement'))
+      !wantsPortfolioAnalysis &&
+      (q.includes('resume') ||
+        q.includes('situation') ||
+        q.includes('dashboard') ||
+        (q.includes('patrimoine') && !wantsUnits) ||
+        (q.includes('parc') && !wantsUnits && !q.includes('logement')))
     ) {
       tools.push({ name: 'getDashboardSummary' });
     }
@@ -1989,6 +2170,115 @@ Confirmez pour générer l’avis de paiement PDF.`;
 
     const noun = filter.role === 'AGENT' ? 'agents' : 'collaborateurs';
     return `Vous avez actuellement ${data.count} ${noun} :\n\n${list.join('\n')}`;
+  }
+  if (toolName === 'analyzePortfolio') {
+    if (data.snapshot && data.periodCompare) {
+      const s = data.snapshot as Record<string, unknown>;
+      const cmp = data.periodCompare as Record<string, unknown>;
+      const pa = cmp.periodA as { month?: number; year?: number };
+      const pb = cmp.periodB as { month?: number; year?: number };
+      const buildings = (data.topBuildingsOutstanding as Array<Record<string, unknown>>) ?? [];
+      const issues = (data.topUrgentIssues as Array<Record<string, unknown>>) ?? [];
+      const sources = (data.dataSources as string[]) ?? [];
+      const dir =
+        cmp.direction === 'up' ? 'hausse' : cmp.direction === 'down' ? 'baisse' : 'stable';
+      const bList = buildings.length
+        ? buildings
+            .map(
+              (b, i) =>
+                `${i + 1}. ${b.buildingName} — ${Number(b.outstandingTotalXaf).toLocaleString('fr-FR')} XAF (${b.outstandingCount} impayé(s), ${b.tenantCountAffected} locataire(s))`,
+            )
+            .join('\n')
+        : 'Aucun impayé groupé par immeuble.';
+      const iList = issues.length
+        ? issues.map((u, i) => `${i + 1}. [${u.severity}] ${u.label} — ${u.why}`).join('\n')
+        : 'Aucun problème urgent détecté dans vos données.';
+      return (
+        `Synthèse parc (au ${String(data.asOf).slice(0, 10)}, ${data.currency}) :\n` +
+        `• ${s.buildingsCount} immeuble(s) · ${s.unitsCount} logement(s) · occupation ${s.occupancyRate} %\n` +
+        `• Occupés ${s.occupiedUnits} · vacants ${s.vacantUnits} · locataires ${s.tenantsCount}\n` +
+        `• Baux actifs ${s.activeLeasesCount} · brouillons ${s.draftLeasesCount}\n` +
+        `• Impayés : ${s.outstandingCount} · ${Number(s.outstandingTotalXaf).toLocaleString('fr-FR')} XAF\n` +
+        `• Encaissé ce mois : ${Number(s.collectedThisMonthXaf).toLocaleString('fr-FR')} XAF\n` +
+        `• Revenus ${pa?.month}/${pa?.year} → ${pb?.month}/${pb?.year} : ` +
+        `${Number(cmp.revenueA).toLocaleString('fr-FR')} → ${Number(cmp.revenueB).toLocaleString('fr-FR')} XAF ` +
+        `(Δ ${Number(cmp.deltaXaf).toLocaleString('fr-FR')}` +
+        `${cmp.deltaPct != null ? `, ${cmp.deltaPct} %` : ''} · ${dir})\n\n` +
+        `Top immeubles (impayés) :\n${bList}\n\n` +
+        `Problèmes urgents :\n${iList}\n\n` +
+        `Sources : ${sources.length ? sources.join(', ') : 'Prisma analytics'}.`
+      );
+    }
+    // snapshot seul
+    return (
+      `Snapshot parc (au ${String(data.asOf ?? '').slice(0, 10)}, ${data.currency ?? 'XAF'}) :\n` +
+      `• ${data.buildingsCount ?? 0} immeuble(s) · ${data.unitsCount ?? 0} logement(s) · occupation ${data.occupancyRate ?? 0} %\n` +
+      `• Occupés ${data.occupiedUnits ?? 0} · vacants ${data.vacantUnits ?? 0}\n` +
+      `• Locataires ${data.tenantsCount ?? 0} · baux actifs ${data.activeLeasesCount ?? 0} · brouillons ${data.draftLeasesCount ?? 0}\n` +
+      `• Impayés ${data.outstandingCount ?? 0} · ${Number(data.outstandingTotalXaf ?? 0).toLocaleString('fr-FR')} XAF\n` +
+      `• Encaissé ce mois : ${Number(data.collectedThisMonthXaf ?? 0).toLocaleString('fr-FR')} XAF`
+    );
+  }
+  if (toolName === 'compareRevenue') {
+    const pa = data.periodA as { month?: number; year?: number };
+    const pb = data.periodB as { month?: number; year?: number };
+    const dir =
+      data.direction === 'up' ? 'hausse' : data.direction === 'down' ? 'baisse' : 'stable';
+    const pct =
+      data.deltaPct == null ? 'n/a (période A = 0)' : `${data.deltaPct} %`;
+    return (
+      `Comparaison revenus (${data.currency ?? 'XAF'}) :\n` +
+      `• Période A ${pa?.month}/${pa?.year} : ${Number(data.revenueA ?? 0).toLocaleString('fr-FR')} XAF\n` +
+      `• Période B ${pb?.month}/${pb?.year} : ${Number(data.revenueB ?? 0).toLocaleString('fr-FR')} XAF\n` +
+      `• Écart : ${Number(data.deltaXaf ?? 0).toLocaleString('fr-FR')} XAF (${pct}) · tendance ${dir}`
+    );
+  }
+  if (toolName === 'rankBuildingsByOutstanding') {
+    const items = (data.items as Array<Record<string, unknown>>) ?? [];
+    if (!items.length) {
+      return `Aucun impayé à classer par immeuble (au ${String(data.asOf ?? '').slice(0, 10)}).`;
+    }
+    const list = items
+      .map(
+        (b, i) =>
+          `${i + 1}. ${b.buildingName} — ${Number(b.outstandingTotalXaf).toLocaleString('fr-FR')} XAF · ${b.outstandingCount} dossier(s) · ${b.tenantCountAffected} locataire(s)`,
+      )
+      .join('\n');
+    return `Classement immeubles par impayés (au ${String(data.asOf).slice(0, 10)}, ${data.currency}) :\n${list}`;
+  }
+  if (toolName === 'explainRevenueChange') {
+    if (data.sufficient === false) {
+      return `Analyse revenus insuffisante (au ${String(data.asOf ?? '').slice(0, 10)}) : ${data.reason}`;
+    }
+    const tm = data.thisMonth as { month?: number; year?: number };
+    const lm = data.lastMonth as { month?: number; year?: number };
+    const dir =
+      data.direction === 'up' ? 'hausse' : data.direction === 'down' ? 'baisse' : 'stable';
+    const factors = (data.factors as Array<Record<string, unknown>>) ?? [];
+    const flist = factors
+      .map(
+        (f) =>
+          `• ${f.label} : ${Number(f.lastMonth).toLocaleString('fr-FR')} → ${Number(f.thisMonth).toLocaleString('fr-FR')} (Δ ${Number(f.delta).toLocaleString('fr-FR')})`,
+      )
+      .join('\n');
+    return (
+      `Évolution encaissements (au ${String(data.asOf).slice(0, 10)}, ${data.currency}) :\n` +
+      `• ${lm?.month}/${lm?.year} : ${Number(data.collectedLastMonthXaf).toLocaleString('fr-FR')} XAF\n` +
+      `• ${tm?.month}/${tm?.year} : ${Number(data.collectedThisMonthXaf).toLocaleString('fr-FR')} XAF\n` +
+      `• Δ ${Number(data.deltaXaf).toLocaleString('fr-FR')} XAF` +
+      `${data.deltaPct != null ? ` (${data.deltaPct} %)` : ''} · ${dir}\n\n` +
+      `Facteurs mesurés :\n${flist || 'Aucun facteur calculable.'}`
+    );
+  }
+  if (toolName === 'listUrgentIssues') {
+    const items = (data.items as Array<Record<string, unknown>>) ?? [];
+    if (!items.length) {
+      return `Aucun problème urgent détecté dans vos données (au ${String(data.asOf ?? '').slice(0, 10)}).`;
+    }
+    const list = items
+      .map((u, i) => `${i + 1}. [${u.severity}] ${u.label}\n   → ${u.why}`)
+      .join('\n');
+    return `Problèmes les plus urgents (au ${String(data.asOf).slice(0, 10)}) :\n${list}`;
   }
   return JSON.stringify(result).slice(0, 1200);
 }
