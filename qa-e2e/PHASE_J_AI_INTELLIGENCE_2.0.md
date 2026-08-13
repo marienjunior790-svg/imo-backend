@@ -37,15 +37,19 @@ User utterance
 
 ## Jalons
 
-### J0 — Confirm NL + Vision soft-fail + bail par nom (P0) — **en cours**
+### J0 — Confirm NL + Vision soft-fail + bail par nom (P0) — **DONE** (`4b7df78`)
 - « oui / confirme / crée le PDF / vas-y » → `confirmAction(latest pending)`
 - Vision : try/catch + rejet PDF non-image → 200 message clair
 - « contrat PDF de \<locataire\> » → propose le bail ACTIVE le plus pertinent
 
 **AT client :** Après proposition contrat, « oui crée le PDF » → PDF réel, pas dump parc.
 
-### J1 — Capability router avant fallback
-Ambiguous court + pending / lastIntent propose* → jamais portfolio.
+### J1 — Capability router avant fallback — **DONE**
+- `ai.capability-router.ts` : score utterance + session + pending
+- Ambiguous court + pending / lastIntent propose* → **jamais** `buildLocalFallbackReply` (dump patrimoine)
+- Clarification FR + pendingAction renvoyée pour confirmer depuis l’UI
+
+**AT :** Après propose PDF, message flou (« euh », « ok ») → rappel de confirmer, pas « Voici ce que confirment vos données ITC… ».
 
 ### J2 — Knowledge layer
 Un seul pack injecté dans ASSISTANT_PROMPT + clarifications locales (OCR non, WA media non, confirm obligatoire).

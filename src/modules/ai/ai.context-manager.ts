@@ -102,10 +102,14 @@ export function detectReferentialIntent(message: string): ReferentialIntentFlags
       q.trim() === 'annule' ||
       q.trim() === 'annuler');
 
-  // Confirm NL — court, sans inventer d’IDs (lié au pending via getLatestPendingForUser).
+  // Confirm NL — court / explicite. Ne pas confondre avec « crée le contrat PDF de Marie ».
   const compact = q.replace(/[!?.…,;:]/g, ' ').replace(/\s+/g, ' ').trim();
+  const looksLikeNewPdfRequest =
+    (q.includes('contrat') || q.includes('bail') || q.includes('recu') || q.includes('avis')) &&
+    (q.includes(' de ') || q.includes(' pour ') || q.includes('moi ') || /\bc[a-z0-9]{20,}\b/.test(q));
   const wantsConfirmLast =
     !wantsCancelLast &&
+    !looksLikeNewPdfRequest &&
     (compact === 'oui' ||
       compact === 'ok' ||
       compact === 'okey' ||
@@ -121,8 +125,11 @@ export function detectReferentialIntent(message: string): ReferentialIntentFlags
       compact === 'valide' ||
       compact === 'valider' ||
       /\boui\b.*\b(cree|creer|genere|generer|pdf|contrat|recu|avis|envoie|envoyer)\b/.test(q) ||
-      /\b(confirme|confirmer)\b.*\b(pdf|contrat|recu|avis|action|proposition)?\b/.test(q) ||
-      /\b(cree|creer|genere|generer)\b.*\bpdf\b/.test(q) ||
+      /\b(confirme|confirmer)\b/.test(q) ||
+      (compact.length <= 28 &&
+        /\b(cree|creer|genere|generer)\b.*\bpdf\b/.test(q) &&
+        !q.includes(' de ') &&
+        !q.includes(' pour ')) ||
       (compact.length <= 40 &&
         /\b(oui|ok)\b/.test(compact) &&
         /\b(pdf|contrat|recu|avis|cree|creer|genere)\b/.test(compact)));

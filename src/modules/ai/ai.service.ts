@@ -14,6 +14,7 @@ import {
 } from './ai.fallback.js';
 import { APP_GUIDE_PROMPT, isAppHowtoIntent, resolveAppHowtoReply } from './ai.app-guide.js';
 import { ITC_KNOWLEDGE_PROMPT } from './ai.knowledge.js';
+import { resolveCapabilityRoute } from './ai.capability-router.js';
 import {
   AiToolsService,
   OPENAI_TOOL_DEFINITIONS,
@@ -582,6 +583,52 @@ export class AiService {
       }
     }
     if (intents.length === 0) {
+      // Phase J1 — capability router : jamais dump patrimoine si pending / propose* / capacité claire hors portefeuille
+      const latestPending = await getLatestPendingForUser(organizationId, userId);
+      const route = resolveCapabilityRoute(message, {
+        session: sessionEntities,
+        hasPending: !!latestPending,
+        pendingType: latestPending?.type ?? null,
+      });
+      if (route.blockPortfolioFallback) {
+        if (latestPending && (ref.wantsConfirmLast || route.capability === 'CONFIRM_PENDING')) {
+          // Confirm déjà traité plus haut ; si on arrive ici c’est un message flou avec pending
+          const reply =
+            route.clarification ??
+            `Une action « ${latestPending.type} » est en attente. Dites « oui » pour confirmer, ou « annule ».`;
+          void this.persistConversationSession(organizationId, userId, message, [], reply);
+          return {
+            reply,
+            suggestions: ['oui', 'annule', 'Voir les contrats'],
+            actions: this.dedupeActions([
+              ...actions,
+              { label: 'Voir les contrats', route: '/leases' },
+            ]),
+            poweredBy: 'local',
+            contextUsed: true,
+            pendingAction: {
+              id: latestPending.id,
+              type: latestPending.type,
+              title: latestPending.payload.summary
+                ? String(latestPending.payload.summary)
+                : 'Confirmer l’action',
+              summary: latestPending.payload.summary ? String(latestPending.payload.summary) : '',
+              payload: latestPending.payload,
+            },
+          };
+        }
+        const reply =
+          route.clarification ??
+          'Précisez l’action (ex. « génère le contrat PDF de … », « mes impayés », « oui » pour confirmer).';
+        void this.persistConversationSession(organizationId, userId, message, [], reply);
+        return {
+          reply,
+          suggestions,
+          actions,
+          poweredBy: 'local',
+          contextUsed: true,
+        };
+      }
       return {
         reply: buildLocalFallbackReply(message, ctx),
         suggestions,
