@@ -530,6 +530,51 @@ export class AiDocumentsIntelService {
         return reply(`Échéance paiement : ${f.dates.dueDate}.`, used);
       }
     }
+    if (
+      q.includes('duree') ||
+      q.includes('combien de mois') ||
+      q.includes('combien de temps') ||
+      q.includes('dure combien')
+    ) {
+      if (f.dates.startDate && f.dates.endDate) {
+        const s = new Date(f.dates.startDate);
+        const e = new Date(f.dates.endDate);
+        if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime()) && e > s) {
+          const months = Math.max(
+            1,
+            (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth()),
+          );
+          used.push('dates.startDate', 'dates.endDate');
+          return reply(
+            `Durée du bail (dates ITC) : ~${months} mois (${f.dates.startDate} → ${f.dates.endDate}).`,
+            used,
+          );
+        }
+      }
+    }
+    if (
+      q.includes('resiliation') ||
+      q.includes('preavis') ||
+      q.includes('resilier') ||
+      q.includes('clause')
+    ) {
+      if (f.excerpt) {
+        used.push('excerpt');
+        return reply(
+          `Extrait terms (pas OCR PDF) : ${f.excerpt.slice(0, 500)}\n` +
+            `Pour une clause hors champs structurés : photo nette du passage, ou génération du contrat PDF enregistré.`,
+          used,
+        );
+      }
+      return {
+        answered: true,
+        answer:
+          `Conditions de résiliation / préavis : pas dans les faits structurés Prisma (OCR PDF = NOT_SUPPORTED).\n` +
+          `Je peux donner loyer, dates, statut du bail ; pour le texte de clause, envoyez une photo ou ouvrez le PDF généré.`,
+        factsUsed: [],
+        textExtraction: f.textExtraction,
+      };
+    }
     if (q.includes('statut') || q.includes('status') || q.includes('etat')) {
       if (f.status.leaseStatus) {
         used.push('status.leaseStatus');

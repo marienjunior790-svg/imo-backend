@@ -42,6 +42,10 @@ describe('ai.context-manager — detectReferentialIntent', () => {
     expect(detectReferentialIntent('je confirme').wantsConfirmLast).toBe(true);
     expect(detectReferentialIntent('vas-y').wantsConfirmLast).toBe(true);
     expect(detectReferentialIntent('annule').wantsConfirmLast).toBe(false);
+    // Nouvelle demande de PDF (pas une confirm)
+    expect(
+      detectReferentialIntent('crée moi le contrat en PDF de fortune libolo').wantsConfirmLast,
+    ).toBe(false);
   });
 });
 

@@ -32,10 +32,10 @@ async function registerOrg(
       email,
       password,
       firstName: 'Admin',
-      lastName: label.toUpperCase(),
+      lastName: `Org${label}`,
       organizationName: `ITC Iso ${label} ${stamp}`,
       organizationType: 'AGENCY',
-      phone: '0600000099',
+      phone: `0600000${String(stamp).slice(-3)}${label.length}`,
     });
 
   expect(reg.status).toBe(201);
@@ -52,6 +52,7 @@ async function seedOrgResources(
   app: ReturnType<typeof createApp>,
   token: string,
   label: string,
+  stamp: number,
 ): Promise<Omit<OrgCtx, 'token' | 'orgId'>> {
   const auth = { Authorization: `Bearer ${token}` };
 
@@ -84,16 +85,16 @@ async function seedOrgResources(
     .set(auth)
     .send({
       firstName: 'Loc',
-      lastName: label,
-      phone: '0612345678',
-      email: `loc.${label}.${Date.now()}@itc-test.cg`,
+      lastName: `Tenant${label}`,
+      phone: `06123${String(stamp).slice(-4)}${label === 'a' ? '1' : '2'}`,
+      email: `loc.${label}.${stamp}@itc-test.cg`,
     });
   expect(tenant.status).toBe(201);
-  const tenantId = tenant.body.data.id as string;
+  const tenantId = (tenant.body.data.tenant?.id ?? tenant.body.data.id) as string;
+  expect(tenantId).toBeTruthy();
 
-  const start = new Date();
-  const end = new Date(start);
-  end.setFullYear(end.getFullYear() + 1);
+  const startDate = '2026-01-15';
+  const endDate = '2027-01-14';
 
   const lease = await request(app)
     .post('/api/v1/leases')
@@ -101,11 +102,16 @@ async function seedOrgResources(
     .send({
       apartmentId,
       tenantId,
-      startDate: start.toISOString().slice(0, 10),
-      endDate: end.toISOString().slice(0, 10),
+      startDate,
+      endDate,
       monthlyRent: 150_000,
       depositAmount: 150_000,
     });
+  if (lease.status !== 201) {
+    // Aide CI : remonter le message Zod / métier
+    // eslint-disable-next-line no-console
+    console.error('[isolation] lease create failed', lease.status, lease.body);
+  }
   expect(lease.status).toBe(201);
   const leaseId = lease.body.data.id as string;
 
@@ -114,10 +120,14 @@ async function seedOrgResources(
     .set(auth)
     .send({
       leaseId,
-      periodMonth: start.getMonth() + 1,
-      periodYear: start.getFullYear(),
+      periodMonth: 1,
+      periodYear: 2026,
       amount: 150_000,
     });
+  if (payment.status !== 201) {
+    // eslint-disable-next-line no-console
+    console.error('[isolation] payment create failed', payment.status, payment.body);
+  }
   expect(payment.status).toBe(201);
   const paymentId = payment.body.data.id as string;
 
@@ -140,8 +150,8 @@ describeDb('Isolation multi-tenant — org A ≠ org B (TECH-002)', () => {
     const orgB = await registerOrg(app, stamp, 'b');
     expect(orgA.orgId).not.toBe(orgB.orgId);
 
-    const resA = await seedOrgResources(app, orgA.token, 'a');
-    const resB = await seedOrgResources(app, orgB.token, 'b');
+    const resA = await seedOrgResources(app, orgA.token, 'a', stamp);
+    const resB = await seedOrgResources(app, orgB.token, 'b', stamp);
 
     a = { ...orgA, ...resA };
     b = { ...orgB, ...resB };

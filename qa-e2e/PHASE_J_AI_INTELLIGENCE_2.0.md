@@ -7,11 +7,11 @@
 
 | Scénario client | Comportement actuel | Cause |
 |-----------------|---------------------|--------|
-| Photo envoyée | `Erreur interne du serveur` | `chatFromImage` sans try/catch → 500 |
+| Photo envoyée | ~~`Erreur interne du serveur`~~ → constat + plan Maintenance (J0/J3) | ~~sans try/catch~~ → soft-fail + vision métier |
 | « oui crée le PDF » | Dump patrimoine | Confirm NL absent ; fallback portfolio |
 | « contrat PDF de fortune libolo » | Liste d’IDs (DRAFT+ACTIVE) | Pas de résolution locataire → bail ACTIVE |
-| WhatsApp Meta 401 | Texte d’échec générique | Pas de mapping auth Meta |
-| Docs « lis la clause » | Métadonnées Prisma seulement | OCR/RAG NOT_SUPPORTED (honnête) |
+| WhatsApp Meta 401 | ~~Texte d’échec générique~~ → « Token Meta invalide… » (J5) | Mapping HTTP Meta → UX FR |
+| Docs « lis la clause » | ~~Métadonnées Prisma seulement~~ → NOT_SUPPORTED + alt. faits / photo (J2) ; faits loyer/dates via pipeline (J4) | OCR/RAG NOT_SUPPORTED (honnête) |
 
 ## Architecture cible (pas de nouveaux tools)
 
@@ -37,32 +37,60 @@ User utterance
 
 ## Jalons
 
-### J0 — Confirm NL + Vision soft-fail + bail par nom (P0) — **en cours**
+### J0 — Confirm NL + Vision soft-fail + bail par nom (P0) — **DONE** (`4b7df78`)
 - « oui / confirme / crée le PDF / vas-y » → `confirmAction(latest pending)`
 - Vision : try/catch + rejet PDF non-image → 200 message clair
 - « contrat PDF de \<locataire\> » → propose le bail ACTIVE le plus pertinent
 
 **AT client :** Après proposition contrat, « oui crée le PDF » → PDF réel, pas dump parc.
 
-### J1 — Capability router avant fallback
-Ambiguous court + pending / lastIntent propose* → jamais portfolio.
+### J1 — Capability router avant fallback — **DONE**
+- `ai.capability-router.ts` : score utterance + session + pending
+- Ambiguous court + pending / lastIntent propose* → **jamais** `buildLocalFallbackReply` (dump patrimoine)
+- Clarification FR + pendingAction renvoyée pour confirmer depuis l’UI
 
-### J2 — Knowledge layer
-Un seul pack injecté dans ASSISTANT_PROMPT + clarifications locales (OCR non, WA media non, confirm obligatoire).
+**AT :** Après propose PDF, message flou (« euh », « ok ») → rappel de confirmer, pas « Voici ce que confirment vos données ITC… ».
 
-### J3 — Vision métier
+### J2 — Knowledge layer — **DONE**
+- `ai.knowledge.ts` enrichi depuis Prisma (rôles, graphe, statuts, règles bail≠impayé)
+- Clarifications locales : OCR/clause PDF, WA média, état des lieux, « pourquoi retard si bail actif »
+- Injecté dans ASSISTANT_PROMPT + court-circuit chat avant fallback
+
+**AT :** « Trouve la clause préavis dans ce PDF » → NOT_SUPPORTED + alternatives (faits bail / photo), pas dump parc.
+
+### J3 — Vision métier — **DONE** (branch)
 Photo → constat + proposition ticket maintenance / agent (tools existants), pas « NOT_SUPPORTED ».
 
-### J4 — Document pipeline
-Upload PDF → extract (buffer/OCR quand dispo) → index facts → ask/compare.  
-Honnêteté : tant qu’OCR PDF n’existe pas, message clair + faits Prisma.
+- `ai.vision.ts` : classification DAMAGE/DOCUMENT/IDENTITY/PROPERTY, priorité via `classifyPriority`, hint logement session/libellé
+- `chatFromImage` : prompt structuré + appendix plan d’action + actions `/maintenance` + merge session
+- Soft-fail J0 conservé (non-image / erreur vision → message clair)
 
-### J5 — WhatsApp parcours réel
-IA → confirm → Meta → providerMessageId → statut ; 401 = « token Meta invalide ».
+**AT :** photo fuite + « Appt 3B » → constat + priorité + plan Maintenance (pas dump parc).
 
-### J6 — Scénarios client E2E (pas tool unit)
-1. Photo fuite → constat → logement → bail → rapport PDF → proposer envoi agent  
+### J4 — Document pipeline — **DONE** (branch)
+Upload PDF → bridge faits Prisma (OCR fichier = NOT_SUPPORTED honnête) → ask/compare/anomalies.
+
+- `ai.document-pipeline.ts` : intents loyer / dates / durée / résiliation / résumé / anomalies + match locataire
+- `chatFromImage` PDF → faits ITC liés (session / nom) + message OCR clair
+- `chat()` court-circuit pipeline avant dump ; `answerDocumentQuestion` + durée / préavis terms
+- Knowledge : laisse passer les questions de faits structurés malgré « PDF »
+
+**AT :** « quel est le loyer du bail de … » → montant Prisma ; PDF upload → digest faits, pas 500 / pas dump parc.
+
+### J5 — WhatsApp parcours réel — **DONE** (branch)
+IA → confirm → Meta → providerMessageId → statut SENT ; 401/403 = « token Meta invalide ».
+
+- `whatsapp-errors.ts` : `WhatsAppProviderError` + `formatWhatsAppUserError` / `formatWhatsAppSendSuccess`
+- Provider Cloud API throw typé (HTTP status) ; copilote + ligne `messages` FAILED sans secrets
+- Succès : Provider ID Meta + statut ITC SENT explicites
+
+**AT :** confirm WhatsApp avec token mort → message « Token Meta invalide… », pas dump parc / pas faux succès.
+
+### J6 — Scénarios client E2E (pas tool unit) — **CHECKLIST** (`qa-e2e/PHASE_J6_CLIENT_E2E.md`)
+1. Photo fuite → constat → logement → bail → rapport PDF → proposer maintenance  
 2. Contrat PDF → loyer / échéance / durée / résiliation / anomalies → relance WhatsApp impayé  
+
+Exécution manuelle téléphone ; journal PASS/FAIL dans le fichier J6. Code J0–J5 doit être déployé avant run. 
 
 ## Règle d’or
 

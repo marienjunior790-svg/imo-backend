@@ -1,5 +1,6 @@
 import { inject, injectable } from 'tsyringe';
 import { MessagingService } from '../../infrastructure/messaging/messaging.service.js';
+import { formatWhatsAppUserError } from '../../infrastructure/messaging/whatsapp-errors.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { extendedPrisma } from '../../shared/utils/extended-prisma.js';
 import { NotFoundError, ValidationError } from '../../shared/errors/app.error.js';
@@ -111,7 +112,7 @@ export class NotificationCenterService {
 
       return { message, providerMessageId: sent.providerMessageId };
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Envoi WhatsApp impossible';
+      const errorMsg = formatWhatsAppUserError(err);
       try {
         await this.db().message.create({
           data: {
