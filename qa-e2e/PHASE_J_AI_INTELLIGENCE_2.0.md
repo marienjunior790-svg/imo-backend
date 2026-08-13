@@ -86,9 +86,11 @@ IA → confirm → Meta → providerMessageId → statut SENT ; 401/403 = « tok
 
 **AT :** confirm WhatsApp avec token mort → message « Token Meta invalide… », pas dump parc / pas faux succès.
 
-### J6 — Scénarios client E2E (pas tool unit)
-1. Photo fuite → constat → logement → bail → rapport PDF → proposer envoi agent  
+### J6 — Scénarios client E2E (pas tool unit) — **CHECKLIST** (`qa-e2e/PHASE_J6_CLIENT_E2E.md`)
+1. Photo fuite → constat → logement → bail → rapport PDF → proposer maintenance  
 2. Contrat PDF → loyer / échéance / durée / résiliation / anomalies → relance WhatsApp impayé  
+
+Exécution manuelle téléphone ; journal PASS/FAIL dans le fichier J6. Code J0–J5 doit être déployé avant run. 
 
 ## Règle d’or
 
