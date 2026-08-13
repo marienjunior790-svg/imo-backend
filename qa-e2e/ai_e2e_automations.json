@@ -1,0 +1,36 @@
+﻿{
+    "phase":  "H_AUTOMATIONS",
+    "pass":  4,
+    "fail":  0,
+    "note":  "Default safety: autoExecute=false; propose+confirm required.",
+    "results":  [
+                    {
+                        "id":  "H00_LOGIN",
+                        "status":  "PASS",
+                        "detail":  "role=OWNER",
+                        "toolsUsed":  "",
+                        "evidence":  null
+                    },
+                    {
+                        "id":  "H01_PROPOSE",
+                        "status":  "PASS",
+                        "detail":  "0 items / empty detection (no pending expected)",
+                        "toolsUsed":  "proposeOutstandingReminderAutomation",
+                        "evidence":  "Aucun impayé exploitable pour une relance automatisée."
+                    },
+                    {
+                        "id":  "H02_CONFIRM",
+                        "status":  "PASS",
+                        "detail":  "Skipped confirm (no pending / 0 items)",
+                        "toolsUsed":  "",
+                        "evidence":  null
+                    },
+                    {
+                        "id":  "H03_DUPLICATE",
+                        "status":  "PASS",
+                        "detail":  "Duplicate/skip messaging present",
+                        "toolsUsed":  "proposeOutstandingReminderAutomation",
+                        "evidence":  "Aucun impayé exploitable pour une relance automatisée."
+                    }
+                ]
+}
