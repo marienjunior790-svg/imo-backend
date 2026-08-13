@@ -56,6 +56,10 @@ import {
   scoreLeasesByTenantName,
 } from './ai.document-pipeline.js';
 import { SubscriptionService } from '../subscriptions/subscription.service.js';
+import {
+  formatWhatsAppSendSuccess,
+  formatWhatsAppUserError,
+} from '../../infrastructure/messaging/whatsapp-errors.js';
 import { LeaseService } from '../leases/lease.service.js';
 import { PaymentService } from '../payments/payment.service.js';
 import { NotificationCenterService } from '../notification-center/notification-center.service.js';
@@ -2528,12 +2532,12 @@ export class AiService {
           ? String((message as { id: string }).id)
           : undefined;
       return {
-        reply:
-          `Message WhatsApp envoyé.\n` +
-          `• Destinataire : ${payload.tenantName ?? 'le locataire'} (${payload.toPhone})\n` +
-          `• Provider ID : ${providerMessageId}\n` +
-          (messageId ? `• ID message ITC : ${messageId}\n` : '') +
-          `• Canal : WhatsApp Business`,
+        reply: formatWhatsAppSendSuccess({
+          tenantName: payload.tenantName,
+          toPhone: payload.toPhone,
+          providerMessageId,
+          messageId,
+        }),
         suggestions: ['Voir les locataires', 'Voir les impayés'],
         actions: [
           { label: 'Messagerie', route: '/notifications' },
@@ -2543,7 +2547,7 @@ export class AiService {
         contextUsed: true,
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Envoi WhatsApp impossible';
+      const msg = formatWhatsAppUserError(err);
       return {
         reply: `L’envoi WhatsApp a échoué.\n${msg}`,
         suggestions: ['Voir les locataires', 'Envoyer un message portail'],
@@ -2643,7 +2647,7 @@ export class AiService {
         failures.push({
           tenantName: item.tenantName,
           channel: item.channel,
-          error: err instanceof Error ? err.message : 'Envoi impossible',
+          error: formatWhatsAppUserError(err),
         });
       }
     }

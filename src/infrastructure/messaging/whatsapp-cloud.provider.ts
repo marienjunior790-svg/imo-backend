@@ -1,5 +1,6 @@
 import { env } from '../../config/env.js';
 import type { MessagingSendResult } from './messaging.types.js';
+import { WhatsAppProviderError } from './whatsapp-errors.js';
 
 type GraphMessagesResponse = {
   messaging_product?: string;
@@ -79,12 +80,12 @@ export async function sendWhatsAppCloudMessage(input: {
       data.error?.message ||
       res.statusText ||
       'erreur inconnue';
-    throw new Error(`WhatsApp Cloud API HTTP ${res.status}: ${detail}`);
+    throw new WhatsAppProviderError(res.status, detail, data.error?.code);
   }
 
   const providerMessageId = data.messages?.[0]?.id;
   if (!providerMessageId) {
-    throw new Error('WhatsApp Cloud API: réponse sans messages[0].id');
+    throw new WhatsAppProviderError(502, 'réponse sans messages[0].id');
   }
 
   return {

@@ -61,6 +61,6 @@ Normalisation via `normalizePhoneE164` : `06…` → `+2426…`, `+242…` conse
 ## Dépannage
 
 - `WhatsApp non configuré` → variables manquantes ou `WHATSAPP_ENABLED=false`.
-- HTTP 401/403 Meta → token expiré ou permissions insuffisantes.
+- HTTP 401/403 Meta → le copilote affiche **« Token Meta invalide ou permissions insuffisantes »** (Phase J5) ; régénérer le token system user et mettre à jour `WHATSAPP_TOKEN` sur Railway.
 - HTTP 400 template → nom/langue/paramètres incorrects, ou template non approuvé.
 - Numéro invalide → corriger le téléphone locataire en E.164.

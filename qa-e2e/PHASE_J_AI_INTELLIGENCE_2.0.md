@@ -10,7 +10,7 @@
 | Photo envoyée | ~~`Erreur interne du serveur`~~ → constat + plan Maintenance (J0/J3) | ~~sans try/catch~~ → soft-fail + vision métier |
 | « oui crée le PDF » | Dump patrimoine | Confirm NL absent ; fallback portfolio |
 | « contrat PDF de fortune libolo » | Liste d’IDs (DRAFT+ACTIVE) | Pas de résolution locataire → bail ACTIVE |
-| WhatsApp Meta 401 | Texte d’échec générique | Pas de mapping auth Meta |
+| WhatsApp Meta 401 | ~~Texte d’échec générique~~ → « Token Meta invalide… » (J5) | Mapping HTTP Meta → UX FR |
 | Docs « lis la clause » | ~~Métadonnées Prisma seulement~~ → NOT_SUPPORTED + alt. faits / photo (J2) ; faits loyer/dates via pipeline (J4) | OCR/RAG NOT_SUPPORTED (honnête) |
 
 ## Architecture cible (pas de nouveaux tools)
@@ -77,8 +77,14 @@ Upload PDF → bridge faits Prisma (OCR fichier = NOT_SUPPORTED honnête) → as
 
 **AT :** « quel est le loyer du bail de … » → montant Prisma ; PDF upload → digest faits, pas 500 / pas dump parc.
 
-### J5 — WhatsApp parcours réel
-IA → confirm → Meta → providerMessageId → statut ; 401 = « token Meta invalide ».
+### J5 — WhatsApp parcours réel — **DONE** (branch)
+IA → confirm → Meta → providerMessageId → statut SENT ; 401/403 = « token Meta invalide ».
+
+- `whatsapp-errors.ts` : `WhatsAppProviderError` + `formatWhatsAppUserError` / `formatWhatsAppSendSuccess`
+- Provider Cloud API throw typé (HTTP status) ; copilote + ligne `messages` FAILED sans secrets
+- Succès : Provider ID Meta + statut ITC SENT explicites
+
+**AT :** confirm WhatsApp avec token mort → message « Token Meta invalide… », pas dump parc / pas faux succès.
 
 ### J6 — Scénarios client E2E (pas tool unit)
 1. Photo fuite → constat → logement → bail → rapport PDF → proposer envoi agent  
