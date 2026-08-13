@@ -35,6 +35,14 @@ describe('ai.context-manager — detectReferentialIntent', () => {
   it('détecte annuler dernière action', () => {
     expect(detectReferentialIntent('annule ce que tu viens de faire').wantsCancelLast).toBe(true);
   });
+
+  it('détecte la confirmation NL (oui crée le PDF)', () => {
+    expect(detectReferentialIntent('oui crée le PDF').wantsConfirmLast).toBe(true);
+    expect(detectReferentialIntent('oui').wantsConfirmLast).toBe(true);
+    expect(detectReferentialIntent('je confirme').wantsConfirmLast).toBe(true);
+    expect(detectReferentialIntent('vas-y').wantsConfirmLast).toBe(true);
+    expect(detectReferentialIntent('annule').wantsConfirmLast).toBe(false);
+  });
 });
 
 describe('ai.context-manager — relativePeriod', () => {

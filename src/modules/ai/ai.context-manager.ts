@@ -9,6 +9,8 @@ export type ReferentialIntentFlags = {
   wantsWhy: boolean;
   wantsExplainOtherwise: boolean;
   wantsCancelLast: boolean;
+  /** Confirmer la dernière action propose* (oui / crée le PDF / vas-y). */
+  wantsConfirmLast: boolean;
 };
 
 export type ResolvedEntityRefs = {
@@ -100,6 +102,31 @@ export function detectReferentialIntent(message: string): ReferentialIntentFlags
       q.trim() === 'annule' ||
       q.trim() === 'annuler');
 
+  // Confirm NL — court, sans inventer d’IDs (lié au pending via getLatestPendingForUser).
+  const compact = q.replace(/[!?.…,;:]/g, ' ').replace(/\s+/g, ' ').trim();
+  const wantsConfirmLast =
+    !wantsCancelLast &&
+    (compact === 'oui' ||
+      compact === 'ok' ||
+      compact === 'okey' ||
+      compact === 'okay' ||
+      compact === 'confirme' ||
+      compact === 'confirmer' ||
+      compact === 'je confirme' ||
+      compact === 'vas-y' ||
+      compact === 'vas y' ||
+      compact === 'go' ||
+      compact === 'd accord' ||
+      compact === "d'accord" ||
+      compact === 'valide' ||
+      compact === 'valider' ||
+      /\boui\b.*\b(cree|creer|genere|generer|pdf|contrat|recu|avis|envoie|envoyer)\b/.test(q) ||
+      /\b(confirme|confirmer)\b.*\b(pdf|contrat|recu|avis|action|proposition)?\b/.test(q) ||
+      /\b(cree|creer|genere|generer)\b.*\bpdf\b/.test(q) ||
+      (compact.length <= 40 &&
+        /\b(oui|ok)\b/.test(compact) &&
+        /\b(pdf|contrat|recu|avis|cree|creer|genere)\b/.test(compact)));
+
   return {
     wantsPreviousEntity,
     wantsLastMonth,
@@ -107,6 +134,7 @@ export function detectReferentialIntent(message: string): ReferentialIntentFlags
     wantsWhy,
     wantsExplainOtherwise,
     wantsCancelLast,
+    wantsConfirmLast,
   };
 }
 
