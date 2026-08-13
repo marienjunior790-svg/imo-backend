@@ -1,5 +1,6 @@
 import { inject, injectable } from 'tsyringe';
 import {
+  AiAutomationKind,
   AiMemoryKind,
   AiMemoryScope,
   ApartmentStatus,
@@ -15,6 +16,7 @@ import { decimalToNumber } from '../../shared/utils/response.util.js';
 import { TeamMembersService } from '../admin/team-members.service.js';
 import { AiContextService } from './ai.context.service.js';
 import { AiAnalyticsService } from './ai.analytics.service.js';
+import { AiAutomationService } from './ai.automation.service.js';
 import { utcLastMonth, utcThisMonth } from './ai.analytics.math.js';
 import {
   AiDocumentsIntelService,
@@ -60,7 +62,12 @@ export type AiToolName =
   | 'proposeSendWhatsAppMedia'
   | 'rememberMemory'
   | 'recallMemories'
-  | 'forgetMemory';
+  | 'forgetMemory'
+  | 'proposeOutstandingReminderAutomation'
+  | 'proposeLeaseExpiryReminders'
+  | 'proposeMaintenanceTasksFromTickets'
+  | 'proposeAnomalyActions'
+  | 'listAutomationRuns';
 
 export type AiToolExecuteCtx = { userId: string; role: UserRole };
 
@@ -569,6 +576,71 @@ export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'proposeOutstandingReminderAutomation',
+      description:
+        'Détecte les impayés et PROPOSE une automatisation de relances (brouillons). ' +
+        'Ne jamais envoyer sans confirmation utilisateur (sauf règle autoExecute OWNER).',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'proposeLeaseExpiryReminders',
+      description:
+        'Détecte les baux ACTIVE bientôt à échéance et propose des rappels (confirmation requise).',
+      parameters: {
+        type: 'object',
+        properties: {
+          daysBeforeExpiry: {
+            type: 'number',
+            description: 'Fenêtre en jours (défaut 30)',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'proposeMaintenanceTasksFromTickets',
+      description:
+        'Tickets maintenance OPEN/ASSIGNED → propose des StaffTask (confirmation requise).',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'proposeAnomalyActions',
+      description:
+        'Anomalies urgentes analytics → propose actions (navigate / tâche / rappel). Pas de correctif inventé.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'listAutomationRuns',
+      description: 'Liste les derniers runs d’automatisation IA de l’organisation.',
+      parameters: {
+        type: 'object',
+        properties: {
+          kind: {
+            type: 'string',
+            description:
+              'OUTSTANDING_REMINDER | LEASE_EXPIRY_REMINDER | MAINTENANCE_ASSIGN_TASK | ANOMALY_ACTION',
+          },
+          limit: { type: 'number' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 @injectable()
@@ -580,6 +652,7 @@ export class AiToolsService {
     @inject(AiDocumentsIntelService) private readonly documentsIntel: AiDocumentsIntelService,
     @inject(TeamMembersService) private readonly teamMembers: TeamMembersService,
     @inject(AiMemoryService) private readonly memory: AiMemoryService,
+    @inject(AiAutomationService) private readonly automations: AiAutomationService,
   ) {}
 
   async execute(
@@ -753,6 +826,60 @@ export class AiToolsService {
           return await this.recallMemories(organizationId, args, ctx);
         case 'forgetMemory':
           return await this.forgetMemory(organizationId, args, ctx);
+        case 'proposeOutstandingReminderAutomation':
+          return await this.proposeAutomationKind(
+            organizationId,
+            AiAutomationKind.OUTSTANDING_REMINDER,
+            ctx,
+          );
+        case 'proposeLeaseExpiryReminders': {
+          const days =
+            typeof args.daysBeforeExpiry === 'number' && Number.isFinite(args.daysBeforeExpiry)
+              ? Math.max(1, Math.min(365, Math.floor(args.daysBeforeExpiry)))
+              : 30;
+          return await this.proposeAutomationKind(
+            organizationId,
+            AiAutomationKind.LEASE_EXPIRY_REMINDER,
+            ctx,
+            { daysBeforeExpiry: days },
+          );
+        }
+        case 'proposeMaintenanceTasksFromTickets':
+          return await this.proposeAutomationKind(
+            organizationId,
+            AiAutomationKind.MAINTENANCE_ASSIGN_TASK,
+            ctx,
+          );
+        case 'proposeAnomalyActions':
+          return await this.proposeAutomationKind(
+            organizationId,
+            AiAutomationKind.ANOMALY_ACTION,
+            ctx,
+          );
+        case 'listAutomationRuns': {
+          const user = this.requireToolUser(ctx);
+          const kindRaw = typeof args.kind === 'string' ? args.kind.trim() : undefined;
+          const kind =
+            kindRaw && Object.values(AiAutomationKind).includes(kindRaw as AiAutomationKind)
+              ? (kindRaw as AiAutomationKind)
+              : undefined;
+          const limit =
+            typeof args.limit === 'number' && Number.isFinite(args.limit)
+              ? Math.max(1, Math.min(50, Math.floor(args.limit)))
+              : 20;
+          const runs = await this.automations.listRuns(organizationId, { kind, limit });
+          return {
+            count: runs.length,
+            items: runs.map((r) => ({
+              id: r.id,
+              kind: r.kind,
+              status: r.status,
+              idempotencyKey: r.idempotencyKey,
+              createdAt: r.createdAt.toISOString(),
+              executedAt: r.executedAt?.toISOString() ?? null,
+            })),
+          };
+        }
         default:
           return { error: `Outil inconnu: ${toolName}`, code: 404 };
       }
@@ -766,6 +893,43 @@ export class AiToolsService {
       throw new ForbiddenError('Contexte utilisateur requis pour la mémoire IA');
     }
     return ctx;
+  }
+
+  private async proposeAutomationKind(
+    organizationId: string,
+    kind: AiAutomationKind,
+    ctx?: AiToolExecuteCtx,
+    config?: { daysBeforeExpiry?: number; maxItems?: number; channel?: 'IN_APP' | 'WHATSAPP' },
+  ) {
+    const user = this.requireToolUser(ctx);
+    const result = await this.automations.detectAndPropose({
+      organizationId,
+      userId: user.userId,
+      role: user.role,
+      kind,
+      config,
+    });
+    return {
+      kind,
+      runId: result.run?.id ?? null,
+      status: result.run?.status ?? (result.itemCount === 0 ? 'EMPTY' : null),
+      itemCount: result.itemCount,
+      summary: result.summary,
+      duplicate: result.duplicate,
+      skippedDuplicate: result.skippedDuplicate,
+      autoExecuted: result.autoExecuted,
+      requiresConfirmation: !!result.pendingAction && !result.autoExecuted,
+      pendingActionId: result.pendingAction?.id ?? null,
+      pendingAction: result.pendingAction
+        ? {
+            id: result.pendingAction.id,
+            type: result.pendingAction.type,
+            title: 'Approuver l’automatisation',
+            summary: result.pendingAction.payload.summary ?? result.summary,
+            payload: result.pendingAction.payload,
+          }
+        : null,
+    };
   }
 
   private async rememberMemory(
@@ -856,6 +1020,44 @@ export class AiToolsService {
     // Annulation / pourquoi : gérés dans AiService (pas d’intent outil ici si purs).
     if (ref.wantsCancelLast && tools.length === 0) {
       return [];
+    }
+
+    // ── Phase H automations (avant Phase F / listes — priorité « automatis ») ──
+    const wantsAutomationKeyword =
+      q.includes('automatis') || (q.includes('lance') && q.includes('automat'));
+    const wantsOutstandingAutomation =
+      wantsAutomationKeyword &&
+      (q.includes('relanc') || q.includes('impay') || q.includes('impaye'));
+    const wantsLeaseExpiryAutomation =
+      (q.includes('rappel') && (q.includes('echeanc') || q.includes('expir'))) ||
+      (q.includes('baux') && q.includes('expir')) ||
+      ((q.includes('bail') || q.includes('baux')) &&
+        q.includes('expir') &&
+        (q.includes('rappel') || wantsAutomationKeyword));
+    const wantsMaintTaskAutomation =
+      (q.includes('tache') || q.includes('taches')) &&
+      (q.includes('ticket') || q.includes('maintenance'));
+    const wantsAnomalyAutomation =
+      q.includes('anomal') &&
+      (wantsAutomationKeyword || q.includes('propose') || q.includes('action'));
+
+    if (wantsOutstandingAutomation) {
+      tools.push({ name: 'proposeOutstandingReminderAutomation' });
+    }
+    if (wantsLeaseExpiryAutomation) {
+      tools.push({ name: 'proposeLeaseExpiryReminders' });
+    }
+    if (wantsMaintTaskAutomation) {
+      tools.push({ name: 'proposeMaintenanceTasksFromTickets' });
+    }
+    if (wantsAnomalyAutomation) {
+      tools.push({ name: 'proposeAnomalyActions' });
+    }
+    if (
+      q.includes('automatisation') &&
+      (q.includes('liste') || q.includes('historique') || q.includes('runs'))
+    ) {
+      tools.push({ name: 'listAutomationRuns' });
     }
 
     // ── Phase F analytics (avant listes génériques pour éviter le vol d’intent) ──
@@ -965,6 +1167,7 @@ export class AiToolsService {
     if (
       !wantsBuildingOutstandingRank &&
       !wantsDocInconsistency &&
+      !wantsOutstandingAutomation &&
       (q.includes('impay') ||
         q.includes('retard') ||
         q.includes('relanc') ||
@@ -1010,7 +1213,10 @@ export class AiToolsService {
       tools.push({ name: 'getBuildings' });
     }
 
-    if (q.includes('expir') || q.includes('echeanc') || (q.includes('bientot') && q.includes('loyer'))) {
+    if (
+      !wantsLeaseExpiryAutomation &&
+      (q.includes('expir') || q.includes('echeanc') || (q.includes('bientot') && q.includes('loyer')))
+    ) {
       tools.push({ name: 'getExpiringContracts' });
     }
 
@@ -2358,6 +2564,45 @@ Confirmez pour générer l’avis de paiement PDF.`;
     if (data.deleted) return `Mémoire oubliée${data.key ? ` (« ${data.key} »)` : ''}.`;
     if (data.reason === 'not_found') return 'Aucune mémoire correspondante à oublier.';
     return 'Suppression mémoire non effectuée.';
+  }
+  if (
+    toolName === 'proposeOutstandingReminderAutomation' ||
+    toolName === 'proposeLeaseExpiryReminders' ||
+    toolName === 'proposeMaintenanceTasksFromTickets' ||
+    toolName === 'proposeAnomalyActions'
+  ) {
+    const n = Number(data.itemCount ?? 0);
+    if (data.skippedDuplicate) {
+      return String(
+        data.summary ??
+          'Automatisation déjà traitée pour cette clé (anti-doublon) — aucune nouvelle proposition.',
+      );
+    }
+    if (data.duplicate && data.requiresConfirmation) {
+      return (
+        `${String(data.summary ?? 'Proposition existante réutilisée.')}\n` +
+        `Run ${data.runId ?? 'n/c'} · ${n} élément(s). Confirmez pour exécuter.`
+      );
+    }
+    if (n === 0) {
+      return String(data.summary ?? 'Aucun élément détecté — aucune proposition.');
+    }
+    if (data.autoExecuted) {
+      return String(data.summary ?? 'Automatisation exécutée via règle autoExecute.');
+    }
+    return (
+      `${String(data.summary ?? `${n} élément(s) proposés.`)}\n` +
+      `Confirmation requise (APPROVE_AUTOMATION_RUN). Aucun envoi silencieux.`
+    );
+  }
+  if (toolName === 'listAutomationRuns') {
+    const items = (data.items as Array<Record<string, unknown>>) ?? [];
+    if (!items.length) return 'Aucun run d’automatisation pour cette organisation.';
+    const list = items
+      .slice(0, 12)
+      .map((r) => `• ${r.kind} · ${r.status} · ${r.id} · ${String(r.createdAt ?? '').slice(0, 19)}`)
+      .join('\n');
+    return `Runs automatisation (${data.count}) :\n${list}`;
   }
   if (toolName === 'getTenants') {
     const items = (data.items as Array<Record<string, unknown>>) ?? [];

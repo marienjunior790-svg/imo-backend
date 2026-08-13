@@ -10,6 +10,7 @@ export type PendingActionType =
   | 'SEND_TENANT_MESSAGE'
   | 'SEND_WHATSAPP_MESSAGE'
   | 'SEND_BATCH_TENANT_REMINDERS'
+  | 'APPROVE_AUTOMATION_RUN'
   | 'NAVIGATE_HINT';
 
 export interface BatchTenantReminderItem {
@@ -45,6 +46,10 @@ export interface PendingActionPayload {
   providerChannel?: 'WHATSAPP' | 'IN_APP' | 'EMAIL' | 'SMS';
   /** Brouillons de relance batch (SEND_BATCH_TENANT_REMINDERS) — pas d’envoi tant que non confirmé. */
   items?: BatchTenantReminderItem[];
+  /** APPROVE_AUTOMATION_RUN */
+  runId?: string;
+  kind?: string;
+  itemCount?: number;
 }
 
 export interface PendingAction {

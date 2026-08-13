@@ -122,6 +122,22 @@ describe('AiToolsService.resolveLocalToolIntents', () => {
     const intents = tools.resolveLocalToolIntents('Oublie ma préférence clé preferred_reminder_channel');
     expect(intents.map((i) => i.name)).toContain('forgetMemory');
   });
+
+  it('détecte automatisation impayés (Phase H)', () => {
+    const intents = tools.resolveLocalToolIntents('Automatise les relances impayés');
+    expect(intents.map((i) => i.name)).toContain('proposeOutstandingReminderAutomation');
+    expect(intents.map((i) => i.name)).not.toContain('getOutstandingPayments');
+  });
+
+  it('détecte rappels échéance baux (Phase H)', () => {
+    const intents = tools.resolveLocalToolIntents('Rappels d échéance pour les baux qui expirent');
+    expect(intents.map((i) => i.name)).toContain('proposeLeaseExpiryReminders');
+  });
+
+  it('détecte tâches tickets maintenance (Phase H)', () => {
+    const intents = tools.resolveLocalToolIntents('Crée des tâches pour les tickets de maintenance');
+    expect(intents.map((i) => i.name)).toContain('proposeMaintenanceTasksFromTickets');
+  });
 });
 
 describe('formatToolResultForLocalReply', () => {

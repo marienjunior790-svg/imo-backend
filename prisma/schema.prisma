@@ -36,6 +36,25 @@ enum AiMemorySource {
   SYSTEM
 }
 
+enum AiAutomationKind {
+  OUTSTANDING_REMINDER
+  LEASE_EXPIRY_REMINDER
+  MAINTENANCE_ASSIGN_TASK
+  ANOMALY_ACTION
+}
+
+enum AiAutomationRunStatus {
+  DETECTED
+  PROPOSED
+  APPROVED
+  EXECUTING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+  CANCELLED
+  SKIPPED_DUPLICATE
+}
+
 enum UserRole {
   SUPER_ADMIN
   OWNER       // Propriétaire / agence — pilotage complet de l'organisation
@@ -210,6 +229,8 @@ model Organization {
   buildingExpenses BuildingExpense[]
   aiMemoryEntries   AiMemoryEntry[]
   aiSessionContexts AiSessionContext[]
+  aiAutomationRules AiAutomationRule[]
+  aiAutomationRuns  AiAutomationRun[]
 
   @@index([type])
   @@index([subscriptionStatus])
@@ -303,6 +324,9 @@ model User {
   aiMemoryCreated      AiMemoryEntry[]     @relation("AiMemoryCreatedBy")
   aiMemoryUpdated      AiMemoryEntry[]     @relation("AiMemoryUpdatedBy")
   aiSessionContexts    AiSessionContext[]
+  aiAutomationRulesCreated AiAutomationRule[] @relation("AiAutomationRuleCreatedBy")
+  aiAutomationRunsProposed AiAutomationRun[]  @relation("AiAutomationRunProposedBy")
+  aiAutomationRunsApproved AiAutomationRun[]  @relation("AiAutomationRunApprovedBy")
 
   @@index([organizationId])
   @@index([role])
@@ -1084,4 +1108,56 @@ model AiSessionContext {
   @@unique([organizationId, userId, sessionKey])
   @@index([expiresAt])
   @@map("ai_session_contexts")
+}
+
+// ─── Automatisations intelligentes ITC (Phase H) ──────────────────────────────
+
+model AiAutomationRule {
+  id             String           @id @default(cuid())
+  organizationId String
+  kind           AiAutomationKind
+  name           String
+  enabled        Boolean          @default(false)
+  /// NEVER default true — silent send only when OWNER enables this explicitly
+  autoExecute    Boolean          @default(false)
+  /// e.g. { daysBeforeExpiry: 30, channel: IN_APP|WHATSAPP, maxItems: 20 }
+  config         Json?
+  createdById    String
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User             @relation("AiAutomationRuleCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  runs         AiAutomationRun[]
+
+  @@unique([organizationId, kind, name])
+  @@index([organizationId, kind, enabled])
+  @@map("ai_automation_rules")
+}
+
+model AiAutomationRun {
+  id              String                @id @default(cuid())
+  organizationId  String
+  ruleId          String?
+  kind            AiAutomationKind
+  status          AiAutomationRunStatus
+  idempotencyKey  String
+  detectionJson   Json?
+  proposalJson    Json?
+  resultJson      Json?
+  error           String?
+  proposedById    String?
+  approvedById    String?
+  executedAt      DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rule         AiAutomationRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  proposedBy   User?            @relation("AiAutomationRunProposedBy", fields: [proposedById], references: [id], onDelete: SetNull)
+  approvedBy   User?            @relation("AiAutomationRunApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, kind, status, createdAt])
+  @@map("ai_automation_runs")
 }

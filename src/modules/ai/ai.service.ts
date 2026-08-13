@@ -31,6 +31,7 @@ import {
   type PendingActionPayload,
 } from './ai.pending-actions.js';
 import { detectPaymentReminderPlan, runPaymentReminderPlan, type AiPlanStep } from './ai.orchestrator.js';
+import { AiAutomationService } from './ai.automation.service.js';
 import { listDocumentCapabilities } from './ai.documents.js';
 import { SubscriptionService } from '../subscriptions/subscription.service.js';
 import { LeaseService } from '../leases/lease.service.js';
@@ -118,6 +119,7 @@ Règles ABSOLUES :
 - PDF contrat / reçu / avis : outils propose* puis confirmation utilisateur obligatoire.
 - Création de bail (enregistrement) et envoi de message locataire : proposeCreateLease / proposeSendTenantMessage puis confirmation — ne jamais inventer d’IDs, montants ou destinataires ; ne jamais prétendre succès sans outil / confirmation.
 - WhatsApp Business : proposeSendWhatsAppMessage puis confirmation obligatoire. Ne jamais inventer de numéro. Ne prétendre un envoi réussi que si l’outil confirme avec un providerMessageId. Audio/image WhatsApp : non disponible (proposeSendWhatsAppMedia).
+- Automatisations (Phase H) : proposeOutstandingReminderAutomation / proposeLeaseExpiryReminders / proposeMaintenanceTasksFromTickets / proposeAnomalyActions — toujours proposer + confirmation APPROVE_AUTOMATION_RUN. Jamais d’envoi silencieux sauf règle OWNER autoExecute=true. Ne jamais inventer de correctif.
 - Agents : getTeamMembers(role=AGENT). N’invente jamais de noms.
 - Respecte le périmètre organisation du JWT ; tu n’as pas d’autre org.
 
@@ -148,6 +150,7 @@ export class AiService {
     @inject(PrismaService) private readonly prisma: PrismaService,
     @inject(AiToolsService) private readonly tools: AiToolsService,
     @inject(AiMemoryService) private readonly memory: AiMemoryService,
+    @inject(AiAutomationService) private readonly automations: AiAutomationService,
     @inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
@@ -362,8 +365,12 @@ export class AiService {
       };
     }
 
+    // Phase H — « automatis… » prioritaire sur le plan Phase E relances.
+    const prefersAutomation =
+      /automatis/i.test(message) || (/lance/i.test(message) && /automat/i.test(message));
+
     // Phase E — plan multi-étapes relances impayés (avant la boucle d’intents génériques).
-    if (detectPaymentReminderPlan(message)) {
+    if (!prefersAutomation && detectPaymentReminderPlan(message)) {
       const plan = await runPaymentReminderPlan({
         organizationId,
         userId,
@@ -533,6 +540,16 @@ export class AiService {
       }
       if (name === 'proposeSendWhatsAppMedia') {
         parts[parts.length - 1] = formatToolResultForLocalReply('proposeSendWhatsAppMedia', result);
+      }
+      if (
+        name === 'proposeOutstandingReminderAutomation' ||
+        name === 'proposeLeaseExpiryReminders' ||
+        name === 'proposeMaintenanceTasksFromTickets' ||
+        name === 'proposeAnomalyActions'
+      ) {
+        const attached = this.attachPendingAutomation(result);
+        if (attached.pendingAction) pendingAction = attached.pendingAction;
+        if (attached.reply) parts[parts.length - 1] = attached.reply;
       }
     }
 
@@ -706,6 +723,23 @@ export class AiService {
             role: 'tool',
             tool_call_id: call.id,
             content: JSON.stringify(result),
+          });
+        } else if (
+          name === 'proposeOutstandingReminderAutomation' ||
+          name === 'proposeLeaseExpiryReminders' ||
+          name === 'proposeMaintenanceTasksFromTickets' ||
+          name === 'proposeAnomalyActions'
+        ) {
+          const attached = this.attachPendingAutomation(result);
+          if (attached.pendingAction) pendingAction = attached.pendingAction;
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: JSON.stringify({
+              ...((typeof result === 'object' && result) || {}),
+              pendingActionId: attached.pendingAction?.id,
+              note: 'Automatisation non exécutée — confirmation utilisateur obligatoire (sauf autoExecute OWNER).',
+            }),
           });
         } else {
           messages.push({
@@ -1345,7 +1379,65 @@ export class AiService {
       return this.executeSendBatchTenantReminders(organizationId, userId, action.payload);
     }
 
+    if (action.type === 'APPROVE_AUTOMATION_RUN') {
+      if (!action.payload.runId) throw new ValidationError('runId manquant pour l’automatisation');
+      const executed = await this.automations.approveAndExecute(
+        action.payload.runId,
+        organizationId,
+        userId,
+        role,
+      );
+      return {
+        reply: executed.reply,
+        suggestions: ['Voir les impayés', 'Liste des automatisations'],
+        actions: [
+          { label: 'Voir les impayés', route: '/payments?tab=unpaid' },
+          { label: 'Messagerie', route: '/notifications' },
+        ],
+        poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+        contextUsed: true,
+        toolsUsed: ['approveAndExecuteAutomation'],
+      };
+    }
+
     throw new ValidationError('Type d’action non supporté');
+  }
+
+  private attachPendingAutomation(result: unknown): {
+    pendingAction?: AiPendingActionHint;
+    reply?: string;
+  } {
+    const data = result as {
+      pendingAction?: {
+        id: string;
+        type: string;
+        title?: string;
+        summary?: string;
+        payload?: PendingActionPayload;
+      };
+      summary?: string;
+      itemCount?: number;
+      skippedDuplicate?: boolean;
+      requiresConfirmation?: boolean;
+    };
+    if (data?.pendingAction?.id && data.pendingAction.type === 'APPROVE_AUTOMATION_RUN') {
+      return {
+        reply: formatToolResultForLocalReply(
+          'proposeOutstandingReminderAutomation',
+          result,
+        ),
+        pendingAction: {
+          id: data.pendingAction.id,
+          type: data.pendingAction.type,
+          title: data.pendingAction.title ?? 'Approuver l’automatisation',
+          summary: data.pendingAction.summary ?? data.summary ?? '',
+          payload: data.pendingAction.payload ?? {},
+        },
+      };
+    }
+    return {
+      reply: formatToolResultForLocalReply('proposeOutstandingReminderAutomation', result),
+    };
   }
 
   private attachPendingCreateLease(

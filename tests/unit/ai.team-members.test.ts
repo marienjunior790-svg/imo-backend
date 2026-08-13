@@ -244,7 +244,10 @@ describe('AiToolsService.execute getTeamMembers', () => {
     const tools = new AiToolsService(
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
       { listOrganizationMembers } as unknown as TeamMembersService,
+      {} as never,
       {} as never,
     );
 
@@ -267,9 +270,12 @@ describe('AiToolsService.execute getTeamMembers', () => {
     const tools = new AiToolsService(
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
       {
         listOrganizationMembers: jest.fn().mockRejectedValue(new ForbiddenError('Organisation requise')),
       } as unknown as TeamMembersService,
+      {} as never,
       {} as never,
     );
     const result = (await tools.execute('', 'getTeamMembers', { role: 'AGENT' })) as {
@@ -291,7 +297,7 @@ describe('AiToolsService.resolveLocalToolIntents — régression tools existants
 
   it('détecte toujours le patrimoine', () => {
     expect(tools.resolveLocalToolIntents('Résumer mon patrimoine').map((i) => i.name)).toContain(
-      'getDashboardSummary',
+      'analyzePortfolio',
     );
   });
 
