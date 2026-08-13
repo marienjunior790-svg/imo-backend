@@ -44,4 +44,10 @@ describe('AI app guide (howto)', () => {
     const reply = resolveAppHowtoReply('comment faire avec le truc ITC ?');
     expect(reply).toBeNull();
   });
+
+  it('explique où voir l’équipe', () => {
+    const reply = resolveAppHowtoReply('où voir mon équipe ?');
+    expect(reply).toBeTruthy();
+    expect(reply!.toLowerCase()).toMatch(/équipe|equipe|agents/);
+  });
 });

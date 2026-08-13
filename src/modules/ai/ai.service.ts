@@ -227,6 +227,18 @@ export class AiService {
       }
     }
 
+    // Session tôt : historique serveur + follow-ups même si le client envoie peu de tours.
+    let sessionEntities: AiSessionEntities = {};
+    if (isAiMemoryEnabled) {
+      try {
+        const row = await this.memory.getSession({ organizationId, userId });
+        sessionEntities = (row?.entitiesJson as AiSessionEntities | null) ?? {};
+      } catch {
+        sessionEntities = {};
+      }
+    }
+    const history = this.mergeChatHistory(input.history, sessionEntities.recentTurns);
+
     // Documents PDF : proposition + confirmation obligatoire (jamais de PDF auto).
     if (this.isNoticeIntent(message)) {
       return this.proposePaymentNotice(organizationId, userId, role, this.extractCuid(message, 'paymentId'));
@@ -241,7 +253,6 @@ export class AiService {
     }
 
     // Mode d’emploi app — après les intents données (sinon « où voir agents » tombe en menu générique).
-    // Si un outil métier matche, on ne court-circuite pas.
     {
       const qEarly = message
         .toLowerCase()
@@ -250,11 +261,12 @@ export class AiService {
       const earlyDataIntent =
         detectPaymentReminderPlan(message) ||
         !!resolveTeamMembersLocalIntent(qEarly) ||
-        this.tools.resolveLocalToolIntents(message).length > 0;
+        this.tools.resolveLocalToolIntents(message, sessionEntities, history).length > 0;
       if (!earlyDataIntent && isAppHowtoIntent(message)) {
         const howto = resolveAppHowtoReply(message);
         if (howto) {
           const ctxGuide = await this.contextService.buildContext(organizationId);
+          void this.persistConversationSession(organizationId, userId, message, [], howto);
           return {
             reply: howto,
             suggestions: buildContextualSuggestions(ctxGuide),
@@ -272,27 +284,16 @@ export class AiService {
 
     // Priorités du jour → analyse locale sur données org (pas de dump générique OpenAI).
     if (isDailyPrioritiesMessage(message)) {
+      const reply = buildLocalFallbackReply(message, ctx);
+      void this.persistConversationSession(organizationId, userId, message, [], reply);
       return {
-        reply: buildLocalFallbackReply(message, ctx),
+        reply,
         suggestions,
         actions: this.dedupeActions(actions),
         poweredBy: 'local',
         contextUsed: true,
       };
     }
-
-    // Session conversationnelle (Phase D) — pour intents locaux + référents.
-    let sessionEntities: AiSessionEntities = {};
-    if (isAiMemoryEnabled) {
-      try {
-        const row = await this.memory.getSession({ organizationId, userId });
-        sessionEntities = (row?.entitiesJson as AiSessionEntities | null) ?? {};
-      } catch {
-        sessionEntities = {};
-      }
-    }
-
-    const history = input.history;
 
     // Intentions métier claires → outils locaux (données réelles, zéro hallucination).
     const hasLocalDataIntent =
@@ -457,6 +458,7 @@ export class AiService {
     if (isAppHowtoIntent(message)) {
       const howto = resolveAppHowtoReply(message);
       if (howto) {
+        void this.persistConversationSession(organizationId, userId, message, [], howto);
         return {
           reply: howto,
           suggestions,
@@ -783,7 +785,36 @@ export class AiService {
     };
   }
 
-  /** Persiste lastIntent / lastToolsUsed / digest pour follow-ups (« pourquoi », « fais pareil »). */
+  /** Fusionne l’historique client avec les tours serveur (continuité conversationnelle). */
+  private mergeChatHistory(
+    client?: AiChatInput['history'],
+    serverTurns?: AiSessionEntities['recentTurns'],
+  ): AiChatInput['history'] {
+    const max = Math.max(4, Number(env.AI_MAX_HISTORY) || 12);
+    const fromClient = (client ?? [])
+      .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
+      .map((h) => ({ role: h.role, content: h.content.trim() }))
+      .filter((h) => h.content.length > 0);
+    if (fromClient.length >= 2) {
+      return fromClient.slice(-max);
+    }
+    const fromServer = (serverTurns ?? [])
+      .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && h.content?.trim())
+      .map((h) => ({ role: h.role, content: h.content.trim() }));
+    if (!fromServer.length) return fromClient.slice(-max);
+    // Préférer le client s’il a 1 tour, compléter avec le serveur avant.
+    const merged = [...fromServer, ...fromClient];
+    // Déduplique tours consécutifs identiques
+    const dedup: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    for (const t of merged) {
+      const prev = dedup[dedup.length - 1];
+      if (prev && prev.role === t.role && prev.content === t.content) continue;
+      dedup.push(t);
+    }
+    return dedup.slice(-max);
+  }
+
+  /** Persiste digest + tours pour follow-ups (même sans outil). */
   private async persistConversationSession(
     organizationId: string,
     userId: string,
@@ -791,17 +822,31 @@ export class AiService {
     toolsUsed: string[],
     reply: string,
   ): Promise<void> {
-    if (!isAiMemoryEnabled || !toolsUsed.length) return;
+    if (!isAiMemoryEnabled) return;
     try {
+      const existing = await this.memory.getSession({ organizationId, userId });
+      const prev = (existing?.entitiesJson as AiSessionEntities | null) ?? {};
+      const prevTurns = Array.isArray(prev.recentTurns) ? prev.recentTurns : [];
+      const recentTurns = [
+        ...prevTurns,
+        { role: 'user' as const, content: message.slice(0, 500) },
+        { role: 'assistant' as const, content: reply.slice(0, 900) },
+      ].slice(-8);
+
+      const entities: AiSessionEntities = {
+        lastUserMessage: message.slice(0, 400),
+        lastReplyDigest: reply.slice(0, 280),
+        recentTurns,
+      };
+      if (toolsUsed.length) {
+        entities.lastIntent = toolsUsed[toolsUsed.length - 1];
+        entities.lastToolsUsed = toolsUsed.slice(-6);
+      }
+
       await this.memory.mergeEntities({
         organizationId,
         userId,
-        entities: {
-          lastIntent: toolsUsed[toolsUsed.length - 1],
-          lastToolsUsed: toolsUsed.slice(-6),
-          lastUserMessage: message.slice(0, 400),
-          lastReplyDigest: reply.slice(0, 280),
-        },
+        entities,
       });
     } catch {
       /* never fail chat */

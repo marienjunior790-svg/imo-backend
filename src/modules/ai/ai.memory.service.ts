@@ -27,6 +27,8 @@ export type AiSessionEntities = {
   lastUserMessage?: string;
   /** Digest court de la dernière réponse (contexte conversationnel). */
   lastReplyDigest?: string;
+  /** Derniers tours user/assistant (continuité si le client envoie peu d’historique). */
+  recentTurns?: Array<{ role: 'user' | 'assistant'; content: string }>;
   notes?: string;
 };
 

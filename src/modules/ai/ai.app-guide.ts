@@ -346,6 +346,59 @@ Les locataires et agents terrain ne voient pas les menus CRM (immeubles, équipe
 Il ne voit jamais les autres locataires ni les finances de l’organisation.`;
   }
 
+  // « Où voir / ouvrir » modules courants (réponses UI concrètes)
+  if (
+    (q.includes('ou ') || q.startsWith('ou') || q.includes('ouvrir') || q.includes('acceder') || q.includes('trouver')) &&
+    (q.includes('equipe') || q.includes('équipe') || (q.includes('agent') && !q.includes('connect')))
+  ) {
+    return `Voir l’équipe / les agents :
+
+1. Menu → Équipe (Agents)
+2. Liste des collaborateurs (gestionnaires + terrain)
+3. Ouvrez une fiche pour LoginId, statut, activité
+
+Astuce IA : demandez « mes agents » pour la liste avec LoginId.`;
+  }
+
+  if (
+    (q.includes('ou ') || q.startsWith('ou') || q.includes('ouvrir') || q.includes('trouver')) &&
+    (q.includes('paiement') || q.includes('impay') || q.includes('loyer'))
+  ) {
+    return `Voir les paiements / impayés :
+
+1. Menu → Paiements
+2. Filtrez « Impayés » / « En attente » / « Payés »
+3. Ouvrez une échéance pour détail, reçu ou marquage payé
+
+Astuce IA : « mes impayés » ou « qui n’a pas payé ».`;
+  }
+
+  if (
+    (q.includes('ou ') || q.startsWith('ou') || q.includes('ouvrir') || q.includes('trouver')) &&
+    (q.includes('contrat') || q.includes('bail'))
+  ) {
+    return `Voir les contrats / baux :
+
+1. Menu → Contrats
+2. Ouvrez un bail (locataire + logement + statut)
+3. Actions : PDF, renouveler, résilier
+
+Astuce IA : « mes contrats » ou « génère le contrat ».`;
+  }
+
+  if (
+    (q.includes('ou ') || q.startsWith('ou') || q.includes('ouvrir') || q.includes('trouver')) &&
+    (q.includes('maintenance') || q.includes('ticket') || q.includes('intervention') || q.includes('sav'))
+  ) {
+    return `Voir la maintenance :
+
+1. Menu → Maintenance / Demandes
+2. Filtrez ouvertes / assignées / clôturées
+3. Ouvrez un ticket pour assigner un agent terrain ou clôturer
+
+Astuce IA : « tickets ouverts » ou « assigne cette intervention ».`;
+  }
+
   // Pas de menu générique : null → le chat continue (outils / OpenAI / historique).
   return null;
 }
