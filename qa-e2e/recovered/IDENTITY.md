@@ -32,12 +32,14 @@ Source pull: device `1441315585023943`
 
 ## Projet source
 
-**Non trouvé** dans les repos GitHub publics accessibles (`imo-backend`, `backend-api`, `loyala-ai`).  
-Chercher localement un projet Flutter avec :
+**Candidat local (PC) :** `C:\Users\HP\Desktop\ITC-mobile` (`pubspec.yaml` trouvé).
 
+À confirmer avant toute modification :
 - `android/app/build.gradle` → `applicationId "cg.immo.tec.immo_tec"`
-- `pubspec.yaml` + `lib/`
-- branding `assets/branding/itc_logo.png`
+- `versionName` / `versionCode` alignés (ou proches de 1.0.39 / 70)
+- `lib/` Flutter + éventuel `assets/branding/itc_logo.png`
+
+Repos GitHub publics accessibles : pas de miroir Flutter ITC.
 
 ## Prochaine intégration J1 (quand le projet Flutter est fourni)
 
