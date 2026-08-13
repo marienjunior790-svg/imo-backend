@@ -14,7 +14,8 @@ Prérequis : backend déployé avec ce branch (J0–J5), app mobile à jour, org
 | A2 | Follow-up « mon logement » / libellé | Hint logement session ou clarification — **pas** dump parc | J1/J3 |
 | A3 | « résumé du bail de \<locataire\> » | Faits Prisma (loyer, dates) — OCR PDF = NOT_SUPPORTED si demandé en clauses | J4 |
 | A4 | « génère le contrat PDF de \<locataire\> » puis « oui » | Propose → confirm → URL PDF réelle | J0 |
-| A5 | « automatise les tâches maintenance » / ouvrir Maintenance | Proposition ou route `/maintenance` — pas de ticket inventé silencieux | J3 |
+| A5 | « crée le ticket » / « oui » après photo (logement connu) | Propose → confirm → ticket Prisma ; ou « automatise les tâches… » = automation | J3/K1 |
+| A6 | « assigne le ticket à \<agent\> » puis « oui » | Propose → confirm → **ASSIGNED** | K2 |
 
 **Échec si :** dump « Voici ce que confirment vos données » après photo ou « oui ».
 
@@ -52,5 +53,5 @@ Prérequis : backend déployé avec ce branch (J0–J5), app mobile à jour, org
 | 2026-08-13 | `bc00c7d` (main / Phase J) | A | PASS | Client téléphone — Intelligence 2.0 |
 | 2026-08-13 | `bc00c7d` (main / Phase J) | B | PASS | Client téléphone — WhatsApp / faits |
 
-> Suite : Phase K1 propose→confirm ticket maintenance (`qa-e2e/PHASE_K_REAL_ACTIONS.md`).
+> Suite : Phase K scénario C — `qa-e2e/PHASE_K3_CLIENT_E2E.md` (ticket + assign).
 
