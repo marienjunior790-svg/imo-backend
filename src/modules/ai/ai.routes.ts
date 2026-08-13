@@ -39,7 +39,7 @@ const mediaUpload = multer({
   },
 });
 
-router.use(...orgStaffPipeline);
+router.use(...orgStaffPipeline); // TENANT excluded — ORG_STAFF_ROLES only (no portal AI routes)
 
 /** GET /ai/status — mode openai | local (jamais de secret exposé) */
 router.get(

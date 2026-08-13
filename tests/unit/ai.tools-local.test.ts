@@ -248,25 +248,27 @@ describe('formatToolResultForLocalReply', () => {
 });
 
 describe('pending actions', () => {
-  beforeEach(() => _resetPendingActionsForTests());
+  beforeEach(async () => {
+    await _resetPendingActionsForTests();
+  });
 
-  it('crée, lit, consomme une action org-scopée', () => {
-    const action = createPendingAction({
+  it('crée, lit, consomme une action org-scopée', async () => {
+    const action = await createPendingAction({
       organizationId: 'org1',
       userId: 'user1',
       type: 'GENERATE_LEASE_PDF',
       payload: { leaseId: 'lease1', summary: 'test' },
     });
     expect(action.id).toBeTruthy();
-    const loaded = getPendingAction(action.id, 'org1', 'user1');
+    const loaded = await getPendingAction(action.id, 'org1', 'user1');
     expect(loaded.payload.leaseId).toBe('lease1');
-    const consumed = consumePendingAction(action.id, 'org1', 'user1');
+    const consumed = await consumePendingAction(action.id, 'org1', 'user1');
     expect(consumed.id).toBe(action.id);
-    expect(() => getPendingAction(action.id, 'org1', 'user1')).toThrow();
+    await expect(getPendingAction(action.id, 'org1', 'user1')).rejects.toThrow();
   });
 
-  it('supporte CREATE_LEASE, SEND_TENANT_MESSAGE et SEND_WHATSAPP_MESSAGE', () => {
-    const lease = createPendingAction({
+  it('supporte CREATE_LEASE, SEND_TENANT_MESSAGE et SEND_WHATSAPP_MESSAGE', async () => {
+    const lease = await createPendingAction({
       organizationId: 'org1',
       userId: 'user1',
       type: 'CREATE_LEASE',
@@ -279,9 +281,9 @@ describe('pending actions', () => {
       },
     });
     expect(lease.type).toBe('CREATE_LEASE');
-    expect(getPendingAction(lease.id, 'org1', 'user1').payload.apartmentId).toBe('a1');
+    expect((await getPendingAction(lease.id, 'org1', 'user1')).payload.apartmentId).toBe('a1');
 
-    const msg = createPendingAction({
+    const msg = await createPendingAction({
       organizationId: 'org1',
       userId: 'user1',
       type: 'SEND_TENANT_MESSAGE',
@@ -293,9 +295,9 @@ describe('pending actions', () => {
       },
     });
     expect(msg.type).toBe('SEND_TENANT_MESSAGE');
-    expect(getPendingAction(msg.id, 'org1', 'user1').payload.body).toBe('Bonjour');
+    expect((await getPendingAction(msg.id, 'org1', 'user1')).payload.body).toBe('Bonjour');
 
-    const wa = createPendingAction({
+    const wa = await createPendingAction({
       organizationId: 'org1',
       userId: 'user1',
       type: 'SEND_WHATSAPP_MESSAGE',
@@ -308,28 +310,28 @@ describe('pending actions', () => {
       },
     });
     expect(wa.type).toBe('SEND_WHATSAPP_MESSAGE');
-    expect(getPendingAction(wa.id, 'org1', 'user1').payload.toPhone).toBe('+242061234567');
+    expect((await getPendingAction(wa.id, 'org1', 'user1')).payload.toPhone).toBe('+242061234567');
   });
 
-  it('refuse une autre organisation', () => {
-    const action = createPendingAction({
+  it('refuse une autre organisation', async () => {
+    const action = await createPendingAction({
       organizationId: 'org1',
       userId: 'user1',
       type: 'GENERATE_LEASE_PDF',
       payload: { leaseId: 'lease1' },
     });
-    expect(() => getPendingAction(action.id, 'org2', 'user1')).toThrow();
+    await expect(getPendingAction(action.id, 'org2', 'user1')).rejects.toThrow();
   });
 
-  it('annule une action', () => {
-    const action = createPendingAction({
+  it('annule une action', async () => {
+    const action = await createPendingAction({
       organizationId: 'org1',
       userId: 'user1',
       type: 'GENERATE_LEASE_PDF',
       payload: {},
     });
-    cancelPendingAction(action.id, 'org1', 'user1');
-    expect(() => getPendingAction(action.id, 'org1', 'user1')).toThrow();
+    await cancelPendingAction(action.id, 'org1', 'user1');
+    await expect(getPendingAction(action.id, 'org1', 'user1')).rejects.toThrow();
   });
 });
 

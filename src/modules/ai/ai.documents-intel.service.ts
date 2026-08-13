@@ -10,6 +10,7 @@ import { inject, injectable } from 'tsyringe';
 import { DocumentType, LeaseStatus } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { decimalToNumber } from '../../shared/utils/response.util.js';
+import { extractCuidPreferLabeled } from './ai.ids.js';
 
 export type DocIntelSourceType =
   | 'LEASE_PDF'
@@ -89,15 +90,12 @@ export type DocumentInconsistency = {
   fields: Record<string, string | number | null>;
 };
 
-const CUID_RE = /\b(c[a-z0-9]{20,})\b/i;
-
 function asMoney(value: unknown): number {
   return decimalToNumber(value as Parameters<typeof decimalToNumber>[0]);
 }
 
 export function extractCuidFromText(text: string): string | undefined {
-  const m = text.match(CUID_RE);
-  return m?.[1];
+  return extractCuidPreferLabeled(text);
 }
 
 function isoDate(d: Date | null | undefined): string | null {

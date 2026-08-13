@@ -358,7 +358,7 @@ export async function runPaymentReminderPlan(
       items: drafts,
       summary: `Envoyer ${M} relance(s) locataire(s) (impayés)`,
     };
-    const pending = createPendingAction({
+    const pending = await createPendingAction({
       organizationId,
       userId,
       type: 'SEND_BATCH_TENANT_REMINDERS',

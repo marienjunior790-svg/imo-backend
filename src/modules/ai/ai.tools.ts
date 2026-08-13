@@ -666,10 +666,11 @@ export class AiToolsService {
         ? (JSON.parse(rawArgs || '{}') as Record<string, unknown>)
         : { ...(rawArgs ?? {}) };
 
-    // Interdit : org inventée par le LLM — seul organizationId du JWT compte.
+    // Interdit : org inventée par le LLM / injection prompt — seul organizationId du JWT compte.
     delete args.organizationId;
     delete args.orgId;
     delete args.organization_id;
+    delete args.org_id;
 
     try {
       switch (toolName as AiToolName) {

@@ -66,8 +66,8 @@ describe('buildReminderBody', () => {
 });
 
 describe('runPaymentReminderPlan', () => {
-  beforeEach(() => {
-    _resetPendingActionsForTests();
+  beforeEach(async () => {
+    await _resetPendingActionsForTests();
   });
 
   it('N=0 → 0 concernés, pas de pending, pas de faux brouillons', async () => {
@@ -178,7 +178,7 @@ describe('runPaymentReminderPlan', () => {
     expect(result.pendingAction?.payload.items?.[0].body).toContain('100');
     expect(result.steps.every((s) => s.status === 'done')).toBe(true);
 
-    const stored = getPendingAction(result.pendingAction!.id, 'org1', 'user1');
+    const stored = await getPendingAction(result.pendingAction!.id, 'org1', 'user1');
     expect(stored.type).toBe('SEND_BATCH_TENANT_REMINDERS');
     expect(stored.payload.items).toHaveLength(1);
   });

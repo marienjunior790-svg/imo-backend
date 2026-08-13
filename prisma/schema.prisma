@@ -229,6 +229,7 @@ model Organization {
   buildingExpenses BuildingExpense[]
   aiMemoryEntries   AiMemoryEntry[]
   aiSessionContexts AiSessionContext[]
+  aiPendingActions  AiPendingAction[]
   aiAutomationRules AiAutomationRule[]
   aiAutomationRuns  AiAutomationRun[]
 
@@ -324,6 +325,7 @@ model User {
   aiMemoryCreated      AiMemoryEntry[]     @relation("AiMemoryCreatedBy")
   aiMemoryUpdated      AiMemoryEntry[]     @relation("AiMemoryUpdatedBy")
   aiSessionContexts    AiSessionContext[]
+  aiPendingActions     AiPendingAction[]
   aiAutomationRulesCreated AiAutomationRule[] @relation("AiAutomationRuleCreatedBy")
   aiAutomationRunsProposed AiAutomationRun[]  @relation("AiAutomationRunProposedBy")
   aiAutomationRunsApproved AiAutomationRun[]  @relation("AiAutomationRunApprovedBy")
@@ -1108,6 +1110,24 @@ model AiSessionContext {
   @@unique([organizationId, userId, sessionKey])
   @@index([expiresAt])
   @@map("ai_session_contexts")
+}
+
+/// Actions IA en attente de confirmation (Phase I — multi-instance Railway)
+model AiPendingAction {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  type           String
+  payload        Json
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId, createdAt])
+  @@index([expiresAt])
+  @@map("ai_pending_actions")
 }
 
 // ─── Automatisations intelligentes ITC (Phase H) ──────────────────────────────

@@ -191,7 +191,7 @@ export class AiAutomationService {
 
     if (existing) {
       if (UNFINISHED.includes(existing.status)) {
-        const pending = this.ensurePendingForRun(existing, organizationId, userId);
+        const pending = await this.ensurePendingForRun(existing, organizationId, userId);
         return {
           run: existing,
           pendingAction: pending,
@@ -270,7 +270,7 @@ export class AiAutomationService {
       });
     }
 
-    const pending = createPendingAction({
+    const pending = await createPendingAction({
       organizationId,
       userId,
       type: 'APPROVE_AUTOMATION_RUN',
@@ -1097,11 +1097,11 @@ export class AiAutomationService {
     return lines.join('\n');
   }
 
-  private ensurePendingForRun(
+  private async ensurePendingForRun(
     run: AiAutomationRun,
     organizationId: string,
     userId: string,
-  ): PendingAction | null {
+  ): Promise<PendingAction | null> {
     if (run.status !== AiAutomationRunStatus.PROPOSED && run.status !== AiAutomationRunStatus.APPROVED) {
       return null;
     }

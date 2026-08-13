@@ -31,6 +31,8 @@ const envSchema = z.object({
   TTS_PROVIDER: z.enum(['openai', 'none']).default('openai'),
   AI_MAX_HISTORY: z.coerce.number().default(10),
   AI_PENDING_ACTION_TTL_MS: z.coerce.number().default(15 * 60_000),
+  /** When true (default), confirmAction missing permission → clear ForbiddenError. */
+  AI_SECURITY_STRICT: z.coerce.boolean().default(true),
   // CORS (production) — origines séparées par des virgules (obligatoire si frontend web)
   // CORS_ORIGINS=https://app.example.com,https://admin.example.com
   CORS_ORIGINS: z.string().optional(),
@@ -95,6 +97,8 @@ export const isAutomationApiConfigured = Boolean(env.N8N_API_KEY);
 export const isOpenAiConfigured = Boolean(env.OPENAI_API_KEY);
 
 export const isAiMemoryEnabled = env.AI_MEMORY_ENABLED;
+
+export const isAiSecurityStrict = env.AI_SECURITY_STRICT;
 
 export const isMailerConfigured = Boolean(
   (env.RESEND_API_KEY && env.MAIL_FROM) ||

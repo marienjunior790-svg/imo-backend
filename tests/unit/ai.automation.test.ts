@@ -52,8 +52,8 @@ function mockAnalytics() {
 }
 
 describe('AiAutomationService', () => {
-  beforeEach(() => {
-    _resetPendingActionsForTests();
+  beforeEach(async () => {
+    await _resetPendingActionsForTests();
   });
 
   it('detect outstanding empty → no proposal items', async () => {
