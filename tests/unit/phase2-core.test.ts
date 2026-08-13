@@ -7,6 +7,7 @@ import { TtlCache } from '../../src/shared/utils/ttl-cache.js';
 const sampleCtx = (): AiOrganizationContext => ({
   organization: { id: 'o1', name: 'Agence Test', city: 'Brazzaville', plan: 'PRO' },
   summary: {
+    totalBuildings: 2,
     totalApartments: 10,
     availableApartments: 2,
     occupiedApartments: 8,
@@ -15,7 +16,10 @@ const sampleCtx = (): AiOrganizationContext => ({
     latePayments: 1,
     pendingPayments: 2,
     collectedThisMonthXaf: 1_200_000,
+    potentialMonthlyRentXaf: 1_500_000,
+    occupancyRate: 80,
   },
+  buildings: [{ name: 'Résidence Test', apartmentCount: 10, occupiedCount: 8, potentialRentXaf: 1_500_000 }],
   latePayments: [
     {
       tenantName: 'Grace T.',

@@ -7,7 +7,7 @@ describe('Plan limits SaaS', () => {
     expect(limits.maxApartments).toBe(10);
     expect(limits.maxUsers).toBe(1);
     expect(limits.pdfPaymentReceipt).toBe(false);
-    expect(limits.aiAssistant).toBe(false);
+    expect(limits.aiAssistant).toBe(true);
   });
 
   it('PRO autorise IA et PDF quittances', () => {

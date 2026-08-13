@@ -32,10 +32,10 @@ async function registerOrg(
       email,
       password,
       firstName: 'Admin',
-      lastName: label.toUpperCase(),
+      lastName: `Org${label}`,
       organizationName: `ITC Iso ${label} ${stamp}`,
       organizationType: 'AGENCY',
-      phone: '0600000099',
+      phone: `0600000${String(stamp).slice(-3)}${label.length}`,
     });
 
   expect(reg.status).toBe(201);

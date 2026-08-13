@@ -27,11 +27,12 @@ describe('Auth signup routes — validation & availability', () => {
     expect(res.body.success).toBe(false);
   });
 
-  it('POST /auth/login rejette email invalide (400)', async () => {
+  it('POST /auth/login rejette identifiant inconnu (401)', async () => {
     const res = await request(app)
       .post('/api/v1/auth/login')
       .send({ email: 'not-an-email', password: 'test1234' });
-    expect(res.status).toBe(400);
+    // Login accepte identifier libre (email ou loginId) — inconnu → 401, pas validation email Zod.
+    expect(res.status).toBe(401);
     expect(res.body.success).toBe(false);
   });
 });
@@ -62,7 +63,7 @@ describeDb('Auth signup + login — parcours DB', () => {
     expect(reg.body.success).toBe(true);
     expect(reg.body.data.accessToken).toBeDefined();
     expect(reg.body.data.refreshToken).toBeDefined();
-    expect(reg.body.data.user.role).toBe('ORG_ADMIN');
+    expect(reg.body.data.user.role).toBe('OWNER');
     expect(reg.body.data.user.email).toBe(email);
     expect(reg.body.data.organization?.id).toBeDefined();
 
@@ -72,7 +73,7 @@ describeDb('Auth signup + login — parcours DB', () => {
 
     expect(login.status).toBe(200);
     expect(login.body.data.accessToken).toBeDefined();
-    expect(login.body.data.user.role).toBe('ORG_ADMIN');
+    expect(login.body.data.user.role).toBe('OWNER');
 
     const me = await request(app)
       .get('/api/v1/auth/me')
@@ -108,7 +109,7 @@ describeDb('Auth signup + login — parcours DB', () => {
     expect(login.body.data.user.role).toBe('TENANT');
   });
 
-  it('agent créé par ORG_ADMIN → login', async () => {
+  it('agent créé par OWNER → login', async () => {
     const orgEmail = `org.agent.${stamp}@itc-test.cg`;
     const orgPass = 'SignupOrg2!';
     const agentEmail = `agent.signup.${stamp}@itc-test.cg`;
@@ -122,7 +123,7 @@ describeDb('Auth signup + login — parcours DB', () => {
         firstName: 'Admin',
         lastName: 'Agence',
         organizationName: `Agence Agent ${stamp}`,
-        organizationType: 'OWNER',
+        organizationType: 'AGENCY',
       });
     expect(org.status).toBe(201);
     const adminToken = org.body.data.accessToken as string;
@@ -147,8 +148,8 @@ describeDb('Auth signup + login — parcours DB', () => {
       expect(login.status).toBe(200);
       expect(login.body.data.user.role).toBe('AGENT');
     } else {
-      // Fallback : vérifier que le register org a bien créé un ORG_ADMIN utilisable
-      expect(org.body.data.user.role).toBe('ORG_ADMIN');
+      // Fallback : vérifier que le register org a bien créé un OWNER utilisable
+      expect(org.body.data.user.role).toBe('OWNER');
       console.warn('[test] admin/users create skipped — status', create.status, create.body);
     }
   });

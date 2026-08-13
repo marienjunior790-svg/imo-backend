@@ -28,7 +28,7 @@ describeDb('Memberships Identity (P3)', () => {
 
     expect(reg.status).toBe(201);
     expect(reg.body.data.membership?.id).toBeDefined();
-    expect(reg.body.data.membership?.role).toBe('ORG_ADMIN');
+    expect(reg.body.data.membership?.role).toBe('OWNER');
     expect(reg.body.data.membership?.productRole).toBe('ORG_OWNER');
     expect(Array.isArray(reg.body.data.capabilities)).toBe(true);
     expect(reg.body.data.capabilities).toContain('BUILDING_CREATE');

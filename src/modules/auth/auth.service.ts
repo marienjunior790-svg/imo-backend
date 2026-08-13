@@ -602,12 +602,14 @@ export class AuthService {
     const identifier = input.identifier || input.email;
     const user = await this.repo.findByIdentifier(identifier);
     if (!user || !user.isActive) {
-      await this.auditService.log({
-        action: AuditAction.AUTH_LOGIN_FAILED,
-        ipAddress: meta?.ipAddress,
-        newValue: { identifier: identifier.toLowerCase() },
-        success: false,
-      });
+      await this.auditService
+        .log({
+          action: AuditAction.AUTH_LOGIN_FAILED,
+          ipAddress: meta?.ipAddress,
+          newValue: { identifier: String(identifier ?? '').toLowerCase() },
+          success: false,
+        })
+        .catch(() => undefined);
       throw new UnauthorizedError('Identifiant ou mot de passe incorrect');
     }
 
@@ -698,7 +700,7 @@ export class AuthService {
     );
 
     const subscription = user.organizationId
-      ? await this.subscriptionService.getSubscription(user.organizationId)
+      ? await this.subscriptionService.getSubscription(user.organizationId).catch(() => null)
       : null;
     const permissions = await this.featureService.getUserFeatureMap(user.id, effectiveRole);
     const rbac = await this.rbacService.getPermissionsMap(effectiveRole);
@@ -819,7 +821,7 @@ export class AuthService {
     const effectiveRole = extras.membership.role as UserRole;
 
     const subscription = found.organizationId
-      ? await this.subscriptionService.getSubscription(found.organizationId)
+      ? await this.subscriptionService.getSubscription(found.organizationId).catch(() => null)
       : null;
     const permissions = await this.featureService.getUserFeatureMap(found.id, effectiveRole);
     const rbac = await this.rbacService.getPermissionsMap(effectiveRole);
