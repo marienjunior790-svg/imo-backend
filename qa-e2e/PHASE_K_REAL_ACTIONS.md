@@ -18,7 +18,7 @@
 3. Sans logement → demande libellé, pas de pending inventé  
 4. « automatise les tâches maintenance » → toujours automation existante (pas ce flux)
 
-## K2 — Assignation agent propose→confirm — **IN PROGRESS**
+## K2 — Assignation agent propose→confirm — **DONE** (`5cdb654`)
 
 | Avant | Après (K2) |
 |-------|------------|
@@ -39,6 +39,15 @@
 3. Nom ambigu / absent → liste agents, pas dump parc  
 4. Sans ticket en session → demande de créer d’abord (ou dernier OPEN org)
 
-## Suite
+## K3 — Scénarios client E2E — **CHECKLIST** (`qa-e2e/PHASE_K3_CLIENT_E2E.md`)
 
-- K3 — journal E2E téléphone (création + assignation)
+1. Photo fuite → propose ticket → oui → ID Prisma  
+2. Assigne à \<agent\> → oui → **ASSIGNED**  
+3. Régressions J (PDF / Meta / dump) toujours vertes  
+
+Exécution manuelle téléphone ; tests unitaires chemin C dans `tests/unit/ai.phase-k3-scenarios.test.ts`.
+
+## Statut phase
+
+**Phase K (K1–K3) — code COMPLETE sur `main`.**  
+Reste : journal téléphone scénario C (PASS/FAIL côté client).
