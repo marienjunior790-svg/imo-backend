@@ -59,7 +59,10 @@ import {
   buildMaintenanceProposeAppendix,
   buildMaintenanceTicketDescription,
   buildMaintenanceTicketTitle,
+  extractAssigneeNameHint,
+  matchMaintenanceAgentByName,
   priorityFromVisionHint,
+  wantsAssignMaintenanceTicket,
   wantsCreateMaintenanceTicket,
 } from './ai.maintenance-ticket.js';
 import { SubscriptionService } from '../subscriptions/subscription.service.js';
@@ -348,6 +351,11 @@ export class AiService {
     // Phase K1 — créer ticket maintenance (propose→confirm, pas d’OpenAI tool)
     if (wantsCreateMaintenanceTicket(message)) {
       return this.proposeMaintenanceTicket(organizationId, userId, role, message, sessionEntities);
+    }
+
+    // Phase K2 — assigner ticket à un agent (propose→confirm)
+    if (wantsAssignMaintenanceTicket(message)) {
+      return this.proposeAssignMaintenanceTicket(organizationId, userId, role, message, sessionEntities);
     }
 
     // Follow-up court après une réponse agents → guide connexion (pas un dump dashboard).
@@ -2198,6 +2206,8 @@ export class AiService {
       await this.assertConfirmPermission(role, 'LEASE_CREATE');
     } else if (preview.type === 'CREATE_MAINTENANCE_TICKET') {
       await this.assertConfirmPermission(role, 'MAINTENANCE_CREATE');
+    } else if (preview.type === 'ASSIGN_MAINTENANCE_TICKET') {
+      await this.assertConfirmPermission(role, 'MAINTENANCE_ASSIGN');
     } else if (
       preview.type === 'SEND_TENANT_MESSAGE' ||
       preview.type === 'SEND_WHATSAPP_MESSAGE' ||
@@ -2231,6 +2241,10 @@ export class AiService {
 
     if (action.type === 'CREATE_MAINTENANCE_TICKET') {
       return this.executeCreateMaintenanceTicket(organizationId, userId, action.payload);
+    }
+
+    if (action.type === 'ASSIGN_MAINTENANCE_TICKET') {
+      return this.executeAssignMaintenanceTicket(organizationId, userId, action.payload);
     }
 
     if (action.type === 'SEND_TENANT_MESSAGE') {
@@ -2504,17 +2518,39 @@ export class AiService {
       { userId, name: 'Intelligence ITC' },
     );
 
+    const assigneeLabel =
+      ticket.assignedToName ||
+      (ticket.assignedTo
+        ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
+        : null);
+    const statusLabel = String(ticket.status);
     const reply =
-      `Ticket maintenance créé (**OPEN**).\n` +
+      `Ticket maintenance créé (**${statusLabel}**).\n` +
       `• ID : \`${ticket.id}\`\n` +
       `• Titre : ${ticket.title}\n` +
       `• Priorité : ${ticket.priority}\n` +
       `• Logement : ${payload.apartmentLabel ?? payload.apartmentId}\n` +
-      `Vous pouvez l’assigner à un agent depuis Maintenance.`;
+      (assigneeLabel
+        ? `• Assigné à : **${assigneeLabel}**\n`
+        : `• Pas encore assigné — dites « assigne le ticket à \<agent\> ».\n`);
+
+    void this.memory.mergeEntities({
+      organizationId,
+      userId,
+      entities: {
+        lastMaintenanceTicketId: ticket.id,
+        ...(payload.apartmentId ? { lastApartmentId: payload.apartmentId } : {}),
+        lastIntent: 'createMaintenanceTicket',
+        lastToolsUsed: ['createMaintenanceTicket'],
+        lastReplyDigest: reply.slice(0, 240),
+      },
+    });
 
     return {
       reply,
-      suggestions: ['Assigner un agent', 'Voir les tickets', 'Mes logements'],
+      suggestions: assigneeLabel
+        ? ['Voir les tickets', 'Mes logements', 'Ouvre Maintenance']
+        : ['Assigne le ticket à …', 'Voir les tickets', 'Ouvre Maintenance'],
       actions: [
         { label: 'Ouvrir Maintenance', route: '/maintenance' },
         { label: 'Voir l’équipe', route: '/team/agents' },
@@ -2522,6 +2558,273 @@ export class AiService {
       poweredBy: 'local',
       contextUsed: true,
       toolsUsed: ['createMaintenanceTicket'],
+    };
+  }
+
+  private async proposeAssignMaintenanceTicket(
+    organizationId: string,
+    userId: string,
+    role: UserRole,
+    message: string,
+    session: AiSessionEntities,
+  ): Promise<AiChatResponse> {
+    await this.assertAiAccess(organizationId, userId, role);
+
+    const ticketIdFromMsg = this.extractCuid(message);
+    let ticketId = ticketIdFromMsg ?? session.lastMaintenanceTicketId;
+
+    if (!ticketId && session.lastApartmentId) {
+      const latest = await this.prisma.maintenanceTicket.findFirst({
+        where: {
+          organizationId,
+          apartmentId: session.lastApartmentId,
+          status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS'] },
+        },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true },
+      });
+      ticketId = latest?.id;
+    }
+
+    if (!ticketId) {
+      const latestOrg = await this.prisma.maintenanceTicket.findFirst({
+        where: {
+          organizationId,
+          status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS'] },
+        },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true, title: true },
+      });
+      if (latestOrg) {
+        ticketId = latestOrg.id;
+      }
+    }
+
+    if (!ticketId) {
+      const reply =
+        `Aucun ticket maintenance à assigner. Créez d’abord un ticket (photo dégât + « oui », ou « crée le ticket »), puis « assigne le ticket à \<agent\> ».`;
+      void this.persistConversationSession(organizationId, userId, message, [], reply);
+      return {
+        reply,
+        suggestions: ['Crée le ticket', 'Ouvre Maintenance', 'Voir l’équipe'],
+        actions: [
+          { label: 'Maintenance', route: '/maintenance' },
+          { label: 'Équipe', route: '/team/agents' },
+        ],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    const ticket = await this.maintenance.get(organizationId, ticketId).catch(() => null);
+    if (!ticket) {
+      return {
+        reply: `Ticket \`${ticketId}\` introuvable dans votre organisation.`,
+        suggestions: ['Ouvre Maintenance', 'Crée le ticket'],
+        actions: [{ label: 'Maintenance', route: '/maintenance' }],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    const agents = await this.maintenance.listMaintenanceAgents(organizationId);
+    if (!agents.length) {
+      const reply =
+        `Aucun agent de maintenance actif dans l’organisation. Ajoutez un agent (rôle AGENT / TECHNICIAN) puis réessayez.`;
+      return {
+        reply,
+        suggestions: ['Voir l’équipe', 'Ouvre Maintenance'],
+        actions: [
+          { label: 'Équipe', route: '/team/agents' },
+          { label: 'Maintenance', route: '/maintenance' },
+        ],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    const nameHint = extractAssigneeNameHint(message);
+    const matched = matchMaintenanceAgentByName(agents, nameHint);
+
+    if (matched.ambiguous.length > 1) {
+      const list = matched.ambiguous
+        .slice(0, 5)
+        .map((a) => `• ${a.firstName} ${a.lastName}`)
+        .join('\n');
+      const reply =
+        `Plusieurs agents correspondent. Précisez le nom :\n${list}\n` +
+        `Ex. « assigne le ticket à ${matched.ambiguous[0]!.firstName} ${matched.ambiguous[0]!.lastName} ».`;
+      return {
+        reply,
+        suggestions: matched.ambiguous.slice(0, 3).map((a) => `Assigne à ${a.firstName} ${a.lastName}`),
+        actions: [{ label: 'Équipe', route: '/team/agents' }],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    let agent = matched.match;
+    if (!agent && !nameHint && agents.length === 1) {
+      agent = agents[0];
+    }
+    if (!agent && !nameHint && agents.length > 1) {
+      const list = agents
+        .slice(0, 8)
+        .map((a) => `• ${a.firstName} ${a.lastName}`)
+        .join('\n');
+      const reply =
+        `Quel agent pour le ticket « ${ticket.title} » (\`${ticket.id}\`) ?\n${list}\n` +
+        `Ex. « assigne le ticket à ${agents[0]!.firstName} ».`;
+      void this.memory.mergeEntities({
+        organizationId,
+        userId,
+        entities: { lastMaintenanceTicketId: ticket.id },
+      });
+      return {
+        reply,
+        suggestions: agents.slice(0, 3).map((a) => `Assigne à ${a.firstName} ${a.lastName}`),
+        actions: [
+          { label: 'Maintenance', route: '/maintenance' },
+          { label: 'Équipe', route: '/team/agents' },
+        ],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    if (!agent) {
+      const reply =
+        `Agent introuvable pour « ${nameHint ?? '—'} ». Agents actifs : ` +
+        agents
+          .slice(0, 6)
+          .map((a) => `${a.firstName} ${a.lastName}`)
+          .join(', ') +
+        `.`;
+      return {
+        reply,
+        suggestions: agents.slice(0, 3).map((a) => `Assigne à ${a.firstName} ${a.lastName}`),
+        actions: [{ label: 'Équipe', route: '/team/agents' }],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    const assigneeName = `${agent.firstName} ${agent.lastName}`;
+    const pending = await createPendingAction({
+      organizationId,
+      userId,
+      type: 'ASSIGN_MAINTENANCE_TICKET',
+      payload: {
+        ticketId: ticket.id,
+        assignedToId: agent.id,
+        assignedToName: assigneeName,
+        apartmentLabel: ticket.apartment?.label,
+        title: ticket.title,
+        summary: `Assigner « ${ticket.title} » → ${assigneeName}`,
+      },
+    });
+
+    const reply =
+      `**Proposition d’assignation**\n` +
+      `• Ticket : **${ticket.title}** (\`${ticket.id}\`)\n` +
+      `• Agent : **${assigneeName}**\n` +
+      `• Répondez **« oui »** / **« confirme »** pour assigner (statut ASSIGNED), ou **« annule »**.\n` +
+      `• Aucune assignation silencieuse.`;
+
+    void this.memory.mergeEntities({
+      organizationId,
+      userId,
+      entities: {
+        lastMaintenanceTicketId: ticket.id,
+        lastIntent: 'proposeAssignMaintenanceTicket',
+        lastToolsUsed: ['proposeAssignMaintenanceTicket'],
+        lastUserMessage: message.slice(0, 200),
+        lastReplyDigest: reply.slice(0, 240),
+      },
+    });
+    void this.persistConversationSession(
+      organizationId,
+      userId,
+      message,
+      ['proposeAssignMaintenanceTicket'],
+      reply,
+    );
+
+    return {
+      reply,
+      suggestions: ['Oui, assigne', 'Annule', 'Ouvre Maintenance'],
+      actions: [
+        { label: 'Ouvrir Maintenance', route: '/maintenance' },
+        { label: 'Voir l’équipe', route: '/team/agents' },
+      ],
+      poweredBy: 'local',
+      contextUsed: true,
+      pendingAction: {
+        id: pending.id,
+        type: pending.type,
+        title: 'Assigner le ticket',
+        summary: pending.payload.summary ?? assigneeName,
+        payload: pending.payload,
+      },
+    };
+  }
+
+  private async executeAssignMaintenanceTicket(
+    organizationId: string,
+    userId: string,
+    payload: PendingActionPayload,
+  ): Promise<AiChatResponse> {
+    if (!payload.ticketId) throw new ValidationError('ticketId manquant pour l’assignation');
+    if (!payload.assignedToId && !payload.assignedToName) {
+      throw new ValidationError('agent manquant pour l’assignation');
+    }
+
+    const updated = await this.maintenance.assign(
+      organizationId,
+      payload.ticketId,
+      {
+        assignedToId: payload.assignedToId,
+        assignedToName: payload.assignedToName,
+        note: 'Assignation confirmée via Intelligence ITC',
+      },
+      { userId, name: 'Intelligence ITC' },
+    );
+
+    const assignee =
+      updated.assignedToName ||
+      (updated.assignedTo
+        ? `${updated.assignedTo.firstName} ${updated.assignedTo.lastName}`
+        : payload.assignedToName) ||
+      'agent';
+
+    const reply =
+      `Ticket assigné (**ASSIGNED**).\n` +
+      `• ID : \`${updated.id}\`\n` +
+      `• Titre : ${updated.title}\n` +
+      `• Agent : **${assignee}**\n` +
+      `Suivi depuis Maintenance.`;
+
+    void this.memory.mergeEntities({
+      organizationId,
+      userId,
+      entities: {
+        lastMaintenanceTicketId: updated.id,
+        lastIntent: 'assignMaintenanceTicket',
+        lastToolsUsed: ['assignMaintenanceTicket'],
+        lastReplyDigest: reply.slice(0, 240),
+      },
+    });
+
+    return {
+      reply,
+      suggestions: ['Voir les tickets', 'Créer un autre ticket', 'Mes logements'],
+      actions: [
+        { label: 'Ouvrir Maintenance', route: '/maintenance' },
+        { label: 'Voir l’équipe', route: '/team/agents' },
+      ],
+      poweredBy: 'local',
+      contextUsed: true,
+      toolsUsed: ['assignMaintenanceTicket'],
     };
   }
 

@@ -21,6 +21,8 @@ export type AiSessionEntities = {
   lastApartmentId?: string;
   lastLeaseId?: string;
   lastPaymentId?: string;
+  /** Dernier ticket maintenance (création / assignation). */
+  lastMaintenanceTicketId?: string;
   lastIntent?: string;
   /** Derniers outils exécutés (pour « pourquoi » / « fais pareil »). */
   lastToolsUsed?: string[];

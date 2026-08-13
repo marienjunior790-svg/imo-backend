@@ -49,6 +49,7 @@ const PROPOSE_INTENTS = new Set([
   'proposeMaintenanceTasksFromTickets',
   'proposeAnomalyActions',
   'proposeCreateMaintenanceTicket',
+  'proposeAssignMaintenanceTicket',
 ]);
 
 function lastWasPropose(session?: AiSessionEntities | null): boolean {
@@ -69,6 +70,8 @@ function pendingCapability(pendingType?: string | null): AiCapabilityId | null {
     case 'CREATE_LEASE':
       return 'LEASE_CREATE';
     case 'CREATE_MAINTENANCE_TICKET':
+      return 'MAINTENANCE';
+    case 'ASSIGN_MAINTENANCE_TICKET':
       return 'MAINTENANCE';
     case 'SEND_TENANT_MESSAGE':
       return 'MSG_INAPP';
@@ -162,6 +165,11 @@ function scoreUtterance(q: string): Array<{ id: AiCapabilityId; score: number }>
     bump('PORTFOLIO_READ', 4);
   }
   if (
+    (q.includes('assign') || q.includes('attrib')) &&
+    (q.includes('ticket') || q.includes('maintenance') || q.includes('agent') || q.includes('technicien'))
+  ) {
+    bump('MAINTENANCE', 9);
+  } else if (
     (q.includes('ticket') || q.includes('maintenance')) &&
     (q.includes('cree') || q.includes('creer') || q.includes('ouvre') || q.includes('ouvrir') || q.includes('signal'))
   ) {
@@ -195,7 +203,9 @@ function clarificationForPending(pendingType?: string | null): string {
     case 'LEASE_CREATE':
       return `Une création de bail est en attente. Répondez « oui » / « confirme », ou « annule ».`;
     case 'MAINTENANCE':
-      return `Un ticket maintenance est en attente. Répondez « oui » / « confirme » pour le créer (OPEN), ou « annule ».`;
+      return pendingType === 'ASSIGN_MAINTENANCE_TICKET'
+        ? `Une assignation de ticket est en attente. Répondez « oui » / « confirme », ou « annule ».`
+        : `Un ticket maintenance est en attente. Répondez « oui » / « confirme » pour le créer (OPEN), ou « annule ».`;
     case 'AUTOMATION':
       return `Une automatisation est en attente d’approbation. Répondez « oui » / « confirme », ou « annule ».`;
     default:

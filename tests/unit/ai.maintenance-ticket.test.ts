@@ -1,6 +1,9 @@
 import {
   buildMaintenanceProposeAppendix,
   buildMaintenanceTicketTitle,
+  extractAssigneeNameHint,
+  matchMaintenanceAgentByName,
+  wantsAssignMaintenanceTicket,
   wantsCreateMaintenanceTicket,
 } from '../../src/modules/ai/ai.maintenance-ticket.js';
 import { resolveCapabilityRoute } from '../../src/modules/ai/ai.capability-router.js';
@@ -50,5 +53,36 @@ describe('ai.maintenance-ticket (Phase K1)', () => {
     });
     expect(pending.blockPortfolioFallback).toBe(true);
     expect(pending.clarification).toMatch(/ticket maintenance/i);
+  });
+});
+
+describe('ai.maintenance-ticket (Phase K2)', () => {
+  it('détecte assignation et ignore automation', () => {
+    expect(wantsAssignMaintenanceTicket('assigne le ticket à Jean Mbemba')).toBe(true);
+    expect(wantsAssignMaintenanceTicket('attribue à l’agent Marie')).toBe(true);
+    expect(wantsAssignMaintenanceTicket('automatise les tâches maintenance')).toBe(false);
+    expect(wantsCreateMaintenanceTicket('crée le ticket maintenance')).toBe(true);
+    expect(wantsAssignMaintenanceTicket('crée le ticket maintenance')).toBe(false);
+  });
+
+  it('match agent par nom', () => {
+    const agents = [
+      { id: '1', firstName: 'Jean', lastName: 'Mbemba' },
+      { id: '2', firstName: 'Marie', lastName: 'Kouassi' },
+    ];
+    expect(matchMaintenanceAgentByName(agents, 'Jean Mbemba').match?.id).toBe('1');
+    expect(matchMaintenanceAgentByName(agents, 'Marie').match?.id).toBe('2');
+    expect(extractAssigneeNameHint('assigne le ticket à Jean Mbemba')).toMatch(/Jean/i);
+  });
+
+  it('capability router : assigne ticket → MAINTENANCE', () => {
+    const routed = resolveCapabilityRoute('assigne le ticket à Jean');
+    expect(routed.capability).toBe('MAINTENANCE');
+    const pending = resolveCapabilityRoute('euh ok', {
+      hasPending: true,
+      pendingType: 'ASSIGN_MAINTENANCE_TICKET',
+    });
+    expect(pending.blockPortfolioFallback).toBe(true);
+    expect(pending.clarification).toMatch(/assignation/i);
   });
 });
