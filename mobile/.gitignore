@@ -1,0 +1,13 @@
+node_modules/
+.expo/
+dist/
+*.jks
+*.keystore
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+ios/Pods/
+*.log
+.env
+.env.*

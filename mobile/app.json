@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "Intelligence ITC",
+    "slug": "intelligence-itc",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B3D2E"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "cg.itc.intelligence"
+    },
+    "android": {
+      "package": "cg.itc.intelligence",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#0B3D2E",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "INTERNET"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "ITC utilise vos photos pour analyser dégâts et documents.",
+          "cameraPermission": "ITC utilise la caméra pour signaler une maintenance."
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": "https://imo-backend-production-d2d1.up.railway.app/api/v1"
+    }
+  }
+}
