@@ -101,3 +101,80 @@ export function buildMaintenanceProposeAppendix(input: {
     `• Je ne crée pas le ticket tout seul.\n`
   );
 }
+
+/**
+ * Intent NL : assigner un ticket à un agent (pas création, pas automation).
+ */
+export function wantsAssignMaintenanceTicket(message: string): boolean {
+  const q = normalizeFr(message);
+  if (q.includes('automatis')) return false;
+  if (wantsCreateMaintenanceTicket(message) && !q.includes('assign') && !q.includes('attrib')) {
+    return false;
+  }
+
+  const assignVerb =
+    q.includes('assign') ||
+    q.includes('attrib') ||
+    q.includes('donne a') ||
+    q.includes('donne à') ||
+    (q.includes('envoie') && q.includes('agent'));
+
+  const target =
+    q.includes('ticket') ||
+    q.includes('maintenance') ||
+    q.includes('technicien') ||
+    q.includes('agent') ||
+    q.includes('intervention');
+
+  return assignVerb && target;
+}
+
+/** Extrait un nom d’agent après « à / a / agent ». */
+export function extractAssigneeNameHint(message: string): string | undefined {
+  const raw = message.trim();
+  const patterns = [
+    /(?:assigne[rz]?|attribue[rz]?|donne)\s+(?:le\s+ticket\s+)?(?:[àa]\s+)?(?:l['’]agent\s+)?(.+)$/i,
+    /(?:assigne[rz]?|attribue[rz]?)\s+(?:[àa]\s+)?(.+)$/i,
+    /agent\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\-']+(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\-']+)?)/i,
+  ];
+  for (const re of patterns) {
+    const m = raw.match(re);
+    if (!m?.[1]) continue;
+    let name = m[1]
+      .replace(/\b(le|la|les|ticket|maintenance|technicien|s['’]il|svp|please)\b/gi, ' ')
+      .replace(/[?.!,;:]+$/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (name.length >= 2 && name.length <= 80) return name;
+  }
+  return undefined;
+}
+
+export function matchMaintenanceAgentByName<T extends { id: string; firstName: string; lastName: string }>(
+  agents: T[],
+  hint: string | undefined,
+): { match?: T; ambiguous: T[] } {
+  if (!hint || !agents.length) return { ambiguous: [] };
+  const q = normalizeFr(hint);
+  const scored = agents
+    .map((a) => {
+      const full = normalizeFr(`${a.firstName} ${a.lastName}`);
+      const rev = normalizeFr(`${a.lastName} ${a.firstName}`);
+      const first = normalizeFr(a.firstName);
+      const last = normalizeFr(a.lastName);
+      let score = 0;
+      if (full === q || rev === q) score = 100;
+      else if (full.includes(q) || rev.includes(q) || q.includes(full)) score = 80;
+      else if (last.length >= 2 && q.includes(last)) score = 60;
+      else if (first.length >= 2 && q.includes(first)) score = 40;
+      return { a, score };
+    })
+    .filter((r) => r.score > 0)
+    .sort((x, y) => y.score - x.score);
+
+  if (!scored.length) return { ambiguous: [] };
+  const top = scored[0]!.score;
+  const ties = scored.filter((s) => s.score === top).map((s) => s.a);
+  if (ties.length > 1) return { ambiguous: ties };
+  return { match: ties[0], ambiguous: [] };
+}

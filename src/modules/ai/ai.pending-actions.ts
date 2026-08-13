@@ -17,6 +17,7 @@ export type PendingActionType =
   | 'GENERATE_PAYMENT_NOTICE'
   | 'CREATE_LEASE'
   | 'CREATE_MAINTENANCE_TICKET'
+  | 'ASSIGN_MAINTENANCE_TICKET'
   | 'SEND_TENANT_MESSAGE'
   | 'SEND_WHATSAPP_MESSAGE'
   | 'SEND_BATCH_TENANT_REMINDERS'
@@ -64,6 +65,10 @@ export interface PendingActionPayload {
   title?: string;
   description?: string;
   priority?: string;
+  /** ASSIGN_MAINTENANCE_TICKET */
+  ticketId?: string;
+  assignedToId?: string;
+  assignedToName?: string;
 }
 
 export interface PendingAction {
