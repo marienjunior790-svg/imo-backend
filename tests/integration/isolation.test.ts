@@ -92,9 +92,8 @@ async function seedOrgResources(
   expect(tenant.status).toBe(201);
   const tenantId = tenant.body.data.id as string;
 
-  const start = new Date();
-  const end = new Date(start);
-  end.setFullYear(end.getFullYear() + 1);
+  const startDate = '2026-01-15';
+  const endDate = '2027-01-14';
 
   const lease = await request(app)
     .post('/api/v1/leases')
@@ -102,11 +101,16 @@ async function seedOrgResources(
     .send({
       apartmentId,
       tenantId,
-      startDate: start.toISOString().slice(0, 10),
-      endDate: end.toISOString().slice(0, 10),
+      startDate,
+      endDate,
       monthlyRent: 150_000,
       depositAmount: 150_000,
     });
+  if (lease.status !== 201) {
+    // Aide CI : remonter le message Zod / métier
+    // eslint-disable-next-line no-console
+    console.error('[isolation] lease create failed', lease.status, lease.body);
+  }
   expect(lease.status).toBe(201);
   const leaseId = lease.body.data.id as string;
 
@@ -115,10 +119,14 @@ async function seedOrgResources(
     .set(auth)
     .send({
       leaseId,
-      periodMonth: start.getMonth() + 1,
-      periodYear: start.getFullYear(),
+      periodMonth: 1,
+      periodYear: 2026,
       amount: 150_000,
     });
+  if (payment.status !== 201) {
+    // eslint-disable-next-line no-console
+    console.error('[isolation] payment create failed', payment.status, payment.body);
+  }
   expect(payment.status).toBe(201);
   const paymentId = payment.body.data.id as string;
 
