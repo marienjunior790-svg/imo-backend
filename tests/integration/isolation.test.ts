@@ -141,8 +141,8 @@ describeDb('Isolation multi-tenant — org A ≠ org B (TECH-002)', () => {
     const orgB = await registerOrg(app, stamp, 'b');
     expect(orgA.orgId).not.toBe(orgB.orgId);
 
-    const resA = await seedOrgResources(app, orgA.token, 'a');
-    const resB = await seedOrgResources(app, orgB.token, 'b');
+    const resA = await seedOrgResources(app, orgA.token, 'a', stamp);
+    const resB = await seedOrgResources(app, orgB.token, 'b', stamp);
 
     a = { ...orgA, ...resA };
     b = { ...orgB, ...resB };
