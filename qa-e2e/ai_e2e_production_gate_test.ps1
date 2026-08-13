@@ -297,9 +297,9 @@ try {
     @{ role = 'assistant'; content = [string]$rd1.data.reply }
   )
   $docMsg = if ($leaseId) {
-    'Extrais les faits cles du document / bail leaseId=' + $leaseId + ' (extractDocumentFacts) puis verifie la coherence du loyer.'
+    'extraire les infos du contrat leaseId=' + $leaseId + ' puis verifie les incoherences du bail leaseId=' + $leaseId
   } else {
-    'Utilise extractDocumentFacts sur un contrat recent puis verifie la coherence du loyer.'
+    'extraire les infos du contrat puis verifie les incoherences du bail'
   }
   $rd2 = Invoke-AiChat -headers $h -message $docMsg -history $histDoc
   $td2 = ToolsOf $rd2

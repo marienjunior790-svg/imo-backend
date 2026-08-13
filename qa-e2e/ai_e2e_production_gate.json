@@ -1,0 +1,130 @@
+﻿{
+    "phase":  "PRODUCTION_GATE",
+    "verdict":  "PASS",
+    "pass":  17,
+    "fail":  0,
+    "partial":  0,
+    "orgId":  "cmsjkfna100ud4ggtd8xfdv1m",
+    "results":  [
+                    {
+                        "id":  "G00_LOGIN",
+                        "status":  "PASS",
+                        "detail":  "role=OWNER org=cmsjkfna100ud4ggtd8xfdv1m",
+                        "toolsUsed":  "",
+                        "evidence":  null
+                    },
+                    {
+                        "id":  "G00_BASELINE",
+                        "status":  "PASS",
+                        "detail":  "leaseId=cmsova6ru00ubwh6klids1jw7 tenant=fortune libolo",
+                        "toolsUsed":  "",
+                        "evidence":  null
+                    },
+                    {
+                        "id":  "G01_MEMORY_MULTITURN",
+                        "status":  "PASS",
+                        "detail":  "remember+recall+GATE-BLUE-42",
+                        "toolsUsed":  "getBuildings,rememberMemory,getBuildings,recallMemories",
+                        "evidence":  "Immeubles (1) : • rose (Brazzaville) — 3 logement(s) · 1 occupé(s) · 1 vacant(s) Mémoires (7) : • [USER/FACT] mon code immeuble preferé pour les tests gate est GATE-BLUE-42 • [USER/FACT] mon code immeuble preferé pour les tests gate est GATE-BLUE-42 • [USER/FACT] mon code immeubl"
+                    },
+                    {
+                        "id":  "G02_REF_CELUI_LA",
+                        "status":  "PASS",
+                        "detail":  "tools=[getTenantsgetDashboardSummary]",
+                        "toolsUsed":  "getTenantsgetDashboardSummary",
+                        "evidence":  "(Contexte mémoire) Mémoire utilisateur — ne pas confondre avec données métier Prisma. Les faits métier (loyers, locataires, montants) viennent exclusivement des outils / DB. - [USER/FACT] mon code immeuble preferé pour les tests gate est GATE-BLUE-42 - [USER/FACT] mon code immeub"
+                    },
+                    {
+                        "id":  "G02_REF_MOIS_DERNIER",
+                        "status":  "PASS",
+                        "detail":  "tools=[getOutstandingPaymentsgetOutstandingPayments]",
+                        "toolsUsed":  "getOutstandingPaymentsgetOutstandingPayments",
+                        "evidence":  "(Contexte mémoire) Mémoire utilisateur — ne pas confondre avec données métier Prisma. Les faits métier (loyers, locataires, montants) viennent exclusivement des outils / DB. - [USER/FACT] mon code immeuble preferé pour les tests gate est GATE-BLUE-42 - [USER/FACT] mon code immeub"
+                    },
+                    {
+                        "id":  "G03_MULTISTEP",
+                        "status":  "PASS",
+                        "detail":  "steps=3 pending=none",
+                        "toolsUsed":  "getOutstandingPayments",
+                        "evidence":  "Terminé. • 0 locataire(s) avec impayés • Aucun contrat à vérifier • 0 relance(s) préparée(s) Aucun dossier concerné — aucune relance à préparer."
+                    },
+                    {
+                        "id":  "G03_MULTISTEP_NO_FAKE",
+                        "status":  "PASS",
+                        "detail":  "no unproven success claim in plan reply",
+                        "toolsUsed":  "",
+                        "evidence":  null
+                    },
+                    {
+                        "id":  "G04_CROSS_ANALYTICS",
+                        "status":  "PASS",
+                        "detail":  "tools=[compareRevenue,analyzePortfolio,listUrgentIssues,getOutstandingPayments] hit=3",
+                        "toolsUsed":  "compareRevenue,analyzePortfolio,listUrgentIssues,getOutstandingPayments",
+                        "evidence":  "(Contexte mémoire) Mémoire utilisateur — ne pas confondre avec données métier Prisma. Les faits métier (loyers, locataires, montants) viennent exclusivement des outils / DB. - [USER/FACT] mon code immeuble preferé pour les tests gate est GATE-BLUE-42 - [USER/FACT] mon code immeub"
+                    },
+                    {
+                        "id":  "G05_DOC_CHAIN",
+                        "status":  "PASS",
+                        "detail":  "list+extract tools=[listDocumentsForAi,getDashboardSummary,checkLeaseDocumentConsistency]",
+                        "toolsUsed":  "listDocumentsForAi,getDashboardSummary,checkLeaseDocumentConsistency",
+                        "evidence":  "(Contexte mémoire) Mémoire utilisateur — ne pas confondre avec données métier Prisma. Les faits métier (loyers, locataires, montants) viennent exclusivement des outils / DB. - [USER/FACT] mon code immeuble preferé pour les tests gate est GATE-BLUE-42 - [USER/FACT] mon code immeub"
+                    },
+                    {
+                        "id":  "G06_AUTO_PROPOSE",
+                        "status":  "PASS",
+                        "detail":  "0 items â€” propose ok, no silent send",
+                        "toolsUsed":  "proposeOutstandingReminderAutomation",
+                        "evidence":  "(Contexte mémoire) Mémoire utilisateur — ne pas confondre avec données métier Prisma. Les faits métier (loyers, locataires, montants) viennent exclusivement des outils / DB. - [USER/FACT] mon code immeuble preferé pour les tests gate est GATE-BLUE-42 - [USER/FACT] mon code immeub"
+                    },
+                    {
+                        "id":  "G06_AUTO_CONFIRM",
+                        "status":  "PASS",
+                        "detail":  "N/A â€” nothing to confirm (0 drafts)",
+                        "toolsUsed":  "",
+                        "evidence":  "empty detection"
+                    },
+                    {
+                        "id":  "G07_REFUS_PERM",
+                        "status":  "PASS",
+                        "detail":  "AGENT blocked before/at /ai: {\"success\":false,\"message\":\"Changement de mot de passe obligatoire avant de continuer\",\"code\":\"MUST_CHANGE_PASSWORD\"}",
+                        "toolsUsed":  "",
+                        "evidence":  null
+                    },
+                    {
+                        "id":  "G08_CROSS_TENANT",
+                        "status":  "PASS",
+                        "detail":  "foreign leaseId rejected / scoped",
+                        "toolsUsed":  "",
+                        "evidence":  "Bail introuvable dans votre organisation."
+                    },
+                    {
+                        "id":  "G08_ORG_SPOOF",
+                        "status":  "PASS",
+                        "detail":  "client organizationId ignored; JWT org used",
+                        "toolsUsed":  "getTenants",
+                        "evidence":  "(Contexte mémoire) Mémoire utilisateur — ne pas confondre avec données métier Prisma. Les faits métier (loyers, locataires, montants) viennent exclusivement des outils / DB. - [USER/FACT] mon code immeuble preferé pour les tests gate est GATE-BLUE-42 - [USER/FACT] mon code immeub"
+                    },
+                    {
+                        "id":  "G08_CONFIRM_FOREIGN",
+                        "status":  "PASS",
+                        "detail":  "error expected: {\"success\":false,\"message\":\"Action IA introuvable ou expirée\",\"code\":\"NOT_FOUND\"} Le serveur distant a retourné une erreur : (404) Introuvable.",
+                        "toolsUsed":  "",
+                        "evidence":  null
+                    },
+                    {
+                        "id":  "G09_TOOL_FAIL",
+                        "status":  "PASS",
+                        "detail":  "failure/empty handled without fake success",
+                        "toolsUsed":  "extractDocumentFacts",
+                        "evidence":  "(Contexte mémoire) Mémoire utilisateur — ne pas confondre avec données métier Prisma. Les faits métier (loyers, locataires, montants) viennent exclusivement des outils / DB. - [USER/FACT] mon code immeuble preferé pour les tests gate est GATE-BLUE-42 - [USER/FACT] mon code immeub"
+                    },
+                    {
+                        "id":  "G10_NO_FAKE_SUCCESS",
+                        "status":  "PASS",
+                        "detail":  "no unproven WhatsApp success claim",
+                        "toolsUsed":  "getOutstandingPayments,proposeSendWhatsAppMessage,getTenants",
+                        "evidence":  "(Contexte mémoire) Mémoire utilisateur — ne pas confondre avec données métier Prisma. Les faits métier (loyers, locataires, montants) viennent exclusivement des outils / DB. - [USER/FACT] mon code immeuble preferé pour les tests gate est GATE-BLUE-42 - [USER/FACT] mon code immeub"
+                    }
+                ],
+    "generatedAt":  "2026-08-13T02:11:56.8764689+01:00"
+}
