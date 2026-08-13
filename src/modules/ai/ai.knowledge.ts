@@ -61,9 +61,22 @@ function normalizeFr(message: string): string {
 export function resolveKnowledgeClarification(message: string): string | null {
   const q = normalizeFr(message);
 
-  // OCR / lecture clause PDF fichier
+  // OCR / lecture clause PDF fichier — laisse passer les questions de faits structurés (J4 pipeline)
+  const wantsStructuredDocFacts =
+    q.includes('loyer') ||
+    q.includes('montant') ||
+    q.includes('echeance') ||
+    q.includes('duree') ||
+    q.includes('depot') ||
+    q.includes('caution') ||
+    q.includes('debut') ||
+    q.includes('date de fin') ||
+    q.includes('resume') ||
+    q.includes('anomal') ||
+    q.includes('incoher');
   if (
     !q.includes('photo') &&
+    !wantsStructuredDocFacts &&
     (q.includes('ocr') ||
       (q.includes('clause') && (q.includes('contrat') || q.includes('pdf') || q.includes('document'))) ||
       (q.includes('lis') && q.includes('pdf') && (q.includes('contrat') || q.includes('document'))) ||
@@ -73,10 +86,10 @@ export function resolveKnowledgeClarification(message: string): string | null {
     return (
       `Lecture OCR / extraction de clauses depuis un PDF fichier : pas encore disponible (NOT_SUPPORTED).\n\n` +
       `Ce que je peux faire maintenant :\n` +
-      `• faits structurés du bail (loyer, dates, locataire, statut) via les données ITC\n` +
-      `• comparaison de deux baux par leaseId\n` +
+      `• faits structurés du bail (loyer, dates, durée, locataire, statut) via les données ITC\n` +
+      `• comparaison de deux baux par leaseId / anomalies de cohérence\n` +
       `• analyse d’une **photo** nette du document (vision)\n\n` +
-      `Exemples : « quel est le loyer du bail de Yannick ? », « compare les baux <idA> et <idB> », ou envoyez une photo du contrat.`
+      `Exemples : « quel est le loyer du bail de Yannick ? », « durée du contrat de … », « compare les baux <idA> et <idB> », ou envoyez une photo du contrat.`
     );
   }
 

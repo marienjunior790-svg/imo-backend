@@ -1140,7 +1140,16 @@ export class AiToolsService {
       q.includes('dans le pdf') ||
       q.includes('sur le pdf') ||
       q.includes('dans le bail') ||
-      q.includes('sur le bail');
+      q.includes('sur le bail') ||
+      ((q.includes('loyer') ||
+        q.includes('montant') ||
+        q.includes('duree') ||
+        q.includes('echeance') ||
+        q.includes('depot') ||
+        q.includes('caution') ||
+        q.includes('resiliation') ||
+        q.includes('preavis')) &&
+        (q.includes('contrat') || q.includes('bail') || q.includes('pdf') || q.includes('document')));
     const wantsListDocs =
       (q.includes('documents') &&
         (q.includes('liste') ||

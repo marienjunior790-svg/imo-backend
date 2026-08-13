@@ -11,7 +11,7 @@
 | « oui crée le PDF » | Dump patrimoine | Confirm NL absent ; fallback portfolio |
 | « contrat PDF de fortune libolo » | Liste d’IDs (DRAFT+ACTIVE) | Pas de résolution locataire → bail ACTIVE |
 | WhatsApp Meta 401 | Texte d’échec générique | Pas de mapping auth Meta |
-| Docs « lis la clause » | Métadonnées Prisma seulement | OCR/RAG NOT_SUPPORTED (honnête) |
+| Docs « lis la clause » | ~~Métadonnées Prisma seulement~~ → NOT_SUPPORTED + alt. faits / photo (J2) ; faits loyer/dates via pipeline (J4) | OCR/RAG NOT_SUPPORTED (honnête) |
 
 ## Architecture cible (pas de nouveaux tools)
 
@@ -67,9 +67,15 @@ Photo → constat + proposition ticket maintenance / agent (tools existants), pa
 
 **AT :** photo fuite + « Appt 3B » → constat + priorité + plan Maintenance (pas dump parc).
 
-### J4 — Document pipeline
-Upload PDF → extract (buffer/OCR quand dispo) → index facts → ask/compare.  
-Honnêteté : tant qu’OCR PDF n’existe pas, message clair + faits Prisma.
+### J4 — Document pipeline — **DONE** (branch)
+Upload PDF → bridge faits Prisma (OCR fichier = NOT_SUPPORTED honnête) → ask/compare/anomalies.
+
+- `ai.document-pipeline.ts` : intents loyer / dates / durée / résiliation / résumé / anomalies + match locataire
+- `chatFromImage` PDF → faits ITC liés (session / nom) + message OCR clair
+- `chat()` court-circuit pipeline avant dump ; `answerDocumentQuestion` + durée / préavis terms
+- Knowledge : laisse passer les questions de faits structurés malgré « PDF »
+
+**AT :** « quel est le loyer du bail de … » → montant Prisma ; PDF upload → digest faits, pas 500 / pas dump parc.
 
 ### J5 — WhatsApp parcours réel
 IA → confirm → Meta → providerMessageId → statut ; 401 = « token Meta invalide ».

@@ -45,6 +45,16 @@ import {
 import { detectPaymentReminderPlan, runPaymentReminderPlan, type AiPlanStep } from './ai.orchestrator.js';
 import { AiAutomationService } from './ai.automation.service.js';
 import { listDocumentCapabilities } from './ai.documents.js';
+import { AiDocumentsIntelService, type DocumentFacts } from './ai.documents-intel.service.js';
+import {
+  buildDocumentPipelineActions,
+  buildPdfUploadPipelineReply,
+  detectDocumentAskIntent,
+  formatDocumentFactsDigest,
+  pickBestLeaseMatch,
+  questionForDocumentAsk,
+  scoreLeasesByTenantName,
+} from './ai.document-pipeline.js';
 import { SubscriptionService } from '../subscriptions/subscription.service.js';
 import { LeaseService } from '../leases/lease.service.js';
 import { PaymentService } from '../payments/payment.service.js';
@@ -167,6 +177,7 @@ export class AiService {
     @inject(NotificationCenterService) private readonly notificationCenter: NotificationCenterService,
     @inject(PrismaService) private readonly prisma: PrismaService,
     @inject(AiToolsService) private readonly tools: AiToolsService,
+    @inject(AiDocumentsIntelService) private readonly documentsIntel: AiDocumentsIntelService,
     @inject(AiMemoryService) private readonly memory: AiMemoryService,
     @inject(AiAutomationService) private readonly automations: AiAutomationService,
     @inject(RbacService) private readonly rbac: RbacService,
@@ -303,6 +314,21 @@ export class AiService {
           poweredBy: 'local',
           contextUsed: true,
         };
+      }
+    }
+
+    // Phase J4 — document pipeline (faits Prisma : loyer / dates / durée / anomalies)
+    {
+      const docIntent = detectDocumentAskIntent(message);
+      if (docIntent.wantsStructuredFacts) {
+        const pipeline = await this.runDocumentPipelineAsk(
+          organizationId,
+          userId,
+          message,
+          docIntent.kind,
+          sessionEntities,
+        );
+        if (pipeline) return pipeline;
       }
     }
 
@@ -1170,13 +1196,17 @@ export class AiService {
     const mime = (file.mimetype || '').toLowerCase();
     const isImage = mime.startsWith('image/');
     if (!isImage) {
+      if (mime.includes('pdf')) {
+        return this.chatFromPdfUpload(
+          organizationId,
+          userId,
+          role,
+          userPrompt,
+        );
+      }
       const ctxLocal = await this.contextService.buildContext(organizationId);
       return {
-        reply:
-          mime.includes('pdf')
-            ? 'Ce fichier est un PDF. L’analyse OCR/PDF complète arrive en Phase J (documents). ' +
-              'Pour l’instant : ouvrez Contrats / Documents, ou envoyez une **photo** nette du document.'
-            : 'Fichier non image. Envoyez une photo (JPG/PNG/WebP) pour analyse visuelle.',
+        reply: 'Fichier non image. Envoyez une photo (JPG/PNG/WebP) pour analyse visuelle, ou un PDF pour bridge faits ITC (sans OCR).',
         suggestions: buildContextualSuggestions(ctxLocal),
         actions: [
           { label: 'Voir les contrats', route: '/leases' },
@@ -1333,6 +1363,301 @@ export class AiService {
     }
   }
 
+  /**
+   * Phase J4 — PDF upload via /ai/vision : bridge faits Prisma (OCR PDF = NOT_SUPPORTED).
+   */
+  private async chatFromPdfUpload(
+    organizationId: string,
+    userId: string,
+    role: UserRole,
+    userPrompt?: string,
+  ): Promise<AiChatResponse> {
+    await this.assertAiAccess(organizationId, userId, role);
+
+    let sessionEntities: AiSessionEntities = {};
+    if (isAiMemoryEnabled) {
+      try {
+        const row = await this.memory.getSession({ organizationId, userId });
+        sessionEntities = (row?.entitiesJson as AiSessionEntities | null) ?? {};
+      } catch {
+        sessionEntities = {};
+      }
+    }
+
+    const prompt = userPrompt?.trim() ?? '';
+    const leaseIdFromMsg = this.extractCuid(prompt, 'leaseId') || sessionEntities.lastLeaseId;
+    const leases = await this.prisma.lease.findMany({
+      where: {
+        organizationId,
+        status: { in: [LeaseStatus.ACTIVE, LeaseStatus.DRAFT, LeaseStatus.EXPIRED] },
+      },
+      take: 80,
+      select: {
+        id: true,
+        status: true,
+        tenant: { select: { firstName: true, lastName: true } },
+        apartment: { select: { label: true } },
+      },
+    });
+
+    let resolvedLeaseId = leaseIdFromMsg;
+    let ambiguous: Array<{
+      id: string;
+      status: string;
+      tenantFirstName: string;
+      tenantLastName: string;
+      apartmentLabel?: string;
+    }> = [];
+
+    if (!resolvedLeaseId && prompt) {
+      const scored = scoreLeasesByTenantName(
+        leases.map((l) => ({
+          id: l.id,
+          status: l.status,
+          tenantFirstName: l.tenant.firstName,
+          tenantLastName: l.tenant.lastName,
+          apartmentLabel: l.apartment.label,
+        })),
+        prompt,
+      );
+      const pick = pickBestLeaseMatch(scored);
+      if (pick) {
+        if (pick.ambiguous.length > 1) {
+          ambiguous = pick.ambiguous;
+        } else {
+          resolvedLeaseId = pick.lease.id;
+        }
+      }
+    }
+
+    if (ambiguous.length > 1) {
+      const reply = buildPdfUploadPipelineReply({ facts: null, userPrompt: prompt, ambiguousLeases: ambiguous });
+      void this.persistConversationSession(organizationId, userId, prompt || '[pdf]', ['DOC_PDF_BRIDGE'], reply);
+      return {
+        reply,
+        suggestions: ambiguous.slice(0, 3).map((l) => `Résumé du bail ${l.id}`),
+        actions: buildDocumentPipelineActions('SUMMARY'),
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    let facts: DocumentFacts | null = null;
+
+    if (resolvedLeaseId) {
+      const extracted = await this.documentsIntel.extractDocumentFacts(organizationId, {
+        leaseId: resolvedLeaseId,
+      });
+      if (extracted.found) facts = extracted.facts;
+    } else {
+      // Dernier bail avec PDF / document si aucun hint
+      const extracted = await this.documentsIntel.extractDocumentFacts(organizationId, {});
+      if (extracted.found) facts = extracted.facts;
+    }
+
+    const reply = buildPdfUploadPipelineReply({ facts, userPrompt: prompt });
+    if (facts?.leaseId) {
+      void this.memory.mergeEntities({
+        organizationId,
+        userId,
+        entities: {
+          lastLeaseId: facts.leaseId,
+          ...(facts.parties.tenantName ? { lastTenantName: facts.parties.tenantName } : {}),
+          lastIntent: 'DOC_PDF_BRIDGE',
+          lastUserMessage: (prompt || '[pdf]').slice(0, 200),
+          lastReplyDigest: reply.slice(0, 240),
+        },
+      });
+    }
+    void this.persistConversationSession(organizationId, userId, prompt || '[pdf]', ['DOC_PDF_BRIDGE'], reply);
+
+    return {
+      reply,
+      suggestions: [
+        facts?.parties.tenantName
+          ? `Quel est le loyer du bail de ${facts.parties.tenantName} ?`
+          : 'Résumé du dernier bail',
+        'Anomalies du contrat',
+        'Mes impayés',
+      ],
+      actions: buildDocumentPipelineActions('SUMMARY'),
+      poweredBy: 'local',
+      contextUsed: true,
+    };
+  }
+
+  /**
+   * Phase J4 — questions documentaires structurées (sans inventer d’OCR).
+   */
+  private async runDocumentPipelineAsk(
+    organizationId: string,
+    userId: string,
+    message: string,
+    kind: ReturnType<typeof detectDocumentAskIntent>['kind'],
+    sessionEntities: AiSessionEntities,
+  ): Promise<AiChatResponse | null> {
+    const leaseIdFromMsg = this.extractCuid(message, 'leaseId');
+    const leases = await this.prisma.lease.findMany({
+      where: {
+        organizationId,
+        status: { in: [LeaseStatus.ACTIVE, LeaseStatus.DRAFT, LeaseStatus.EXPIRED] },
+      },
+      take: 80,
+      select: {
+        id: true,
+        status: true,
+        tenant: { select: { firstName: true, lastName: true } },
+        apartment: { select: { label: true } },
+      },
+    });
+
+    let leaseId = leaseIdFromMsg || sessionEntities.lastLeaseId;
+    if (!leaseId) {
+      const scored = scoreLeasesByTenantName(
+        leases.map((l) => ({
+          id: l.id,
+          status: l.status,
+          tenantFirstName: l.tenant.firstName,
+          tenantLastName: l.tenant.lastName,
+          apartmentLabel: l.apartment.label,
+        })),
+        message,
+      );
+      const pick = pickBestLeaseMatch(scored);
+      if (pick && pick.ambiguous.length > 1) {
+        const list = pick.ambiguous
+          .map(
+            (l, i) =>
+              `${i + 1}. ${l.tenantFirstName} ${l.tenantLastName} — ${l.apartmentLabel ?? '?'} (${l.status}) · \`${l.id}\``,
+          )
+          .join('\n');
+        const reply =
+          `Plusieurs baux correspondent. Précisez le locataire ou le leaseId :\n\n${list}\n\n` +
+          `Puis reformulez (ex. « quel est le loyer du bail <id> »).`;
+        void this.persistConversationSession(organizationId, userId, message, ['DOC_PIPELINE'], reply);
+        return {
+          reply,
+          suggestions: pick.ambiguous.slice(0, 3).map((l) => `Résumé du bail ${l.id}`),
+          actions: buildDocumentPipelineActions(kind),
+          poweredBy: 'local',
+          contextUsed: true,
+          toolsUsed: ['documentPipeline'],
+        };
+      }
+      if (pick) leaseId = pick.lease.id;
+    }
+
+    if (!leaseId) {
+      // Pas de match nom : laisser tools / OpenAI si pas assez de signal
+      if (!kind || kind === 'QA') return null;
+      const reply =
+        `Pour répondre avec des faits ITC (sans OCR PDF), précisez le locataire ou le leaseId.\n` +
+        `Ex. « quel est le loyer du bail de Fortune ? », « résumé du contrat de … », « anomalies du bail <id> ».`;
+      void this.persistConversationSession(organizationId, userId, message, ['DOC_PIPELINE'], reply);
+      return {
+        reply,
+        suggestions: ['Liste des documents analysables', 'Voir les contrats'],
+        actions: buildDocumentPipelineActions(kind),
+        poweredBy: 'local',
+        contextUsed: true,
+        toolsUsed: ['documentPipeline'],
+      };
+    }
+
+    if (kind === 'ANOMALIES') {
+      const res = await this.documentsIntel.detectInconsistencies(organizationId, leaseId);
+      const reply = res.found
+        ? res.inconsistencies.length === 0
+          ? `Aucune anomalie détectée sur les faits structurés du bail \`${leaseId}\`.`
+          : `Anomalies (faits Prisma, pas OCR) pour \`${leaseId}\` :\n` +
+            res.inconsistencies.map((i) => `• [${i.severity}] ${i.message}`).join('\n')
+        : `Bail introuvable pour vérifier la cohérence.`;
+      void this.persistConversationSession(organizationId, userId, message, ['checkLeaseDocumentConsistency'], reply);
+      void this.memory.mergeEntities({
+        organizationId,
+        userId,
+        entities: { lastLeaseId: leaseId, lastIntent: 'DOC_ANOMALIES' },
+      });
+      return {
+        reply,
+        suggestions: ['Résumé du bail', 'Mes impayés', 'Prépare une relance WhatsApp'],
+        actions: buildDocumentPipelineActions(kind),
+        poweredBy: 'local',
+        contextUsed: true,
+        toolsUsed: ['checkLeaseDocumentConsistency'],
+      };
+    }
+
+    if (kind === 'SUMMARY') {
+      const summarized = await this.documentsIntel.summarizeDocument(organizationId, { leaseId });
+      const reply = summarized.found
+        ? `${summarized.summary}\n\n_(Pipeline documents J4 — OCR PDF fichier = NOT_SUPPORTED)_`
+        : summarized.error;
+      void this.persistConversationSession(organizationId, userId, message, ['summarizeDocument'], reply);
+      void this.memory.mergeEntities({
+        organizationId,
+        userId,
+        entities: { lastLeaseId: leaseId, lastIntent: 'DOC_SUMMARY' },
+      });
+      return {
+        reply,
+        suggestions: ['Quel est le loyer ?', 'Anomalies du contrat', 'Durée du bail'],
+        actions: buildDocumentPipelineActions(kind),
+        poweredBy: 'local',
+        contextUsed: true,
+        toolsUsed: ['summarizeDocument'],
+      };
+    }
+
+    const question = questionForDocumentAsk(kind, message);
+    const answered = await this.documentsIntel.answerDocumentQuestion(organizationId, question, {
+      leaseId,
+    });
+    if (!answered.answered) {
+      // Fallback digest complet
+      const extracted = await this.documentsIntel.extractDocumentFacts(organizationId, { leaseId });
+      if (!extracted.found) return null;
+      const reply =
+        `${answered.answer}\n\n` +
+        formatDocumentFactsDigest(extracted.facts) +
+        `\n\nReformulez (loyer / dates / durée) ou envoyez une photo pour une clause.`;
+      void this.persistConversationSession(organizationId, userId, message, ['extractDocumentFacts'], reply);
+      return {
+        reply,
+        suggestions: ['Quel est le loyer ?', 'Date de fin du bail', 'Anomalies du contrat'],
+        actions: buildDocumentPipelineActions(kind),
+        poweredBy: 'local',
+        contextUsed: true,
+        toolsUsed: ['extractDocumentFacts'],
+      };
+    }
+
+    const reply =
+      `${answered.answer}\n\n` +
+      `_(Faits ITC · extraction PDF : ${
+        answered.textExtraction === 'BUFFER_EXCERPT' ? 'extrait terms' : 'NOT_SUPPORTED / métadonnées'
+      })_`;
+    void this.persistConversationSession(organizationId, userId, message, ['askAboutDocument'], reply);
+    void this.memory.mergeEntities({
+      organizationId,
+      userId,
+      entities: {
+        lastLeaseId: leaseId,
+        lastIntent: 'DOC_ASK',
+        lastUserMessage: message.slice(0, 200),
+        lastReplyDigest: reply.slice(0, 240),
+      },
+    });
+    return {
+      reply,
+      suggestions: ['Résumé du bail', 'Anomalies du contrat', 'Mes impayés'],
+      actions: buildDocumentPipelineActions(kind),
+      poweredBy: 'local',
+      contextUsed: true,
+      toolsUsed: ['askAboutDocument'],
+    };
+  }
+
   async normalizeText(
     organizationId: string,
     userId: string,
@@ -1363,11 +1688,11 @@ export class AiService {
   async proposeLeasePdf(
     organizationId: string,
     userId: string,
-    _role: UserRole,
+    role: UserRole,
     leaseId?: string,
     message = '',
   ): Promise<AiChatResponse> {
-    await this.assertAiAccess(organizationId, userId, _role);
+    await this.assertAiAccess(organizationId, userId, role);
 
     if (!leaseId) {
       const leases = await this.prisma.lease.findMany({
