@@ -78,6 +78,15 @@ describe('AI local fallback', () => {
     expect(reply).not.toMatch(/Voici ce que confirment/);
     expect(reply.toLowerCase()).toMatch(/mfa|fonction|parc|locataire/);
   });
+
+  it('mot de passe temporaire perdu → actions sécurité, pas CRM générique', () => {
+    const actions = resolveChatActions(
+      'mais si nous n’avons plus le mot de passe temporaire que faire ?',
+    );
+    expect(actions.some((a) => a.route === '/settings' || a.route === '/team/agents')).toBe(true);
+    expect(actions.some((a) => a.label === 'Ajouter un locataire')).toBe(false);
+    expect(actions.some((a) => a.label === 'Résumé du patrimoine')).toBe(false);
+  });
 });
 
 describe('resolveChatActions', () => {

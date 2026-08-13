@@ -67,4 +67,13 @@ describe('AI app guide (howto)', () => {
     expect(reply!.toLowerCase()).toMatch(/pièces|statut|libellé|label|vacant|occup/);
     expect(reply!).not.toMatch(/Contexte mémoire|Prisma|USER\/FACT|GATE-BLUE/);
   });
+
+  it('explique que faire si mot de passe temporaire perdu (pas dump patrimoine)', () => {
+    const q = 'mais si nous n\'avons plus le mot de passe temporaire que faire ?';
+    expect(isAppHowtoIntent(q)).toBe(true);
+    const reply = resolveAppHowtoReply(q);
+    expect(reply).toBeTruthy();
+    expect(reply!.toLowerCase()).toMatch(/temporaire|régénér|reinitial|équipe|locataire|oubli/);
+    expect(reply!).not.toMatch(/Voici ce que confirment|encaiss|371/);
+  });
 });

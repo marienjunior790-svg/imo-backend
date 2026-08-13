@@ -57,6 +57,40 @@ export function resolveChatActions(message: string): AiActionHint[] {
     return actions;
   }
 
+  // Guides sécurité / comptes — jamais le dump CRM générique
+  if (
+    q.includes('mfa') ||
+    q.includes('2fa') ||
+    q.includes('authentif') ||
+    ((q.includes('mot de passe') || q.includes('password') || q.includes('temporaire')) &&
+      (q.includes('plus') ||
+        q.includes('perdu') ||
+        q.includes('oubli') ||
+        q.includes('que faire') ||
+        q.includes('reset') ||
+        q.includes('reinitial') ||
+        q.includes('réinitial')))
+  ) {
+    actions.push({ label: 'Réglages', route: '/settings' });
+    actions.push({ label: 'MFA', route: '/settings/mfa' });
+    actions.push({ label: 'Sessions', route: '/settings/sessions' });
+    if (q.includes('agent') || q.includes('temporaire') || q.includes('equipe') || q.includes('équipe')) {
+      actions.push({ label: 'Voir l’équipe', route: '/team/agents' });
+    }
+    if (q.includes('locataire')) {
+      actions.push({ label: 'Voir les locataires', route: '/tenants' });
+    }
+    const seenSec = new Set<string>();
+    return actions
+      .filter((a) => {
+        const key = a.route ?? a.label;
+        if (seenSec.has(key)) return false;
+        seenSec.add(key);
+        return true;
+      })
+      .slice(0, 4);
+  }
+
   if (q.includes('que dois') || q.includes('quoi faire') || (q.includes('aujourd') && q.includes('faire'))) {
     actions.push({ label: 'Voir les impayés', route: '/payments?tab=unpaid' });
     actions.push({ label: 'Tableau de bord', route: '/dashboard' });
@@ -409,7 +443,7 @@ Le document inclut identité, loyers et clauses. Vous pouvez aussi me demander u
     return `Contrats actifs : ${s.activeLeases}. Locataires : ${s.totalTenants}.`;
   }
 
-  // Définition / « à quoi sert » hors données : ne jamais dump le patrimoine
+  // Définition / « à quoi sert » / mot de passe hors données : ne jamais dump le patrimoine
   const looksLikeDefinition =
     q.includes('a quoi sert') ||
     q.includes('c\'est quoi') ||
@@ -418,11 +452,13 @@ Le document inclut identité, loyers et clauses. Vous pouvez aussi me demander u
     q.includes('definition') ||
     q.includes('définition') ||
     q.includes('explique moi') ||
-    (q.includes('explique') && (q.includes('mfa') || q.includes('authentif') || q.includes('securite')));
+    (q.includes('explique') && (q.includes('mfa') || q.includes('authentif') || q.includes('securite'))) ||
+    ((q.includes('mot de passe') || q.includes('password') || q.includes('temporaire')) &&
+      (q.includes('plus') || q.includes('perdu') || q.includes('oubli') || q.includes('que faire')));
   if (looksLikeDefinition) {
-    return `Je peux expliquer une fonction ITC (MFA, maintenance, paiements, rôles…) ou interroger vos données patrimoniales.
+    return `Je peux expliquer une fonction ITC (MFA, mot de passe temporaire, maintenance, rôles…) ou interroger vos données patrimoniales.
 
-Exemples : « à quoi sert le MFA ? », « comment ajouter un locataire ? », « résumé de mon parc », « mes impayés ».`;
+Exemples : « à quoi sert le MFA ? », « mot de passe temporaire perdu », « comment ajouter un locataire ? », « résumé de mon parc ».`;
   }
 
   // Question floue : répondre avec données réelles + orientation — jamais « je n’ai pas compris »

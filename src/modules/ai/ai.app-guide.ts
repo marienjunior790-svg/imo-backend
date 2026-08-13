@@ -91,7 +91,12 @@ export function isAppHowtoIntent(message: string): boolean {
     q.includes('authentif') ||
     q.includes('securite') ||
     q.includes('sécurité') ||
-    q.includes('session');
+    q.includes('session') ||
+    q.includes('mot de passe') ||
+    q.includes('password') ||
+    q.includes('temporaire') ||
+    q.includes('loginid') ||
+    q.includes('identifiant');
 
   if (howtoVerb && appTopic) return true;
 
@@ -113,12 +118,60 @@ export function isAppHowtoIntent(message: string): boolean {
   if (q.includes('mfa') || q.includes('2fa') || (q.includes('authentif') && q.includes('multi'))) {
     return true;
   }
+  // Mot de passe perdu / temporaire (souvent sans verbe « comment »)
+  if (
+    (q.includes('mot de passe') || q.includes('password') || q.includes('temporaire')) &&
+    (q.includes('plus') ||
+      q.includes('perdu') ||
+      q.includes('oubli') ||
+      q.includes('que faire') ||
+      q.includes('comment') ||
+      q.includes('retrouver') ||
+      q.includes('reset') ||
+      q.includes('reinitial') ||
+      q.includes('réinitial'))
+  ) {
+    return true;
+  }
 
   return false;
 }
 
 export function resolveAppHowtoReply(message: string): string | null {
   const q = normalizeQuery(message);
+
+  // Mot de passe temporaire perdu / oublié (avant MFA générique)
+  if (
+    (q.includes('mot de passe') || q.includes('password') || q.includes('temporaire')) &&
+    (q.includes('plus') ||
+      q.includes('perdu') ||
+      q.includes('oubli') ||
+      q.includes('que faire') ||
+      q.includes('retrouver') ||
+      q.includes('reset') ||
+      q.includes('reinitial') ||
+      q.includes('réinitial') ||
+      q.includes('regener') ||
+      q.includes('régénér'))
+  ) {
+    return `Mot de passe temporaire perdu :
+
+Le mot de passe temporaire n’est affiché qu’une seule fois à la création (sécurité). S’il n’est plus disponible :
+
+• Agent / collaborateur :
+  1. Menu → Équipe (Agents) → ouvrez la fiche
+  2. Régénérez / réinitialisez le mot de passe depuis la fiche (propriétaire)
+  3. Remettez le nouveau mot de passe à l’agent — il le change au prochain login
+
+• Locataire :
+  1. Menu → Locataires → fiche du locataire
+  2. Régénérez l’accès portail / mot de passe
+  3. Ou écran de connexion → « Mot de passe oublié » avec LoginId / e-mail
+
+• Compte propriétaire : « Mot de passe oublié » sur l’écran de login.
+
+Ne redemandez jamais l’ancien temporaire : il n’est plus stocké en clair.`;
+  }
 
   // MFA / sécurité compte (avant le dump portfolio ou le bloc paramètres générique)
   if (

@@ -266,21 +266,34 @@ export class AiService {
         qFollow.includes('connect') ||
         qFollow.includes('connexion') ||
         (qFollow.includes('login') && !qFollow.includes('logout')) ||
-        (qFollow.includes('avec') && (qFollow.includes('comment') || qFollow.startsWith('et ')));
-      if (priorAgents && asksConnect && qFollow.length < 80) {
+        (qFollow.includes('avec') && (qFollow.includes('comment') || qFollow.startsWith('et '))) ||
+        ((qFollow.includes('mot de passe') || qFollow.includes('temporaire') || qFollow.includes('password')) &&
+          (qFollow.includes('plus') ||
+            qFollow.includes('perdu') ||
+            qFollow.includes('oubli') ||
+            qFollow.includes('que faire') ||
+            qFollow.includes('comment')));
+      if (
+        (priorAgents && asksConnect && qFollow.length < 120) ||
+        (asksConnect &&
+          (qFollow.includes('mot de passe') || qFollow.includes('temporaire')) &&
+          qFollow.length < 160)
+      ) {
         const howto =
-          resolveAppHowtoReply('comment me connecter à mon compte agent ?') ??
-          resolveAppHowtoReply(message);
+          resolveAppHowtoReply(message) ??
+          resolveAppHowtoReply('mot de passe temporaire perdu que faire ?') ??
+          resolveAppHowtoReply('comment me connecter à mon compte agent ?');
         if (howto) {
           const ctxGuide = await this.contextService.buildContext(organizationId);
           void this.persistConversationSession(organizationId, userId, message, [], howto);
           return {
             reply: howto,
             suggestions: buildContextualSuggestions(ctxGuide),
-            actions: [
-              { label: 'Voir l’équipe', route: '/agents' },
+            actions: this.dedupeActions([
+              { label: 'Voir l’équipe', route: '/team/agents' },
+              { label: 'Réglages', route: '/settings' },
               ...resolveChatActions(message),
-            ],
+            ]),
             poweredBy: 'local',
             contextUsed: true,
           };
