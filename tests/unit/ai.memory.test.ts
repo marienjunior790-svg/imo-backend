@@ -72,6 +72,8 @@ function createMemoryStore() {
         return rows.filter((r) => {
           if (r.organizationId !== orgId) return false;
           if (r.expiresAt != null && r.expiresAt.getTime() <= Date.now()) return false;
+          if (where.scope && r.scope !== where.scope) return false;
+          if ('userId' in where && r.userId !== where.userId) return false;
           if (!scopeOr.length) return true;
           return scopeOr.some((c) => {
             if (c.scope === AiMemoryScope.USER) {
@@ -224,5 +226,32 @@ describe('AiMemoryService', () => {
         content: '   ',
       }),
     ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('anti-doublon : même fait sans clé → update, pas 5 lignes', async () => {
+    const store = createMemoryStore();
+    const service = new AiMemoryService(store as unknown as PrismaService);
+    const payload = {
+      organizationId: 'org1',
+      userId: 'owner1',
+      role: UserRole.OWNER,
+      scope: AiMemoryScope.USER,
+      content: 'mon code immeuble prefere pour les tests gate est GATE-BLUE-42',
+    };
+    await service.remember(payload);
+    await service.remember(payload);
+    await service.remember({ ...payload, content: '  Mon code immeuble prefere pour les tests gate est GATE-BLUE-42  ' });
+    expect(store.rows).toHaveLength(1);
+
+    const recalled = await service.recall({
+      organizationId: 'org1',
+      userId: 'owner1',
+      role: UserRole.OWNER,
+    });
+    expect(recalled).toHaveLength(1);
+
+    const prompt = service.formatMemoriesForPrompt(recalled);
+    expect(prompt.match(/GATE-BLUE-42/g)?.length).toBe(1);
+    expect(prompt).toMatch(/Mémoire utilisateur/);
   });
 });

@@ -85,7 +85,13 @@ export function isAppHowtoIntent(message: string): boolean {
     q.includes('creer') ||
     q.includes('créer') ||
     q.includes('retirer') ||
-    q.includes('enregistrer');
+    q.includes('enregistrer') ||
+    q.includes('mfa') ||
+    q.includes('2fa') ||
+    q.includes('authentif') ||
+    q.includes('securite') ||
+    q.includes('sécurité') ||
+    q.includes('session');
 
   if (howtoVerb && appTopic) return true;
 
@@ -102,11 +108,56 @@ export function isAppHowtoIntent(message: string): boolean {
     return true;
   }
 
+  // Catalogue produit (pas un dump de logements)
+  if (/\btypes?\s+de\s+(biens?|logements?|appartements?)\b/.test(q)) return true;
+  if (q.includes('mfa') || q.includes('2fa') || (q.includes('authentif') && q.includes('multi'))) {
+    return true;
+  }
+
   return false;
 }
 
 export function resolveAppHowtoReply(message: string): string | null {
   const q = normalizeQuery(message);
+
+  // MFA / sécurité compte (avant le dump portfolio ou le bloc paramètres générique)
+  if (
+    q.includes('mfa') ||
+    q.includes('2fa') ||
+    (q.includes('authentif') &&
+      (q.includes('multi') ||
+        q.includes('double') ||
+        q.includes('a quoi sert') ||
+        q.includes('c est quoi') ||
+        q.includes('c\'est quoi') ||
+        q.includes('sert') ||
+        q.includes('explique')))
+  ) {
+    return `Authentification MFA (multi-facteurs) :
+
+Elle ajoute une 2ᵉ vérification après le mot de passe (code temporaire / application d’authentification). Même si le mot de passe fuit, un tiers ne peut pas ouvrir le compte facilement.
+
+Dans ITC :
+1. Réglages / Paramètres → sécurité du compte
+2. Activez ou gérez le MFA
+3. Consultez « Sessions » pour voir / révoquer les appareils connectés
+
+Astuce : gardez le MFA actif sur les comptes propriétaire et gestionnaire.`;
+  }
+
+  // Types de biens = modèle produit ITC (pas la liste des logements du parc)
+  if (/\btypes?\s+de\s+(biens?|logements?|appartements?)\b/.test(q)) {
+    return `Types de biens dans ITC :
+
+ITC ne classe pas les logements dans une liste fermée du type « Studio / F2 / F3 ».
+Chaque bien est un logement avec :
+• un libellé (ex. Appt 3B, Studio RDC)
+• un nombre de pièces et une surface
+• un statut : vacant, occupé, maintenance ou indisponible
+
+Pour voir votre parc réel : « mes logements » ou menu → Immeubles / Logements.
+Pour un décompte : « combien de logements ai-je ? ».`;
+  }
 
   // Vue d’ensemble / comment marche l’app
   if (

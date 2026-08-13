@@ -1197,14 +1197,17 @@ export class AiToolsService {
       tools.push({ name: 'getVacantUnits' });
     }
 
+    const wantsPropertyTypesCatalog =
+      /\btypes?\s+de\s+(biens?|logements?|appartements?)\b/.test(q);
     const wantsUnits =
       !isHowto &&
       !wantsVacant &&
+      !wantsPropertyTypesCatalog &&
       (q.includes('logement') ||
         q.includes('appartement') ||
         /\bappart\b/.test(q) ||
         /\bmes biens\b/.test(q) ||
-        /\bcombien\b.*\b(logement|appart|biens?)\b/.test(q) ||
+        (/\bcombien\b.*\b(logement|appart|biens?)\b/.test(q) && !/\btypes?\b/.test(q)) ||
         /\b(logement|appart|biens?).*\bcombien\b/.test(q) ||
         (q.includes('montre') && (q.includes('patrimoine') || q.includes('parc'))) ||
         q.includes('liste des biens') ||
@@ -2559,14 +2562,23 @@ Confirmez pour générer l’avis de paiement PDF.`;
     if (typeof data.error === 'string') return data.error;
     const items = (data.items as Array<Record<string, unknown>>) ?? [];
     if (!items.length) return 'Aucune mémoire enregistrée pour vous / votre organisation.';
+    const seen = new Set<string>();
     const list = items
       .slice(0, 12)
+      .filter((m) => {
+        const n = String(m.content ?? '')
+          .toLowerCase()
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!n || seen.has(n)) return false;
+        seen.add(n);
+        return true;
+      })
       .map((m) => {
-        const tag = m.key ? `${m.scope}/${m.kind}:${m.key}` : `${m.scope}/${m.kind}`;
-        return `• [${tag}] ${String(m.content ?? '').slice(0, 180)}`;
+        return `• ${String(m.content ?? '').slice(0, 180)}`;
       })
       .join('\n');
-    return `Mémoires (${data.count}) :\n${list}\n\n(Ne pas confondre avec les données métier Prisma.)`;
+    return `Voici ce que je retiens pour vous :\n${list}`;
   }
   if (toolName === 'forgetMemory') {
     if (data.enabled === false) return String(data.error ?? 'Mémoire IA désactivée');

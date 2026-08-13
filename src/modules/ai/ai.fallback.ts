@@ -307,7 +307,7 @@ ${list}`;
     q.includes('appartement') ||
     /\bappart\b/.test(q) ||
     /\bmes biens\b/.test(q) ||
-    (/\bcombien\b/.test(q) && /\b(logement|appart|biens?)\b/.test(q))
+    (/\bcombien\b/.test(q) && /\b(logement|appart|biens?)\b/.test(q) && !/\btypes?\b/.test(q))
   ) {
     return `Parc immobilier « ${org} » :
 • ${s.totalApartments} logement(s) au total
@@ -407,6 +407,22 @@ Le document inclut identité, loyers et clauses. Vous pouvez aussi me demander u
 
   if (q.includes('combien') && (q.includes('contrat') || q.includes('bail'))) {
     return `Contrats actifs : ${s.activeLeases}. Locataires : ${s.totalTenants}.`;
+  }
+
+  // Définition / « à quoi sert » hors données : ne jamais dump le patrimoine
+  const looksLikeDefinition =
+    q.includes('a quoi sert') ||
+    q.includes('c\'est quoi') ||
+    q.includes('c est quoi') ||
+    q.includes('que signifie') ||
+    q.includes('definition') ||
+    q.includes('définition') ||
+    q.includes('explique moi') ||
+    (q.includes('explique') && (q.includes('mfa') || q.includes('authentif') || q.includes('securite')));
+  if (looksLikeDefinition) {
+    return `Je peux expliquer une fonction ITC (MFA, maintenance, paiements, rôles…) ou interroger vos données patrimoniales.
+
+Exemples : « à quoi sert le MFA ? », « comment ajouter un locataire ? », « résumé de mon parc », « mes impayés ».`;
   }
 
   // Question floue : répondre avec données réelles + orientation — jamais « je n’ai pas compris »

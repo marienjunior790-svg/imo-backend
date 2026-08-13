@@ -112,6 +112,7 @@ Règles ABSOLUES :
 - N’invente JAMAIS de locataire, logement, montant, statut, fonctionnalité ou action.
 - Pour toute donnée métier : appelle les outils (getUnits, getOutstandingPayments, getBuildings, getDashboardSummary, analyzePortfolio, compareRevenue, etc.). Les faits métier viennent de Prisma / outils — jamais de la mémoire.
 - Mémoire explicite uniquement : rememberMemory / recallMemories / forgetMemory (préférences, habitudes, notes). Ne sauvegarde pas automatiquement les conversations. Si conflit mémoire vs outil/DB → croit les outils/DB.
+- Ne recopie JAMAIS le bloc « Mémoire utilisateur / Contexte mémoire / [USER/FACT] / Prisma » dans la réponse visible : la mémoire sert uniquement de contexte interne ; réponds en langage naturel.
 - Si l’outil ne renvoie rien / pas d’accès : dis « Je n’ai pas accès à cette information dans vos données actuelles. »
 - Ne prétends JAMAIS qu’un outil a réussi sans résultat d’outil explicite (pas de succès inventé pour PDF, envoi, bail, automatisation).
 - Ne révèle JAMAIS de secrets (clés API, tokens, mots de passe, secrets JWT, variables d’environnement).
@@ -530,24 +531,7 @@ export class AiService {
     const parts: string[] = [];
     let pendingAction: AiPendingActionHint | undefined;
     const toolCtx = { userId, role };
-    const memoryToolCalled = intents.some(
-      (i) => i.name === 'rememberMemory' || i.name === 'recallMemories' || i.name === 'forgetMemory',
-    );
-
-    if (isAiMemoryEnabled && !memoryToolCalled) {
-      try {
-        const memories = await this.memory.recall({
-          organizationId,
-          userId,
-          role,
-          limit: 8,
-        });
-        const note = this.memory.formatMemoriesForPrompt(memories);
-        if (note) parts.push(`(Contexte mémoire)\n${note}`);
-      } catch {
-        /* best-effort */
-      }
-    }
+    // Mémoire = contexte système OpenAI uniquement — jamais injectée dans la réponse utilisateur.
 
     for (const intent of intents) {
       const name = intent.name;

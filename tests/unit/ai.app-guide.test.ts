@@ -50,4 +50,21 @@ describe('AI app guide (howto)', () => {
     expect(reply).toBeTruthy();
     expect(reply!.toLowerCase()).toMatch(/équipe|equipe|agents/);
   });
+
+  it('explique le MFA (pas un dump patrimoine)', () => {
+    expect(isAppHowtoIntent('à quoi sert l\'authentification MFA ?')).toBe(true);
+    const reply = resolveAppHowtoReply('à quoi sert l\'authentification MFA ?');
+    expect(reply).toBeTruthy();
+    expect(reply!.toLowerCase()).toMatch(/mfa|multi-facteurs|2ᵉ|mot de passe/);
+    expect(reply!).not.toMatch(/encaiss|occupation|vacant/i);
+    expect(reply!).not.toMatch(/Contexte mémoire|Prisma|USER\/FACT/);
+  });
+
+  it('explique les types de biens ITC (catalogue, pas liste logements)', () => {
+    expect(isAppHowtoIntent('combien de types de biens existent au sein de ITC ?')).toBe(true);
+    const reply = resolveAppHowtoReply('combien de types de biens existent au sein de ITC ?');
+    expect(reply).toBeTruthy();
+    expect(reply!.toLowerCase()).toMatch(/pièces|statut|libellé|label|vacant|occup/);
+    expect(reply!).not.toMatch(/Contexte mémoire|Prisma|USER\/FACT|GATE-BLUE/);
+  });
 });

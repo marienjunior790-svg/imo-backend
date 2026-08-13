@@ -71,6 +71,13 @@ describe('AI local fallback', () => {
     expect(reply.toLowerCase()).not.toMatch(/pas reconnu|pas compris/);
     expect(reply).toContain('Agence Test');
   });
+
+  it('« à quoi sert … » ne dump pas le patrimoine', () => {
+    const reply = buildLocalFallbackReply('à quoi sert l’authentification MFA ?', mockContext);
+    expect(reply.toLowerCase()).not.toMatch(/encaiss|occupation %|vacant\(s\)/);
+    expect(reply).not.toMatch(/Voici ce que confirment/);
+    expect(reply.toLowerCase()).toMatch(/mfa|fonction|parc|locataire/);
+  });
 });
 
 describe('resolveChatActions', () => {

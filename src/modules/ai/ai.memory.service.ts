@@ -98,6 +98,28 @@ export class AiMemoryService {
     throw new ValidationError('kind mémoire invalide');
   }
 
+  /** Normalise le contenu pour anti-doublon (casse / espaces). */
+  private normalizeMemoryContent(content: string): string {
+    return content
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private dedupeByContent<T extends { content: string }>(items: T[]): T[] {
+    const seen = new Set<string>();
+    const out: T[] = [];
+    for (const item of items) {
+      const n = this.normalizeMemoryContent(item.content);
+      if (!n || seen.has(n)) continue;
+      seen.add(n);
+      out.push(item);
+    }
+    return out;
+  }
+
   private canWriteOrgMemory(role: UserRole | string): boolean {
     // ORG_ADMIN → OWNER via normalizeRole / isOwner
     return isOwner(role);
@@ -135,6 +157,30 @@ export class AiMemoryService {
       if (existing) {
         return this.prisma.aiMemoryEntry.update({
           where: { id: existing.id },
+          data: {
+            content,
+            kind,
+            source: AiMemorySource.EXPLICIT,
+            updatedById: input.userId,
+          },
+        });
+      }
+    } else {
+      // Sans clé : ne pas stocker 5× le même fait (GATE-BLUE-42, couleur…).
+      const recent = await this.prisma.aiMemoryEntry.findMany({
+        where: {
+          organizationId: input.organizationId,
+          scope,
+          userId: ownerUserId,
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 50,
+      });
+      const norm = this.normalizeMemoryContent(content);
+      const duplicate = recent.find((r) => this.normalizeMemoryContent(r.content) === norm);
+      if (duplicate) {
+        return this.prisma.aiMemoryEntry.update({
+          where: { id: duplicate.id },
           data: {
             content,
             kind,
@@ -202,7 +248,7 @@ export class AiMemoryService {
         )
       : rows;
 
-    return filtered.slice(0, limit).map((r) => ({
+    const mapped = filtered.map((r) => ({
       id: r.id,
       scope: r.scope,
       kind: r.kind,
@@ -213,6 +259,7 @@ export class AiMemoryService {
       updatedAt: r.updatedAt,
       createdAt: r.createdAt,
     }));
+    return this.dedupeByContent(mapped).slice(0, limit);
   }
 
   async forget(input: ForgetInput) {
@@ -354,12 +401,13 @@ export class AiMemoryService {
     }
   }
 
-  /** Formate un rappel court pour injection système (sans secrets). */
+  /** Formate un rappel court pour injection système (sans secrets). Jamais afficher tel quel à l’utilisateur. */
   formatMemoriesForPrompt(
     memories: Array<{ scope: string; kind: string; key: string | null; content: string }>,
   ): string {
-    if (!memories.length) return '';
-    const lines = memories.slice(0, 8).map((m) => {
+    const unique = this.dedupeByContent(memories);
+    if (!unique.length) return '';
+    const lines = unique.slice(0, 8).map((m) => {
       const tag = m.key ? `${m.scope}/${m.kind}:${m.key}` : `${m.scope}/${m.kind}`;
       return `- [${tag}] ${m.content.slice(0, 200)}`;
     });

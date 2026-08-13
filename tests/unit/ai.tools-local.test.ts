@@ -96,6 +96,13 @@ describe('AiToolsService.resolveLocalToolIntents', () => {
     expect(intents.map((i) => i.name)).toContain('getUnits');
   });
 
+  it('ne mappe pas « types de biens » vers getUnits', () => {
+    const intents = tools.resolveLocalToolIntents(
+      'combien de types de biens existent au sein de ITC ?',
+    );
+    expect(intents.map((i) => i.name)).not.toContain('getUnits');
+  });
+
   it('détecte « qui doit encore payer » via outstanding', () => {
     const intents = tools.resolveLocalToolIntents('quels locataires doivent encore payer ?');
     expect(intents.map((i) => i.name)).toContain('getOutstandingPayments');
