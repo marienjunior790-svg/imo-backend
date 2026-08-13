@@ -228,6 +228,14 @@ describe('Phase F local intents', () => {
     expect(intents.map((i) => i.name)).not.toContain('getDashboardSummary');
   });
 
+  it('analyse + synthèse du parc → analyzePortfolio (pas dashboard)', () => {
+    const intents = tools.resolveLocalToolIntents(
+      'Analyse mon patrimoine et donne une synthese du parc.',
+    );
+    expect(intents.map((i) => i.name)).toContain('analyzePortfolio');
+    expect(intents.map((i) => i.name)).not.toContain('getDashboardSummary');
+  });
+
   it('quel immeuble + impayé → rankBuildingsByOutstanding', () => {
     const intents = tools.resolveLocalToolIntents('Quel immeuble a le plus d’impayés ?');
     expect(intents.map((i) => i.name)).toContain('rankBuildingsByOutstanding');

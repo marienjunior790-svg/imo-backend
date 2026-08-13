@@ -1075,6 +1075,10 @@ export class AiToolsService {
     const wantsPortfolioAnalysis =
       (q.includes('resume') &&
         (q.includes('parc') || q.includes('situation') || q.includes('patrimoine'))) ||
+      (q.includes('synthese') &&
+        (q.includes('parc') || q.includes('situation') || q.includes('patrimoine'))) ||
+      (q.includes('analyse') &&
+        (q.includes('parc') || q.includes('situation') || q.includes('patrimoine'))) ||
       (q.includes('situation') && q.includes('parc')) ||
       q.includes('situation de mon parc');
     const wantsUrgentIssues =

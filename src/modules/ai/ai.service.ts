@@ -234,7 +234,8 @@ export class AiService {
       return this.proposePaymentReceipt(organizationId, userId, role, this.extractCuid(message, 'paymentId'));
     }
     // PDF contrat uniquement — création de bail métier passe par les outils proposeCreateLease.
-    if (this.isContractPdfIntent(message)) {
+    // Ne pas court-circuiter le plan multi-étapes relances (Phase E : vérifier contrats ≠ PDF).
+    if (this.isContractPdfIntent(message) && !detectPaymentReminderPlan(message)) {
       return this.proposeLeasePdf(organizationId, userId, role, this.extractCuid(message, 'leaseId'));
     }
 
@@ -2172,6 +2173,8 @@ export class AiService {
 
   private isContractPdfIntent(message: string): boolean {
     if (this.isReceiptIntent(message) || this.isNoticeIntent(message)) return false;
+    // « vérifie leurs contrats et prépare les relances » = plan Phase E, pas PDF.
+    if (detectPaymentReminderPlan(message)) return false;
     const q = message
       .toLowerCase()
       .normalize('NFD')

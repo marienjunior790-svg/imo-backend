@@ -33,6 +33,14 @@ describe('detectPaymentReminderPlan', () => {
     ).toBe(true);
   });
 
+  it('détecte la phrase E2E sans accents (ASCII)', () => {
+    expect(
+      detectPaymentReminderPlan(
+        'Trouve les locataires qui ont des impayes, verifie leurs contrats et prepare les relances.',
+      ),
+    ).toBe(true);
+  });
+
   it('détecte variantes prépare / bail / prévenir', () => {
     expect(
       detectPaymentReminderPlan('Prépare les relances pour les baux en impayés'),
