@@ -1,5 +1,5 @@
 import { inject, injectable } from 'tsyringe';
-import { LeaseStatus, UserRole } from '@prisma/client';
+import { LeaseStatus, UserRole, type MaintenancePriority } from '@prisma/client';
 import { env, isAiMemoryEnabled, isAiSecurityStrict } from '../../config/env.js';
 import { OpenAiClient, ChatMessage } from '../../infrastructure/openai/openai.client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
@@ -55,6 +55,13 @@ import {
   questionForDocumentAsk,
   scoreLeasesByTenantName,
 } from './ai.document-pipeline.js';
+import {
+  buildMaintenanceProposeAppendix,
+  buildMaintenanceTicketDescription,
+  buildMaintenanceTicketTitle,
+  priorityFromVisionHint,
+  wantsCreateMaintenanceTicket,
+} from './ai.maintenance-ticket.js';
 import { SubscriptionService } from '../subscriptions/subscription.service.js';
 import {
   formatWhatsAppSendSuccess,
@@ -63,6 +70,7 @@ import {
 import { LeaseService } from '../leases/lease.service.js';
 import { PaymentService } from '../payments/payment.service.js';
 import { NotificationCenterService } from '../notification-center/notification-center.service.js';
+import { MaintenanceService } from '../maintenance/maintenance.service.js';
 import { RbacService } from '../../shared/rbac/rbac.service.js';
 import { PlanLimitError } from '../../shared/errors/subscription.error.js';
 import { ForbiddenError, ValidationError } from '../../shared/errors/app.error.js';
@@ -184,6 +192,7 @@ export class AiService {
     @inject(AiDocumentsIntelService) private readonly documentsIntel: AiDocumentsIntelService,
     @inject(AiMemoryService) private readonly memory: AiMemoryService,
     @inject(AiAutomationService) private readonly automations: AiAutomationService,
+    @inject(MaintenanceService) private readonly maintenance: MaintenanceService,
     @inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
@@ -288,8 +297,8 @@ export class AiService {
         if (refEarly.wantsConfirmLast && !latest) {
           return {
             reply:
-              'Aucune action en attente à confirmer. Demandez d’abord « génère le contrat PDF… » / « génère le reçu… », puis confirmez.',
-            suggestions: ['Génère un contrat PDF', 'Génère un reçu de paiement'],
+              'Aucune action en attente à confirmer. Demandez d’abord « génère le contrat PDF… » / « crée le ticket… », puis confirmez.',
+            suggestions: ['Génère un contrat PDF', 'Crée un ticket maintenance', 'Génère un reçu de paiement'],
             actions: [
               { label: 'Voir les contrats', route: '/leases' },
               { label: 'Voir les paiements', route: '/payments' },
@@ -334,6 +343,11 @@ export class AiService {
         );
         if (pipeline) return pipeline;
       }
+    }
+
+    // Phase K1 — créer ticket maintenance (propose→confirm, pas d’OpenAI tool)
+    if (wantsCreateMaintenanceTicket(message)) {
+      return this.proposeMaintenanceTicket(organizationId, userId, role, message, sessionEntities);
     }
 
     // Follow-up court après une réponse agents → guide connexion (pas un dump dashboard).
@@ -1269,6 +1283,7 @@ export class AiService {
             id: true,
             apartmentId: true,
             status: true,
+            tenantId: true,
             tenant: { select: { firstName: true, lastName: true } },
           },
         }),
@@ -1302,13 +1317,60 @@ export class AiService {
         })),
       });
 
-      const appendix = buildVisionMetierAppendix(classification, unit);
+      let pendingAction: AiPendingActionHint | undefined;
+      let appendix: string;
+      if (classification.kind === 'DAMAGE' && unit.apartmentId) {
+        const leaseRow =
+          leases.find((l) => l.id === unit.leaseId) ||
+          leases.find((l) => l.apartmentId === unit.apartmentId && l.status === LeaseStatus.ACTIVE) ||
+          leases.find((l) => l.apartmentId === unit.apartmentId);
+        const title = buildMaintenanceTicketTitle({
+          classification,
+          unit,
+          reading,
+          userPrompt,
+        });
+        const description = buildMaintenanceTicketDescription({ reading, userPrompt });
+        const priority = priorityFromVisionHint(classification.priorityHint);
+        const pending = await createPendingAction({
+          organizationId,
+          userId,
+          type: 'CREATE_MAINTENANCE_TICKET',
+          payload: {
+            apartmentId: unit.apartmentId,
+            apartmentLabel: unit.apartmentLabel,
+            tenantId: leaseRow?.tenantId,
+            leaseId: leaseRow?.id ?? unit.leaseId,
+            title,
+            description,
+            priority,
+            summary: `Ticket ${title}${priority ? ` · ${priority}` : ''}`,
+          },
+        });
+        pendingAction = {
+          id: pending.id,
+          type: pending.type,
+          title: 'Créer le ticket maintenance',
+          summary: pending.payload.summary ?? title,
+          payload: pending.payload,
+        };
+        appendix = buildMaintenanceProposeAppendix({
+          pending: true,
+          apartmentLabel: unit.apartmentLabel,
+          priority: classification.priorityHint,
+        });
+      } else if (classification.kind === 'DAMAGE') {
+        appendix = buildMaintenanceProposeAppendix({ pending: false });
+      } else {
+        appendix = buildVisionMetierAppendix(classification, unit);
+      }
+
       const reply = `${reading.trim()}${appendix}`;
       const suggestions =
         classification.kind === 'DAMAGE'
           ? [
+              pendingAction ? 'Oui, crée le ticket' : 'Crée le ticket pour Appt …',
               'Ouvre Maintenance',
-              'Automatise les tâches maintenance',
               'Mes logements',
               ...(unit.apartmentLabel ? [`Contrat du logement ${unit.apartmentLabel}`] : []),
             ]
@@ -1319,7 +1381,7 @@ export class AiService {
       ]);
 
       // Mémoriser le logement pressenti pour les follow-ups (ex. « et le bail ? »)
-      if (unit.apartmentId || unit.leaseId) {
+      if (unit.apartmentId || unit.leaseId || pendingAction) {
         void this.memory.mergeEntities({
           organizationId,
           userId,
@@ -1327,14 +1389,21 @@ export class AiService {
             ...(unit.apartmentId ? { lastApartmentId: unit.apartmentId } : {}),
             ...(unit.leaseId ? { lastLeaseId: unit.leaseId } : {}),
             ...(unit.tenantName ? { lastTenantName: unit.tenantName } : {}),
-            lastIntent: 'VISION_READ',
+            lastIntent: pendingAction ? 'proposeCreateMaintenanceTicket' : 'VISION_READ',
             lastUserMessage: (userPrompt || 'image').slice(0, 200),
             lastReplyDigest: reply.slice(0, 240),
+            ...(pendingAction ? { lastToolsUsed: ['proposeCreateMaintenanceTicket'] } : {}),
           },
         });
       }
 
-      void this.persistConversationSession(organizationId, userId, userPrompt || '[image]', ['VISION_READ'], reply);
+      void this.persistConversationSession(
+        organizationId,
+        userId,
+        userPrompt || '[image]',
+        pendingAction ? ['proposeCreateMaintenanceTicket'] : ['VISION_READ'],
+        reply,
+      );
 
       return {
         reply,
@@ -1343,6 +1412,7 @@ export class AiService {
         poweredBy: 'openai',
         contextUsed: true,
         transcript: reading.slice(0, 500),
+        pendingAction,
       };
     } catch (err) {
       console.error(
@@ -2126,6 +2196,8 @@ export class AiService {
       await this.assertConfirmPermission(role, 'PAYMENT_EXPORT_PDF');
     } else if (preview.type === 'CREATE_LEASE') {
       await this.assertConfirmPermission(role, 'LEASE_CREATE');
+    } else if (preview.type === 'CREATE_MAINTENANCE_TICKET') {
+      await this.assertConfirmPermission(role, 'MAINTENANCE_CREATE');
     } else if (
       preview.type === 'SEND_TENANT_MESSAGE' ||
       preview.type === 'SEND_WHATSAPP_MESSAGE' ||
@@ -2155,6 +2227,10 @@ export class AiService {
 
     if (action.type === 'CREATE_LEASE') {
       return this.executeCreateLease(organizationId, userId, action.payload);
+    }
+
+    if (action.type === 'CREATE_MAINTENANCE_TICKET') {
+      return this.executeCreateMaintenanceTicket(organizationId, userId, action.payload);
     }
 
     if (action.type === 'SEND_TENANT_MESSAGE') {
@@ -2260,6 +2336,192 @@ export class AiService {
     }
     return {
       reply: formatToolResultForLocalReply('proposeOutstandingReminderAutomation', result),
+    };
+  }
+
+  private async proposeMaintenanceTicket(
+    organizationId: string,
+    userId: string,
+    role: UserRole,
+    message: string,
+    session: AiSessionEntities,
+  ): Promise<AiChatResponse> {
+    await this.assertAiAccess(organizationId, userId, role);
+
+    const apartments = await this.prisma.apartment.findMany({
+      where: { organizationId },
+      take: 80,
+      select: {
+        id: true,
+        label: true,
+        building: { select: { name: true } },
+      },
+    });
+    const unit = resolveVisionUnitHint({
+      session,
+      userPrompt: message,
+      apartments: apartments.map((a) => ({
+        id: a.id,
+        label: a.label,
+        buildingName: a.building?.name,
+      })),
+    });
+
+    if (!unit.apartmentId) {
+      const reply =
+        `Pour créer un ticket maintenance, indiquez le logement (ex. « crée le ticket pour Appt 3B »).\n` +
+        `Après une photo de dégât, je propose déjà le ticket si le logement est connu — dites alors « oui ».`;
+      void this.persistConversationSession(organizationId, userId, message, [], reply);
+      return {
+        reply,
+        suggestions: ['Crée le ticket pour Appt …', 'Mes logements', 'Ouvre Maintenance'],
+        actions: [
+          { label: 'Maintenance', route: '/maintenance' },
+          { label: 'Voir les logements', route: '/properties' },
+        ],
+        poweredBy: 'local',
+        contextUsed: true,
+      };
+    }
+
+    const lease = await this.prisma.lease.findFirst({
+      where: {
+        organizationId,
+        apartmentId: unit.apartmentId,
+        status: { in: [LeaseStatus.ACTIVE, LeaseStatus.DRAFT, LeaseStatus.EXPIRED] },
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: {
+        id: true,
+        tenantId: true,
+        tenant: { select: { firstName: true, lastName: true } },
+      },
+    });
+
+    const title = buildMaintenanceTicketTitle({
+      unit: {
+        ...unit,
+        tenantName: lease
+          ? `${lease.tenant.firstName} ${lease.tenant.lastName}`
+          : unit.tenantName,
+        leaseId: lease?.id ?? unit.leaseId,
+      },
+      userPrompt: message,
+      reading: session.lastReplyDigest,
+    });
+    const description = buildMaintenanceTicketDescription({
+      userPrompt: message,
+      reading: session.lastReplyDigest,
+    });
+
+    const pending = await createPendingAction({
+      organizationId,
+      userId,
+      type: 'CREATE_MAINTENANCE_TICKET',
+      payload: {
+        apartmentId: unit.apartmentId,
+        apartmentLabel: unit.apartmentLabel,
+        tenantId: lease?.tenantId,
+        leaseId: lease?.id ?? unit.leaseId,
+        title,
+        description,
+        summary: `Ticket ${title}`,
+      },
+    });
+
+    const reply =
+      `**Proposition ticket maintenance**\n` +
+      `• Logement : **${unit.apartmentLabel ?? unit.apartmentId}**\n` +
+      `• Titre : ${title}\n` +
+      `• Répondez **« oui »** / **« confirme »** pour créer le ticket OPEN, ou **« annule »**.\n` +
+      `• Aucun ticket n’est créé sans confirmation.`;
+
+    void this.memory.mergeEntities({
+      organizationId,
+      userId,
+      entities: {
+        lastApartmentId: unit.apartmentId,
+        ...(lease?.id ? { lastLeaseId: lease.id } : {}),
+        lastIntent: 'proposeCreateMaintenanceTicket',
+        lastToolsUsed: ['proposeCreateMaintenanceTicket'],
+        lastUserMessage: message.slice(0, 200),
+        lastReplyDigest: reply.slice(0, 240),
+      },
+    });
+    void this.persistConversationSession(
+      organizationId,
+      userId,
+      message,
+      ['proposeCreateMaintenanceTicket'],
+      reply,
+    );
+
+    return {
+      reply,
+      suggestions: ['Oui, crée le ticket', 'Annule', 'Ouvre Maintenance'],
+      actions: [
+        { label: 'Ouvrir Maintenance', route: '/maintenance' },
+        { label: 'Voir le logement', route: '/properties' },
+      ],
+      poweredBy: 'local',
+      contextUsed: true,
+      pendingAction: {
+        id: pending.id,
+        type: pending.type,
+        title: 'Créer le ticket maintenance',
+        summary: pending.payload.summary ?? title,
+        payload: pending.payload,
+      },
+    };
+  }
+
+  private async executeCreateMaintenanceTicket(
+    organizationId: string,
+    userId: string,
+    payload: PendingActionPayload,
+  ): Promise<AiChatResponse> {
+    if (!payload.apartmentId) throw new ValidationError('apartmentId manquant pour le ticket');
+    if (!payload.title || payload.title.trim().length < 3) {
+      throw new ValidationError('title manquant pour le ticket');
+    }
+
+    const priority =
+      payload.priority &&
+      ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].includes(payload.priority)
+        ? (payload.priority as MaintenancePriority)
+        : undefined;
+
+    const ticket = await this.maintenance.create(
+      organizationId,
+      {
+        apartmentId: payload.apartmentId,
+        tenantId: payload.tenantId,
+        leaseId: payload.leaseId,
+        title: payload.title.trim(),
+        description: payload.description,
+        priority,
+      },
+      { userId, name: 'Intelligence ITC' },
+    );
+
+    const reply =
+      `Ticket maintenance créé (**OPEN**).\n` +
+      `• ID : \`${ticket.id}\`\n` +
+      `• Titre : ${ticket.title}\n` +
+      `• Priorité : ${ticket.priority}\n` +
+      `• Logement : ${payload.apartmentLabel ?? payload.apartmentId}\n` +
+      `Vous pouvez l’assigner à un agent depuis Maintenance.`;
+
+    return {
+      reply,
+      suggestions: ['Assigner un agent', 'Voir les tickets', 'Mes logements'],
+      actions: [
+        { label: 'Ouvrir Maintenance', route: '/maintenance' },
+        { label: 'Voir l’équipe', route: '/team/agents' },
+      ],
+      poweredBy: 'local',
+      contextUsed: true,
+      toolsUsed: ['createMaintenanceTicket'],
     };
   }
 

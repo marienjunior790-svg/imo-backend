@@ -65,5 +65,6 @@ export const CAPABILITY_TO_TOOLS: Record<AiCapabilityId, readonly string[]> = {
   APP_HOWTO: [],
   CONFIRM_PENDING: [],
   VISION_READ: [],
+  /** Ticket OPEN : propose→confirm CREATE_MAINTENANCE_TICKET (méthode service, pas tool OpenAI). */
   MAINTENANCE: ['proposeMaintenanceTasksFromTickets'],
 };

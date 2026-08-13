@@ -48,6 +48,7 @@ const PROPOSE_INTENTS = new Set([
   'proposeLeaseExpiryReminders',
   'proposeMaintenanceTasksFromTickets',
   'proposeAnomalyActions',
+  'proposeCreateMaintenanceTicket',
 ]);
 
 function lastWasPropose(session?: AiSessionEntities | null): boolean {
@@ -67,6 +68,8 @@ function pendingCapability(pendingType?: string | null): AiCapabilityId | null {
       return 'PDF_NOTICE';
     case 'CREATE_LEASE':
       return 'LEASE_CREATE';
+    case 'CREATE_MAINTENANCE_TICKET':
+      return 'MAINTENANCE';
     case 'SEND_TENANT_MESSAGE':
       return 'MSG_INAPP';
     case 'SEND_WHATSAPP_MESSAGE':
@@ -158,7 +161,12 @@ function scoreUtterance(q: string): Array<{ id: AiCapabilityId; score: number }>
   ) {
     bump('PORTFOLIO_READ', 4);
   }
-  if (q.includes('maintenance') || q.includes('fuite') || q.includes('intervention') || q.includes('ticket')) {
+  if (
+    (q.includes('ticket') || q.includes('maintenance')) &&
+    (q.includes('cree') || q.includes('creer') || q.includes('ouvre') || q.includes('ouvrir') || q.includes('signal'))
+  ) {
+    bump('MAINTENANCE', 9);
+  } else if (q.includes('maintenance') || q.includes('fuite') || q.includes('intervention') || q.includes('ticket')) {
     bump('MAINTENANCE', 5);
   }
   if (q.includes('retien') || q.includes('memorise') || q.includes('souvenir') || q.includes('oublie')) {
@@ -186,6 +194,8 @@ function clarificationForPending(pendingType?: string | null): string {
       return `Un message locataire est en attente. Répondez « oui » / « confirme », ou « annule ».`;
     case 'LEASE_CREATE':
       return `Une création de bail est en attente. Répondez « oui » / « confirme », ou « annule ».`;
+    case 'MAINTENANCE':
+      return `Un ticket maintenance est en attente. Répondez « oui » / « confirme » pour le créer (OPEN), ou « annule ».`;
     case 'AUTOMATION':
       return `Une automatisation est en attente d’approbation. Répondez « oui » / « confirme », ou « annule ».`;
     default:
@@ -202,6 +212,9 @@ function clarificationForProposeSession(lastIntent?: string): string {
   }
   if (lastIntent?.includes('WhatsApp')) {
     return `Souhaitez-vous confirmer l’envoi WhatsApp ? Dites « oui » ou « confirme », ou « annule ».`;
+  }
+  if (lastIntent?.includes('MAINTENANCE') || lastIntent?.includes('VISION')) {
+    return `Souhaitez-vous créer le ticket maintenance ? Dites « oui » / « confirme », ou « crée le ticket » après avoir précisé le logement.`;
   }
   return `Une proposition récente est peut-être encore ouverte. Dites « oui » pour confirmer, « annule », ou reformulez clairement (ex. « génère le contrat PDF de … »).`;
 }
