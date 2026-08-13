@@ -90,7 +90,8 @@ async function seedOrgResources(
       email: `loc.${label}.${stamp}@itc-test.cg`,
     });
   expect(tenant.status).toBe(201);
-  const tenantId = tenant.body.data.id as string;
+  const tenantId = (tenant.body.data.tenant?.id ?? tenant.body.data.id) as string;
+  expect(tenantId).toBeTruthy();
 
   const startDate = '2026-01-15';
   const endDate = '2027-01-14';
