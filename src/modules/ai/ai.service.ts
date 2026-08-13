@@ -16,6 +16,14 @@ import { APP_GUIDE_PROMPT, isAppHowtoIntent, resolveAppHowtoReply } from './ai.a
 import { ITC_KNOWLEDGE_PROMPT, resolveKnowledgeClarification } from './ai.knowledge.js';
 import { resolveCapabilityRoute } from './ai.capability-router.js';
 import {
+  VISION_SYSTEM_PROMPT,
+  buildVisionMetierActions,
+  buildVisionMetierAppendix,
+  buildVisionUserPrompt,
+  classifyVisionReading,
+  resolveVisionUnitHint,
+} from './ai.vision.js';
+import {
   AiToolsService,
   OPENAI_TOOL_DEFINITIONS,
   formatToolResultForLocalReply,
@@ -1196,27 +1204,107 @@ export class AiService {
     try {
       const ctx = await this.contextService.buildContext(organizationId);
       const contextJson = this.contextService.toPromptContext(ctx);
+
+      // Session + logements pour rattacher un dégât à une unité (sans inventer)
+      let sessionEntities: AiSessionEntities = {};
+      if (isAiMemoryEnabled) {
+        try {
+          const row = await this.memory.getSession({ organizationId, userId });
+          sessionEntities = (row?.entitiesJson as AiSessionEntities | null) ?? {};
+        } catch {
+          sessionEntities = {};
+        }
+      }
+      const [apartments, leases] = await Promise.all([
+        this.prisma.apartment.findMany({
+          where: { organizationId },
+          take: 80,
+          select: {
+            id: true,
+            label: true,
+            building: { select: { name: true } },
+          },
+        }),
+        this.prisma.lease.findMany({
+          where: {
+            organizationId,
+            status: { in: [LeaseStatus.ACTIVE, LeaseStatus.DRAFT, LeaseStatus.EXPIRED] },
+          },
+          take: 80,
+          select: {
+            id: true,
+            apartmentId: true,
+            status: true,
+            tenant: { select: { firstName: true, lastName: true } },
+          },
+        }),
+      ]);
+
       const base64 = file.buffer.toString('base64');
-      const prompt =
-        (userPrompt?.trim() ||
-          'Lis cette image (document, photo, manuscrit, SMS, dégât / fuite). Extrais le texte même approximatif, corrige les fautes, ' +
-            'puis explique en 3–6 phrases ce qui est utile pour la gestion immobilière. ' +
-            'Si c’est un dégât : décris le constat, la gravité estimée, et la prochaine action (ticket maintenance). ' +
-            'Si c’est un contrat ou une pièce d’identité, résume les infos clés.') +
-        `\n\nContexte org (JSON):\n${contextJson}`;
+      const prompt = buildVisionUserPrompt(userPrompt, contextJson);
 
       const reading = await this.openai.readImage({
         imageBase64: base64,
         mimeType: file.mimetype || 'image/jpeg',
         prompt,
+        system: `${VISION_SYSTEM_PROMPT}\n\n${ITC_KNOWLEDGE_PROMPT}`,
       });
 
-      const suggestions = buildContextualSuggestions(ctx);
-      const actions = resolveChatActions(userPrompt || reading);
+      const classification = classifyVisionReading(reading, userPrompt);
+      const unit = resolveVisionUnitHint({
+        session: sessionEntities,
+        userPrompt,
+        reading,
+        apartments: apartments.map((a) => ({
+          id: a.id,
+          label: a.label,
+          buildingName: a.building?.name,
+        })),
+        leases: leases.map((l) => ({
+          id: l.id,
+          apartmentId: l.apartmentId,
+          status: l.status,
+          tenantName: `${l.tenant.firstName} ${l.tenant.lastName}`,
+        })),
+      });
+
+      const appendix = buildVisionMetierAppendix(classification, unit);
+      const reply = `${reading.trim()}${appendix}`;
+      const suggestions =
+        classification.kind === 'DAMAGE'
+          ? [
+              'Ouvre Maintenance',
+              'Automatise les tâches maintenance',
+              'Mes logements',
+              ...(unit.apartmentLabel ? [`Contrat du logement ${unit.apartmentLabel}`] : []),
+            ]
+          : buildContextualSuggestions(ctx);
+      const actions = this.dedupeActions([
+        ...buildVisionMetierActions(classification),
+        ...resolveChatActions(userPrompt || reading),
+      ]);
+
+      // Mémoriser le logement pressenti pour les follow-ups (ex. « et le bail ? »)
+      if (unit.apartmentId || unit.leaseId) {
+        void this.memory.mergeEntities({
+          organizationId,
+          userId,
+          entities: {
+            ...(unit.apartmentId ? { lastApartmentId: unit.apartmentId } : {}),
+            ...(unit.leaseId ? { lastLeaseId: unit.leaseId } : {}),
+            ...(unit.tenantName ? { lastTenantName: unit.tenantName } : {}),
+            lastIntent: 'VISION_READ',
+            lastUserMessage: (userPrompt || 'image').slice(0, 200),
+            lastReplyDigest: reply.slice(0, 240),
+          },
+        });
+      }
+
+      void this.persistConversationSession(organizationId, userId, userPrompt || '[image]', ['VISION_READ'], reply);
 
       return {
-        reply: reading,
-        suggestions,
+        reply,
+        suggestions: suggestions.slice(0, 6),
         actions,
         poweredBy: 'openai',
         contextUsed: true,

@@ -7,7 +7,7 @@
 
 | Scénario client | Comportement actuel | Cause |
 |-----------------|---------------------|--------|
-| Photo envoyée | `Erreur interne du serveur` | `chatFromImage` sans try/catch → 500 |
+| Photo envoyée | ~~`Erreur interne du serveur`~~ → constat + plan Maintenance (J0/J3) | ~~sans try/catch~~ → soft-fail + vision métier |
 | « oui crée le PDF » | Dump patrimoine | Confirm NL absent ; fallback portfolio |
 | « contrat PDF de fortune libolo » | Liste d’IDs (DRAFT+ACTIVE) | Pas de résolution locataire → bail ACTIVE |
 | WhatsApp Meta 401 | Texte d’échec générique | Pas de mapping auth Meta |
@@ -58,8 +58,14 @@ User utterance
 
 **AT :** « Trouve la clause préavis dans ce PDF » → NOT_SUPPORTED + alternatives (faits bail / photo), pas dump parc.
 
-### J3 — Vision métier
+### J3 — Vision métier — **DONE** (branch)
 Photo → constat + proposition ticket maintenance / agent (tools existants), pas « NOT_SUPPORTED ».
+
+- `ai.vision.ts` : classification DAMAGE/DOCUMENT/IDENTITY/PROPERTY, priorité via `classifyPriority`, hint logement session/libellé
+- `chatFromImage` : prompt structuré + appendix plan d’action + actions `/maintenance` + merge session
+- Soft-fail J0 conservé (non-image / erreur vision → message clair)
+
+**AT :** photo fuite + « Appt 3B » → constat + priorité + plan Maintenance (pas dump parc).
 
 ### J4 — Document pipeline
 Upload PDF → extract (buffer/OCR quand dispo) → index facts → ask/compare.  
