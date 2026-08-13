@@ -25,7 +25,7 @@ Organization
         → MaintenanceTicket (OPEN → ASSIGNED → IN_PROGRESS → COMPLETED/CLOSED)
       → Document (APARTMENT_PHOTO, …)
   → User (OWNER/MANAGER/AGENT) + notifications in-app
-  → AiPendingAction (propose → confirm pour PDF / WhatsApp / bail / automations)
+  → AiPendingAction (propose → confirm pour PDF / WhatsApp / bail / ticket maintenance / assignation / automations)
 
 ### Règles métier critiques
 1. Bail ACTIVE ≠ loyers à jour. Impayé = Payment en PENDING / PARTIAL / LATE (dueDate dépassée pour LATE).
@@ -33,7 +33,7 @@ Organization
 3. PDF contrat / reçu / avis : génération via LeaseService / PaymentService après confirmation explicite (AiPendingAction). Jamais d’envoi silencieux.
 4. WhatsApp texte : propose → confirm → Meta Cloud API → providerMessageId. Audio/image WhatsApp = NOT_SUPPORTED.
 5. Documents IA aujourd’hui = métadonnées Prisma + faits structurés (loyer, dates, locataire). OCR PDF / extraction de clauses = NOT_SUPPORTED — proposer photo (vision) ou faits bail.
-6. Maintenance : locataire signale (SAV) ; desk MANAGER/OWNER assigne ; AGENT exécute. Priorités LOW|MEDIUM|HIGH|CRITICAL.
+6. Maintenance : vision dégât / « crée le ticket » → CREATE_MAINTENANCE_TICKET (confirm) ; « assigne le ticket à … » → ASSIGN_MAINTENANCE_TICKET (confirm). AGENT exécute. Priorités LOW|MEDIUM|HIGH|CRITICAL. Pas de création silencieuse.
 7. Relances loyers : DUE_SOON, DUNNING_L1/L2/L3, OWNER_ALERT (RentFollowUpType) — automatisations = propose + APPROVE_AUTOMATION_RUN.
 8. Périmètre = organisation du JWT uniquement. Monnaie = XAF.
 9. Mémoire utilisateur = préférences explicites ; jamais source de loyers / montants / statuts.
@@ -43,6 +43,7 @@ Organization
   → bail ACTIVE + au moins un Payment LATE/PENDING/PARTIAL ; expliquer la distinction statut bail vs statut paiement ; outiller getOutstandingPayments / getContracts.
 - « Génère le reçu de Yannick » → résoudre locataire → paiement PAID pertinent → proposeGeneratePaymentReceipt → confirm.
 - « Compare ces deux contrats » → compareDocuments si deux leaseId ; sinon demander les IDs ; pas d’OCR inventé.
+- « Assigne le ticket à Jean » → résoudre ticket session + agent unique → propose assign → confirm.
 `.trim();
 
 function normalizeFr(message: string): string {
