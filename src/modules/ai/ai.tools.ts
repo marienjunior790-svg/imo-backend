@@ -1109,9 +1109,14 @@ export class AiToolsService {
     const wantsDocInconsistency =
       q.includes('incoher') ||
       q.includes('incoherent') ||
+      q.includes('coherenc') ||
       (q.includes('verifie') && (q.includes('contrat') || q.includes('bail') || q.includes('document')));
     const wantsDocExtract =
-      (q.includes('extrait') || q.includes('extraire') || q.includes('extraction')) &&
+      (q.includes('extrait') ||
+        q.includes('extraire') ||
+        q.includes('extrais') ||
+        q.includes('extraction') ||
+        q.includes('extractdocumentfacts')) &&
       (q.includes('document') ||
         q.includes('contrat') ||
         q.includes('pdf') ||

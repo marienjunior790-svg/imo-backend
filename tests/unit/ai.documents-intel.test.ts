@@ -219,6 +219,13 @@ describe('Phase G intents + formatters', () => {
     expect(intents.map((i) => i.name)).toContain('extractDocumentFacts');
   });
 
+  it('Extrais (impératif) + bail → extractDocumentFacts', () => {
+    const intents = tools.resolveLocalToolIntents(
+      'Extrais les faits cles du document / bail leaseId=cmsova6ru00ubwh6klids1jw7',
+    );
+    expect(intents.map((i) => i.name)).toContain('extractDocumentFacts');
+  });
+
   it('incohérence / vérifie le contrat → checkLeaseDocumentConsistency', () => {
     expect(
       tools.resolveLocalToolIntents('y a-t-il une incohérence sur le contrat ?').map((i) => i.name),
