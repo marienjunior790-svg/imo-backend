@@ -239,6 +239,54 @@ export class AiService {
     }
     const history = this.mergeChatHistory(input.history, sessionEntities.recentTurns);
 
+    // Follow-up court après une réponse agents → guide connexion (pas un dump dashboard).
+    {
+      const qFollow = message
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/\p{M}/gu, '');
+      const histBlob = [
+        ...(history ?? []).map((h) => h.content),
+        sessionEntities.lastReplyDigest ?? '',
+        sessionEntities.lastUserMessage ?? '',
+        sessionEntities.lastIntent ?? '',
+      ]
+        .join(' ')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/\p{M}/gu, '');
+      const priorAgents =
+        sessionEntities.lastIntent === 'getTeamMembers' ||
+        histBlob.includes('agent') ||
+        histBlob.includes('loginid') ||
+        histBlob.includes('equipe') ||
+        histBlob.includes('équipe');
+      const asksConnect =
+        qFollow.includes('connect') ||
+        qFollow.includes('connexion') ||
+        (qFollow.includes('login') && !qFollow.includes('logout')) ||
+        (qFollow.includes('avec') && (qFollow.includes('comment') || qFollow.startsWith('et ')));
+      if (priorAgents && asksConnect && qFollow.length < 80) {
+        const howto =
+          resolveAppHowtoReply('comment me connecter à mon compte agent ?') ??
+          resolveAppHowtoReply(message);
+        if (howto) {
+          const ctxGuide = await this.contextService.buildContext(organizationId);
+          void this.persistConversationSession(organizationId, userId, message, [], howto);
+          return {
+            reply: howto,
+            suggestions: buildContextualSuggestions(ctxGuide),
+            actions: [
+              { label: 'Voir l’équipe', route: '/agents' },
+              ...resolveChatActions(message),
+            ],
+            poweredBy: 'local',
+            contextUsed: true,
+          };
+        }
+      }
+    }
+
     // Documents PDF : proposition + confirmation obligatoire (jamais de PDF auto).
     if (this.isNoticeIntent(message)) {
       return this.proposePaymentNotice(organizationId, userId, role, this.extractCuid(message, 'paymentId'));
