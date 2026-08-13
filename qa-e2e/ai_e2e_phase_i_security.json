@@ -1,0 +1,51 @@
+﻿{
+    "phase":  "I",
+    "pass":  6,
+    "fail":  0,
+    "partial":  0,
+    "results":  [
+                    {
+                        "id":  "PORTFOLIO_ANALYZE",
+                        "status":  "PASS",
+                        "detail":  "analyzePortfolio in toolsUsed",
+                        "toolsUsed":  "analyzePortfolio",
+                        "evidence":  "(Contexte mémoire)\nMémoire utilisateur — ne pas confondre avec données métier Prisma. Les faits métier (loyers, locataires, montants) viennent exclusivement des outils / DB.\n- [USER/FACT] ma couleur preferee est bleu\n- ["
+                    },
+                    {
+                        "id":  "PAYMENT_REMINDER_PLAN",
+                        "status":  "PASS",
+                        "detail":  "steps=3",
+                        "toolsUsed":  "getOutstandingPayments",
+                        "evidence":  "Terminé.\n• 0 locataire(s) avec impayés\n• Aucun contrat à vérifier\n• 0 relance(s) préparée(s)\nAucun dossier concerné — aucune relance à préparer."
+                    },
+                    {
+                        "id":  "AUTOMATION_PROPOSE",
+                        "status":  "PASS",
+                        "detail":  "pending=none",
+                        "toolsUsed":  "proposeOutstandingReminderAutomation",
+                        "evidence":  "(Contexte mémoire)\nMémoire utilisateur — ne pas confondre avec données métier Prisma. Les faits métier (loyers, locataires, montants) viennent exclusivement des outils / DB.\n- [USER/FACT] ma couleur preferee est bleu\n- ["
+                    },
+                    {
+                        "id":  "CONFIRM_RANDOM_UUID",
+                        "status":  "PASS",
+                        "detail":  "error as expected: {\"success\":false,\"message\":\"Action IA introuvable ou expirée\",\"code\":\"NOT_FOUND\"} Le serveur distant a retourné une erreur : (404) Introuvable.",
+                        "toolsUsed":  "",
+                        "evidence":  null
+                    },
+                    {
+                        "id":  "DOCUMENT_INTEL",
+                        "status":  "PASS",
+                        "detail":  "tools=[analyzePortfolio,summarizeDocument]",
+                        "toolsUsed":  "analyzePortfolio,summarizeDocument",
+                        "evidence":  "(Contexte mémoire)\nMémoire utilisateur — ne pas confondre avec données métier Prisma. Les faits métier (loyers, locataires, montants) viennent exclusivement des outils / DB.\n- [USER/FACT] ma couleur preferee est bleu\n- ["
+                    },
+                    {
+                        "id":  "MEMORY_PREF",
+                        "status":  "PASS",
+                        "detail":  "remember+recall+bleu",
+                        "toolsUsed":  "rememberMemory,recallMemories",
+                        "evidence":  "Mémoires (3) :\n• [USER/FACT] ma couleur preferee est bleu\n• [USER/FACT] ma couleur preferee est bleu\n• [USER/FACT] ma couleur preferee est bleu\n\n(Ne pas confondre avec les données métier Prisma.)"
+                    }
+                ],
+    "generatedAt":  "2026-08-13T01:42:44.6231791+01:00"
+}

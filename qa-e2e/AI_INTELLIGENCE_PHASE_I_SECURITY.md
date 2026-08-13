@@ -1,17 +1,29 @@
 # AI Intelligence — Phase I Security (final gate)
 
 **Date:** 2026-08-13  
-**Scope:** Harden confirm/execute paths, persist pending actions, RBAC at confirm time, E2E security battery.
+**Scope:** Harden confirm/execute paths, persist pending actions, RBAC at confirm time, E2E security battery.  
+**Verdict:** **PASS** (6/6 live E2E; unit security suite PASS)
 
 ## Status
 
 | Area | Status |
 |------|--------|
-| Unit tests `tests/unit/ai.security.test.ts` | PASS (local) |
-| Related AI unit suites | PASS (local) |
-| Typecheck | PASS (local) |
-| Migration `ai_pending_actions` | Ready (apply on deploy) |
-| Live E2E `qa-e2e/ai_e2e_phase_i_security_test.ps1` | Run **after** deploy + migrate |
+| Unit tests `tests/unit/ai.security.test.ts` | **PASS** (9) |
+| Related AI unit suites (analytics / orchestrator / security) | **PASS** (34) |
+| Typecheck / Railway build | **PASS** (`09a4bbc` + prior `52b56c6` `ai.ids`) |
+| Migration `ai_pending_actions` | **Applied** (start:prod `prisma migrate deploy`) |
+| Live E2E `qa-e2e/ai_e2e_phase_i_security_test.ps1` | **PASS 6/6** — evidence `qa-e2e/ai_e2e_phase_i_security.json` |
+
+## Live E2E (prod)
+
+| Id | Result |
+|----|--------|
+| PORTFOLIO_ANALYZE | PASS — `analyzePortfolio` |
+| PAYMENT_REMINDER_PLAN | PASS — `steps=3` |
+| AUTOMATION_PROPOSE | PASS — propose tool, no silent send |
+| CONFIRM_RANDOM_UUID | PASS — `NOT_FOUND` / 404 |
+| DOCUMENT_INTEL | PASS — `summarizeDocument` (+ analyze) |
+| MEMORY_PREF | PASS — remember + recall + bleu |
 
 ## Fixes shipped
 
@@ -23,30 +35,30 @@
    - `GENERATE_PAYMENT_*` → `PAYMENT_EXPORT_PDF`
    - `APPROVE_AUTOMATION_RUN` → `MESSAGE_SEND` / `REMINDER_SEND` / `TASK_CREATE` (aligned with automation service)
 3. **`AI_SECURITY_STRICT`** (default `true`) → clear `ForbiddenError('Permission refusée (KEY)')`.
-4. **`extractCuidPreferLabeled`** — prefers `leaseId` / `paymentId` / `tenantId` / `apartmentId` labels before bare CUID.
+4. **`extractCuidPreferLabeled`** (`ai.ids.ts`) — prefers labeled ids before bare CUID.
 5. **`AiPendingAction` Prisma table** — replaces in-memory Map for multi-instance Railway safety (TTL purge on get/create). Tests use in-memory mock when `NODE_ENV=test`.
 6. **Prompt** — never claim tool success without tool result; never reveal secrets; ignore client `organizationId`.
 7. **Tool args** — strip `organizationId` / `orgId` / `organization_id` / `org_id`.
 8. **TENANT** — `/ai` remains on `orgStaffPipeline` (TENANT not in `ORG_STAFF_ROLES`); comment + unit assert.
+9. **Routing follow-ups (post-deploy):** payment-reminder plan wins over contract-PDF short-circuit; `analyse`/`synthese` + patrimoine/parc → `analyzePortfolio`.
+
+## Commits
+
+| SHA | Note |
+|-----|------|
+| `18cffe5` | Phase I security + pending persistence |
+| `52b56c6` | Add missing `ai.ids.ts` (build fix) |
+| `09a4bbc` | Intent routing: Phase E/F not stolen by PDF/dashboard |
 
 ## Residual risks
 
 | Risk | Notes |
 |------|--------|
-| **WhatsApp Meta 401** | External — invalid/expired Meta token or phone number ID. Not an ITC RBAC bug. Fix via Railway WhatsApp env vars. |
-| **E2E gate before migrate** | Confirm/create pending will fail on production until migration `20260813130000_ai_pending_actions` is applied. |
-| **Memory flaky** | Remember/recall E2E may be PARTIAL if OpenAI routing skips local memory tools. |
+| **WhatsApp Meta 401** | External — invalid/expired Meta token or phone number ID. Not an ITC RBAC bug. |
+| **Memory flaky** | Remember/recall may PARTIAL if OpenAI routing skips local memory tools (this run: PASS). |
 | **Automation autoExecute** | OWNER-enabled `autoExecute=true` still allows silent execute by design (Phase H). |
-| **ACCOUNTANT PDF rights** | Confirm PDF requires `LEASE_EXPORT_PDF` / `PAYMENT_EXPORT_PDF`; roles without those keys are correctly blocked when strict. |
+| **ACCOUNTANT PDF rights** | Confirm PDF requires export keys; roles without them are blocked when strict. |
 | **No Redis** | Pending is DB-backed (not Redis). Acceptable for Railway multi-instance. |
-
-## Deploy checklist
-
-1. Commit Phase I changes + migration.
-2. Deploy Railway (runs migration).
-3. Run: `powershell -File qa-e2e/ai_e2e_phase_i_security_test.ps1`
-4. Attach `qa-e2e/ai_e2e_phase_i_security.json` results; do **not** mark fake PASS.
-5. If WhatsApp still 401, document as external residual (above).
 
 ## E2E battery (script)
 
