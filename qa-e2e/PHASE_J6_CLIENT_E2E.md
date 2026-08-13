@@ -49,5 +49,8 @@ Prérequis : backend déployé avec ce branch (J0–J5), app mobile à jour, org
 
 | Date | Build / commit | Scénario | PASS/FAIL | Notes |
 |------|----------------|----------|-----------|-------|
-| | | A | | |
-| | | B | | |
+| 2026-08-13 | `bc00c7d` (main / Phase J) | A | PASS | Client téléphone — Intelligence 2.0 |
+| 2026-08-13 | `bc00c7d` (main / Phase J) | B | PASS | Client téléphone — WhatsApp / faits |
+
+> Suite : Phase K1 propose→confirm ticket maintenance (`qa-e2e/PHASE_K_REAL_ACTIONS.md`).
+

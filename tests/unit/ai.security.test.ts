@@ -151,6 +151,7 @@ function buildAiServiceForConfirm(opts?: { denyMessageSend?: boolean }) {
     {} as never, // documentsIntel (Phase J4)
     {} as never,
     {} as never,
+    {} as never, // maintenance (Phase K1)
     rbac as never,
   );
   return { service, rbac };

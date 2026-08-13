@@ -86,11 +86,13 @@ IA → confirm → Meta → providerMessageId → statut SENT ; 401/403 = « tok
 
 **AT :** confirm WhatsApp avec token mort → message « Token Meta invalide… », pas dump parc / pas faux succès.
 
-### J6 — Scénarios client E2E (pas tool unit) — **CHECKLIST** (`qa-e2e/PHASE_J6_CLIENT_E2E.md`)
+### J6 — Scénarios client E2E (pas tool unit) — **PASS** (`qa-e2e/PHASE_J6_CLIENT_E2E.md`)
 1. Photo fuite → constat → logement → bail → rapport PDF → proposer maintenance  
 2. Contrat PDF → loyer / échéance / durée / résiliation / anomalies → relance WhatsApp impayé  
 
-Exécution manuelle téléphone ; journal PASS/FAIL dans le fichier J6. Code J0–J5 doit être déployé avant run. 
+Exécution manuelle téléphone **PASS** (2026-08-13, deploy `bc00c7d`).  
+
+**Suite :** Phase K — ticket maintenance propose→confirm (`qa-e2e/PHASE_K_REAL_ACTIONS.md`).
 
 ## Règle d’or
 
