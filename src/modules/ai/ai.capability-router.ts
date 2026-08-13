@@ -8,6 +8,7 @@ import { CAPABILITY_TO_TOOLS } from './ai.capabilities.js';
 import { detectReferentialIntent } from './ai.context-manager.js';
 import { isAppHowtoIntent } from './ai.app-guide.js';
 import type { AiSessionEntities } from './ai.memory.service.js';
+import { resolveKnowledgeClarification } from './ai.knowledge.js';
 
 export type CapabilityRouteContext = {
   session?: AiSessionEntities | null;
@@ -226,6 +227,18 @@ export function resolveCapabilityRoute(
         ? undefined
         : 'Aucune action en attente. Proposez d’abord un PDF / envoi, puis confirmez.',
       suggestedTools: [],
+    };
+  }
+
+  // Limites produit (OCR, WA média, …) — prioritaire sur le dump
+  const knowledge = resolveKnowledgeClarification(message);
+  if (knowledge) {
+    return {
+      capability: 'DOC_INTEL',
+      score: 95,
+      blockPortfolioFallback: true,
+      clarification: knowledge,
+      suggestedTools: CAPABILITY_TO_TOOLS.DOC_INTEL,
     };
   }
 

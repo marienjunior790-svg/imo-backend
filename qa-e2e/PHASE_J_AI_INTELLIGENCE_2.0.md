@@ -51,8 +51,12 @@ User utterance
 
 **AT :** Après propose PDF, message flou (« euh », « ok ») → rappel de confirmer, pas « Voici ce que confirment vos données ITC… ».
 
-### J2 — Knowledge layer
-Un seul pack injecté dans ASSISTANT_PROMPT + clarifications locales (OCR non, WA media non, confirm obligatoire).
+### J2 — Knowledge layer — **DONE**
+- `ai.knowledge.ts` enrichi depuis Prisma (rôles, graphe, statuts, règles bail≠impayé)
+- Clarifications locales : OCR/clause PDF, WA média, état des lieux, « pourquoi retard si bail actif »
+- Injecté dans ASSISTANT_PROMPT + court-circuit chat avant fallback
+
+**AT :** « Trouve la clause préavis dans ce PDF » → NOT_SUPPORTED + alternatives (faits bail / photo), pas dump parc.
 
 ### J3 — Vision métier
 Photo → constat + proposition ticket maintenance / agent (tools existants), pas « NOT_SUPPORTED ».

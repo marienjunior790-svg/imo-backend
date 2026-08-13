@@ -13,7 +13,7 @@ import {
   type AiActionHint,
 } from './ai.fallback.js';
 import { APP_GUIDE_PROMPT, isAppHowtoIntent, resolveAppHowtoReply } from './ai.app-guide.js';
-import { ITC_KNOWLEDGE_PROMPT } from './ai.knowledge.js';
+import { ITC_KNOWLEDGE_PROMPT, resolveKnowledgeClarification } from './ai.knowledge.js';
 import { resolveCapabilityRoute } from './ai.capability-router.js';
 import {
   AiToolsService,
@@ -275,6 +275,26 @@ export class AiService {
             contextUsed: true,
           };
         }
+      }
+    }
+
+    // Phase J2 — clarifications knowledge (OCR / WA média / limites docs / raisonnement bail vs impayé)
+    {
+      const knowledgeReply = resolveKnowledgeClarification(message);
+      if (knowledgeReply) {
+        const ctxGuide = await this.contextService.buildContext(organizationId);
+        void this.persistConversationSession(organizationId, userId, message, [], knowledgeReply);
+        return {
+          reply: knowledgeReply,
+          suggestions: buildContextualSuggestions(ctxGuide),
+          actions: this.dedupeActions([
+            ...resolveChatActions(message),
+            { label: 'Voir les contrats', route: '/leases' },
+            { label: 'Voir les paiements', route: '/payments' },
+          ]),
+          poweredBy: 'local',
+          contextUsed: true,
+        };
       }
     }
 
