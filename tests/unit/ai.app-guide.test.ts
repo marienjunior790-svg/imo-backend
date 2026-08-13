@@ -24,4 +24,24 @@ describe('AI app guide (howto)', () => {
     const reply = resolveAppHowtoReply('Comment créer un agent gestionnaire ?');
     expect(reply).toMatch(/MANAGER|Gestionnaire|terrain/i);
   });
+
+  it('explique où voir les LoginId agents (pas le menu générique)', () => {
+    const reply = resolveAppHowtoReply('où voir les identifiants des agents ?');
+    expect(reply).toBeTruthy();
+    expect(reply!.toLowerCase()).toMatch(/loginid|équipe|equipe|fiche/);
+    expect(reply!).not.toMatch(/Précisez l’action/);
+  });
+
+  it('explique comment se connecter en agent', () => {
+    const reply = resolveAppHowtoReply('comment me connecter à mon compte agent ?');
+    expect(reply).toBeTruthy();
+    expect(reply!.toLowerCase()).toMatch(/loginid|mot de passe|connexion|connecter/);
+    expect(reply!).not.toMatch(/Précisez l’action/);
+  });
+
+  it('ne renvoie plus le menu générique pour une question howto non couverte', () => {
+    // Phrase howto vague mais sans fiche dédiée → null pour laisser outils/LLM
+    const reply = resolveAppHowtoReply('comment faire avec le truc ITC ?');
+    expect(reply).toBeNull();
+  });
 });

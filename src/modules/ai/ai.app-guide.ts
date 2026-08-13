@@ -154,6 +154,47 @@ Demandez par ex. : « Comment ajouter un locataire ? », « Comment créer un ag
 Le collaborateur change son mot de passe à la première connexion.`;
   }
 
+  // Connexion compte agent (terrain / gestionnaire)
+  if (
+    q.includes('agent') &&
+    (q.includes('connect') ||
+      q.includes('connexion') ||
+      q.includes('se connecter') ||
+      q.includes('me connecter') ||
+      (q.includes('compte') && (q.includes('login') || q.includes('acces') || q.includes('accès'))))
+  ) {
+    return `Se connecter avec un compte agent :
+
+1. Propriétaire : menu → Équipe / Agents → ouvrez la fiche de l’agent
+2. Notez l’identifiant (LoginId, ex. ITC-XXXX) affiché sur la fiche
+3. À la création, un mot de passe temporaire est montré une seule fois — remettez-le à l’agent
+4. Sur l’écran de connexion ITC : saisissez ce LoginId (ou e-mail s’il en a un) + le mot de passe
+5. Au premier login, ITC exige souvent de changer le mot de passe
+
+Agent terrain = interventions seulement. Gestionnaire = ops locatives. Ce n’est pas le même compte que le propriétaire.`;
+  }
+
+  // Où voir les identifiants / LoginId des agents
+  if (
+    (q.includes('agent') || q.includes('equipe') || q.includes('équipe')) &&
+    (q.includes('identifiant') ||
+      q.includes('loginid') ||
+      q.includes('login id') ||
+      q.includes('login') ||
+      q.includes('credential') ||
+      q.includes('mot de passe temporaire'))
+  ) {
+    return `Voir les identifiants des agents :
+
+1. Menu → Équipe (Agents)
+2. Ouvrez la fiche de l’agent
+3. Section Compte / Identité : LoginId (ex. ITC-XXXX) et statut Actif
+
+Le mot de passe n’est plus affiché après la création (sécurité). Pour un oubli : propriétaire → régénérer / réinitialiser depuis la fiche, ou « Mot de passe oublié » sur l’écran de login avec le LoginId.
+
+Dans Intelligence ITC vous pouvez aussi demander : « mes agents » pour la liste avec LoginId.`;
+  }
+
   if (
     (q.includes('gestionnaire') || (q.includes('manager') && !q.includes('terrain'))) &&
     (q.includes('comment') || q.includes('quoi') || q.includes('role') || q.includes('rôle') || q.includes('faire'))
@@ -305,21 +346,7 @@ Les locataires et agents terrain ne voient pas les menus CRM (immeubles, équipe
 Il ne voit jamais les autres locataires ni les finances de l’organisation.`;
   }
 
-  // Fallback howto générique si intent détecté
-  if (isAppHowtoIntent(message)) {
-    return `Je peux vous guider dans ITC. Précisez l’action, par exemple :
-
-• Comment marche l’application ?
-• Comment ajouter un locataire ?
-• Comment créer un agent gestionnaire ?
-• Comment enregistrer un paiement ?
-• Comment générer un contrat PDF ?
-• Où voir la maintenance ?
-• Comment utiliser l’Intelligence ITC ?
-
-Ou posez une question données : « mes impayés », « logements vacants », « résumé patrimoine ».`;
-  }
-
+  // Pas de menu générique : null → le chat continue (outils / OpenAI / historique).
   return null;
 }
 

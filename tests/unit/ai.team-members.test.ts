@@ -34,6 +34,21 @@ describe('resolveTeamMembersLocalIntent / NL agents', () => {
     expect(intents.some((i) => i.name === 'getTeamMembers')).toBe(false);
   });
 
+  it('route « où voir les identifiants des agents » → getTeamMembers', () => {
+    const tools = Object.create(AiToolsService.prototype) as AiToolsService;
+    const intents = tools.resolveLocalToolIntents('où voir les identifiants des agents ?');
+    expect(intents.some((i) => i.name === 'getTeamMembers')).toBe(true);
+  });
+
+  it('route « comment me connecter » ne bloque plus la liste agents si hors création', () => {
+    // Connexion = howto app (pas create) — getTeamMembers OK si on demande la liste ;
+    // ici on vérifie surtout que « comment » seul ne bloque plus.
+    const intent = resolveTeamMembersLocalIntent(
+      'comment me connecter a mon compte agent',
+    );
+    expect(intent).toEqual({ name: 'getTeamMembers', args: { role: UserRole.AGENT } });
+  });
+
   it('ne route pas l’assignation maintenance vers getTeamMembers', () => {
     const intent = resolveTeamMembersLocalIntent(
       'quels agents de maintenance sont disponibles pour affectation',

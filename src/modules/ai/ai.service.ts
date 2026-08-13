@@ -17,6 +17,7 @@ import {
   AiToolsService,
   OPENAI_TOOL_DEFINITIONS,
   formatToolResultForLocalReply,
+  resolveTeamMembersLocalIntent,
 } from './ai.tools.js';
 import { AiMemoryService, type AiSessionEntities } from './ai.memory.service.js';
 import {
@@ -239,18 +240,29 @@ export class AiService {
       return this.proposeLeasePdf(organizationId, userId, role, this.extractCuid(message, 'leaseId'));
     }
 
-    // Mode d’emploi app — avant les outils données (sinon « comment locataire » part en liste CRM).
-    if (isAppHowtoIntent(message)) {
-      const howto = resolveAppHowtoReply(message);
-      if (howto) {
-        const ctxGuide = await this.contextService.buildContext(organizationId);
-        return {
-          reply: howto,
-          suggestions: buildContextualSuggestions(ctxGuide),
-          actions: resolveChatActions(message),
-          poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
-          contextUsed: true,
-        };
+    // Mode d’emploi app — après les intents données (sinon « où voir agents » tombe en menu générique).
+    // Si un outil métier matche, on ne court-circuite pas.
+    {
+      const qEarly = message
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/\p{M}/gu, '');
+      const earlyDataIntent =
+        detectPaymentReminderPlan(message) ||
+        !!resolveTeamMembersLocalIntent(qEarly) ||
+        this.tools.resolveLocalToolIntents(message).length > 0;
+      if (!earlyDataIntent && isAppHowtoIntent(message)) {
+        const howto = resolveAppHowtoReply(message);
+        if (howto) {
+          const ctxGuide = await this.contextService.buildContext(organizationId);
+          return {
+            reply: howto,
+            suggestions: buildContextualSuggestions(ctxGuide),
+            actions: resolveChatActions(message),
+            poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
+            contextUsed: true,
+          };
+        }
       }
     }
 

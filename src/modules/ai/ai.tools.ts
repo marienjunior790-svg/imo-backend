@@ -2653,19 +2653,27 @@ Confirmez pour générer l’avis de paiement PDF.`;
       const status = m.isActive ? 'Actif' : 'Inactif';
       const name = String(m.fullName ?? '').trim() || 'Sans nom';
       const key = name.toLowerCase();
+      const loginId =
+        typeof m.loginId === 'string' && m.loginId.trim() ? m.loginId.trim() : '';
+      const email = typeof m.email === 'string' && m.email.trim() ? m.email.trim() : '';
       let detail = '';
-      if ((nameCounts.get(key) ?? 0) > 1) {
-        const email = typeof m.email === 'string' && m.email.trim() ? m.email.trim() : '';
+      if (loginId) detail += ` · LoginId ${loginId}`;
+      else if (email) detail += ` · ${email}`;
+      if ((nameCounts.get(key) ?? 0) > 1 && !loginId) {
         const phone = typeof m.phone === 'string' && m.phone.trim() ? m.phone.trim() : '';
         const id = typeof m.id === 'string' ? m.id : '';
         const disambiguator = email || phone || (id ? `réf. ${id.slice(-6)}` : '');
-        if (disambiguator) detail = ` · ${disambiguator}`;
+        if (disambiguator && !detail.includes(disambiguator)) detail += ` · ${disambiguator}`;
       }
       return `${index + 1}. ${name} — ${m.roleLabel ?? m.role} — ${status}${detail}`;
     });
 
     const noun = filter.role === 'AGENT' ? 'agents' : 'collaborateurs';
-    return `Vous avez actuellement ${data.count} ${noun} :\n\n${list.join('\n')}`;
+    const hint =
+      filter.role === 'AGENT'
+        ? '\n\nPour le détail : menu → Équipe → fiche agent (LoginId + statut). Le mot de passe temporaire n’est montré qu’à la création.'
+        : '';
+    return `Vous avez actuellement ${data.count} ${noun} :\n\n${list.join('\n')}${hint}`;
   }
   if (toolName === 'analyzePortfolio') {
     if (data.snapshot && data.periodCompare) {
@@ -2948,12 +2956,12 @@ export function resolveMemoryLocalIntent(
 /** Intent équipe / agents — hors questions maintenance d’affectation. */
 export function resolveTeamMembersLocalIntent(qNormalized: string): LocalToolIntent | null {
   const q = qNormalized;
+  // Uniquement « comment créer/ajouter » — pas « comment me connecter » / « où voir ».
   const isCreateHowto =
-    q.includes('comment') ||
-    q.includes('creer') ||
-    q.includes('créer') ||
-    q.includes('ajout') ||
-    q.includes('provision');
+    (q.includes('creer') || q.includes('créer') || q.includes('ajout') || q.includes('provision')) &&
+    !q.includes('identifiant') &&
+    !q.includes('login') &&
+    !q.includes('connect');
 
   // Agents terrain pour assignation maintenance → pas getTeamMembers.
   const isMaintenanceAssignQuery =
@@ -2967,7 +2975,14 @@ export function resolveTeamMembersLocalIntent(qNormalized: string): LocalToolInt
 
   if (isMaintenanceAssignQuery) return null;
 
-  if (q.includes('agent') && !isCreateHowto) {
+  const wantsAgentIds =
+    q.includes('identifiant') ||
+    q.includes('loginid') ||
+    q.includes('login id') ||
+    (q.includes('login') && q.includes('agent')) ||
+    (q.includes('credential') && q.includes('agent'));
+
+  if (wantsAgentIds || (q.includes('agent') && !isCreateHowto)) {
     const args: Record<string, unknown> = { role: UserRole.AGENT };
     if (q.includes('actif') || q.includes('active')) {
       args.status = 'active';
