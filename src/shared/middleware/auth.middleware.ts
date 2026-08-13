@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { randomBytes } from 'crypto';
 import { UserRole } from '@prisma/client';
 import { env } from '../../config/env.js';
 import { UnauthorizedError, ForbiddenError } from '../errors/app.error.js';
@@ -13,6 +14,8 @@ export interface JwtAccessPayload {
   organizationId: string | null;
   /** P3 — membership active (optionnel, dual-compat) */
   mid?: string;
+  /** Unique id for refresh tokens (évite collision tokenHash même seconde) */
+  jti?: string;
 }
 
 export function signAccessToken(payload: JwtAccessPayload): string {
@@ -22,9 +25,13 @@ export function signAccessToken(payload: JwtAccessPayload): string {
 }
 
 export function signRefreshToken(payload: JwtAccessPayload): string {
-  return jwt.sign(payload, env.JWT_REFRESH_SECRET, {
-    expiresIn: env.JWT_REFRESH_EXPIRES_IN as jwt.SignOptions['expiresIn'],
-  });
+  return jwt.sign(
+    { ...payload, jti: payload.jti ?? randomBytes(16).toString('hex') },
+    env.JWT_REFRESH_SECRET,
+    {
+      expiresIn: env.JWT_REFRESH_EXPIRES_IN as jwt.SignOptions['expiresIn'],
+    },
+  );
 }
 
 export function verifyAccessToken(token: string): JwtAccessPayload {

@@ -52,6 +52,7 @@ async function seedOrgResources(
   app: ReturnType<typeof createApp>,
   token: string,
   label: string,
+  stamp: number,
 ): Promise<Omit<OrgCtx, 'token' | 'orgId'>> {
   const auth = { Authorization: `Bearer ${token}` };
 
@@ -84,9 +85,9 @@ async function seedOrgResources(
     .set(auth)
     .send({
       firstName: 'Loc',
-      lastName: label,
-      phone: '0612345678',
-      email: `loc.${label}.${Date.now()}@itc-test.cg`,
+      lastName: `Tenant${label}`,
+      phone: `06123${String(stamp).slice(-4)}${label === 'a' ? '1' : '2'}`,
+      email: `loc.${label}.${stamp}@itc-test.cg`,
     });
   expect(tenant.status).toBe(201);
   const tenantId = tenant.body.data.id as string;
