@@ -16,6 +16,22 @@ function resolveModel(): string {
   return env.AI_MODEL || env.OPENAI_MODEL;
 }
 
+/** Modèle vision : gpt-4o / gpt-4o-mini (évite un AI_MODEL text-only). */
+function resolveVisionModel(): string {
+  const m = (env.AI_MODEL || env.OPENAI_MODEL || 'gpt-4o-mini').toLowerCase();
+  if (m.includes('gpt-4o') || m.includes('gpt-4.1') || m.includes('vision')) return env.AI_MODEL || env.OPENAI_MODEL;
+  return 'gpt-4o-mini';
+}
+
+function normalizeVisionMime(mimeType: string): string {
+  const raw = (mimeType || 'image/jpeg').toLowerCase().trim();
+  if (raw === 'image/jpg') return 'image/jpeg';
+  if (raw === 'image/pjpeg') return 'image/jpeg';
+  if (raw === 'image/x-png') return 'image/png';
+  if (raw.startsWith('image/')) return raw;
+  return 'image/jpeg';
+}
+
 @injectable()
 export class OpenAiClient {
   private client: OpenAI | null = null;
@@ -123,34 +139,68 @@ export class OpenAiClient {
     system?: string;
   }): Promise<string> {
     const client = this.getClient();
-    const mime = params.mimeType || 'image/jpeg';
-    const response = await client.chat.completions.create({
-      model: resolveModel(),
-      temperature: 0.2,
-      max_tokens: 1200,
-      messages: [
-        {
-          role: 'system',
-          content:
-            params.system ??
-            'Tu es Intelligence ITC, copilote immobilier. Tu lis les images (documents, photos, manuscrits, SMS flous). ' +
-              'Tu corriges les fautes et les « faux mots » sans inventer de chiffres absents. Réponds en français, clair et pro.',
-        },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: params.prompt },
-            {
-              type: 'image_url',
-              image_url: { url: `data:${mime};base64,${params.imageBase64}` },
-            },
-          ],
-        },
-      ],
-    });
-    const content = response.choices[0]?.message?.content;
-    if (!content) throw new ValidationError('Lecture d’image vide');
-    return content.trim();
+    const mime = normalizeVisionMime(params.mimeType);
+    if (/heic|heif|tiff|bmp/i.test(mime)) {
+      throw new ValidationError(
+        'Format image non supporté par la vision (HEIC/TIFF/BMP). Envoyez JPG, PNG ou WebP.',
+      );
+    }
+    // ~4 Mo binaire ≈ payload data-URL trop lourd → timeouts / 413 fréquents
+    const approxBytes = Math.floor((params.imageBase64.length * 3) / 4);
+    if (approxBytes > 4_500_000) {
+      throw new ValidationError(
+        'Image trop lourde pour l’analyse (> ~4,5 Mo). Reprenez une photo plus légère ou recadrez, puis renvoyez.',
+      );
+    }
+    try {
+      const response = await client.chat.completions.create({
+        // Vision fiable : forcer une famille gpt-4o même si AI_MODEL est text-only
+        model: resolveVisionModel(),
+        temperature: 0.2,
+        max_tokens: 1200,
+        messages: [
+          {
+            role: 'system',
+            content:
+              params.system ??
+              'Tu es Intelligence ITC, copilote immobilier. Tu lis les images (documents, photos, manuscrits, SMS flous). ' +
+                'Tu corriges les fautes et les « faux mots » sans inventer de chiffres absents. Réponds en français, clair et pro.',
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: params.prompt },
+              {
+                type: 'image_url',
+                image_url: { url: `data:${mime};base64,${params.imageBase64}`, detail: 'low' },
+              },
+            ],
+          },
+        ],
+      });
+      const content = response.choices[0]?.message?.content;
+      if (!content) throw new ValidationError('Lecture d’image vide');
+      return content.trim();
+    } catch (err) {
+      if (err instanceof ValidationError) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/429|credit|billing|quota|insufficient_quota/i.test(msg)) {
+        throw new ValidationError(
+          'Service vision temporairement indisponible (crédits / quota OpenAI). Réessayez plus tard ou décrivez le problème en texte.',
+        );
+      }
+      if (/timeout|ETIMEDOUT|ECONNRESET|fetch failed|502|503|504/i.test(msg)) {
+        throw new ValidationError(
+          'Service vision momentanément injoignable. Réessayez avec une photo plus légère, ou décrivez le problème en texte.',
+        );
+      }
+      if (/invalid_image|unsupported|could not process|image_parse|mime/i.test(msg)) {
+        throw new ValidationError(
+          'Image illisible ou format non supporté. Envoyez une photo nette en JPG/PNG/WebP.',
+        );
+      }
+      throw new ValidationError(`Analyse image impossible : ${msg.slice(0, 180)}`);
+    }
   }
 
   /** Corrige fautes, abréviations SMS et « faux mots » en français immobilier. */

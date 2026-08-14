@@ -15,6 +15,12 @@ const envSchema = z.object({
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
+  /**
+   * Autorise le stockage disque local (`/uploads`) quand Cloudinary n’est pas configuré.
+   * Défaut true — les PDF contrats/reçus restent générables sans Cloudinary (Railway).
+   * Préférez Cloudinary en prod durable (volume Railway éphémère).
+   */
+  ALLOW_LOCAL_UPLOADS: z.coerce.boolean().default(true),
   DEFAULT_CURRENCY: z.string().default('XAF'),
   DEFAULT_CITY: z.string().default('Brazzaville'),
   DEFAULT_COUNTRY: z.string().default('CG'),
@@ -88,6 +94,9 @@ export const isCloudinaryConfigured = Boolean(
   env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET,
 );
 
+/** Disque local servi via /uploads — actif si pas Cloudinary et ALLOW_LOCAL_UPLOADS. */
+export const isLocalUploadEnabled = !isCloudinaryConfigured && env.ALLOW_LOCAL_UPLOADS;
+
 export const isN8nConfigured = Boolean(
   env.N8N_ENABLED && env.N8N_WEBHOOK_BASE_URL,
 );
@@ -124,10 +133,11 @@ if (env.NODE_ENV === 'production') {
     process.exit(1);
   }
   if (!isCloudinaryConfigured) {
-    // Ne bloque plus le boot : les uploads échoueront déjà via CloudinaryService.
-    // Un exit(1) ici empêche tout redeploy RC si les variables manquent sur Railway.
-    console.error(
-      '⚠️  Cloudinary non configuré (CLOUDINARY_CLOUD_NAME / API_KEY / API_SECRET). Uploads images/PDF indisponibles jusqu’à configuration.',
+    // Ne bloque plus le boot : fallback /uploads si ALLOW_LOCAL_UPLOADS (défaut true).
+    console.warn(
+      isLocalUploadEnabled
+        ? '⚠️  Cloudinary non configuré — fallback disque local /uploads (éphémère sur Railway). Configurez CLOUDINARY_* pour un stockage durable.'
+        : '⚠️  Cloudinary non configuré et ALLOW_LOCAL_UPLOADS=false — uploads PDF/images indisponibles.',
     );
   }
   if (!env.DATABASE_URL.includes('sslmode=') && !env.DATABASE_URL.includes('ssl=true')) {

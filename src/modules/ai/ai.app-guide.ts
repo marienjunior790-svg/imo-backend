@@ -86,6 +86,9 @@ export function isAppHowtoIntent(message: string): boolean {
     q.includes('créer') ||
     q.includes('retirer') ||
     q.includes('enregistrer') ||
+    q.includes('changer') ||
+    q.includes('modifier') ||
+    q.includes('prix') ||
     q.includes('mfa') ||
     q.includes('2fa') ||
     q.includes('authentif') ||
@@ -345,6 +348,40 @@ ITC résilie le(s) bail(s), libère le logement et archive le portail. L’histo
 • Ou menu → Biens / Logements pour la liste transversale
 
 Sans logement disponible, vous ne pouvez pas bien rattacher un nouveau locataire.`;
+  }
+
+  // Changer le prix / loyer d’un bien ou logement (avant le bloc paiement générique)
+  if (
+    (q.includes('prix') || q.includes('loyer') || q.includes('tarif') || q.includes('montant')) &&
+    (q.includes('chang') ||
+      q.includes('modif') ||
+      q.includes('mettre a jour') ||
+      q.includes('mettre à jour') ||
+      q.includes('actualis') ||
+      q.includes('augmenter') ||
+      q.includes('baisser') ||
+      q.includes('revoir')) &&
+    (q.includes('bien') ||
+      q.includes('logement') ||
+      q.includes('appartement') ||
+      q.includes('appt') ||
+      q.includes('unite') ||
+      q.includes('unité') ||
+      q.includes('loyer'))
+  ) {
+    return `Changer le prix (loyer) d’un bien / logement :
+
+1. Menu → Immeubles (ou Biens / Logements)
+2. Ouvrez l’immeuble puis le logement concerné
+3. Modifiez le champ « Loyer » / montant mensuel (XAF) → Enregistrer
+
+Si un bail est déjà actif :
+• Le loyer du contrat peut rester celui du bail jusqu’à renouvellement / avenant
+• Menu → Contrats → ouvrez le bail → renouveler ou ajuster le loyer du bail si proposé
+• Les prochaines échéances de Paiements suivent le bail actif
+
+Astuce IA : « mes logements » pour retrouver le libellé, puis ouvrez la fiche pour éditer le montant.
+L’IA ne modifie pas encore le prix toute seule : c’est une action dans l’écran Logements / Contrats.`;
   }
 
   if (q.includes('contrat') || q.includes('bail')) {
