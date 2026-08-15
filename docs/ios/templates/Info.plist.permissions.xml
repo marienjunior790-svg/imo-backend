@@ -1,0 +1,54 @@
+<!--
+  Fragments à fusionner dans ios/Runner/Info.plist du projet Flutter ITC.
+  Uniquement les usages constatés dans l’APK officiel (1.0.39).
+  Ne pas ajouter caméra / localisation / Bluetooth / contacts / push
+  tant que le Dart ne les demande pas.
+-->
+
+<!-- Display -->
+<key>CFBundleDisplayName</key>
+<string>ITC</string>
+<key>CFBundleName</key>
+<string>ITC</string>
+
+<!-- Identité : confirmer contre ios/ existant avant d’écrire.
+     Proposition (underscore Android interdit par Apple) : cg.immo.tec.immotec
+     PRODUCT_BUNDLE_IDENTIFIER dans Xcode, pas forcément recopié ici. -->
+
+<!-- Deep link déjà utilisé par l’APK + API /reset-password -->
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLName</key>
+    <string>cg.immo.tec.immotec</string>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>itc</string>
+    </array>
+  </dict>
+</array>
+
+<!-- Photos / OCR (image_picker + ML Kit) -->
+<key>NSPhotoLibraryUsageDescription</key>
+<string>ITC accède à vos photos pour joindre un document ou analyser un dégât.</string>
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>ITC enregistre une image uniquement si vous choisissez de la sauvegarder.</string>
+
+<!-- Dictée Intelligence (record + speech_to_text) -->
+<key>NSMicrophoneUsageDescription</key>
+<string>ITC utilise le micro pour la dictée vers Intelligence ITC.</string>
+<key>NSSpeechRecognitionUsageDescription</key>
+<string>ITC convertit votre dictée en texte pour Intelligence ITC.</string>
+
+<!-- Orientation : à aligner sur le projet Flutter (Android Expo = portrait). -->
+<key>UISupportedInterfaceOrientations</key>
+<array>
+  <string>UIInterfaceOrientationPortrait</string>
+</array>
+<key>UISupportedInterfaceOrientations~ipad</key>
+<array>
+  <string>UIInterfaceOrientationPortrait</string>
+  <string>UIInterfaceOrientationPortraitUpsideDown</string>
+  <string>UIInterfaceOrientationLandscapeLeft</string>
+  <string>UIInterfaceOrientationLandscapeRight</string>
+</array>
