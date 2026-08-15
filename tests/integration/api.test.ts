@@ -53,6 +53,21 @@ describe('Integration — Automation API key', () => {
   });
 });
 
+describe('Integration — Catalogue plateformes public', () => {
+  const app = createApp();
+
+  it('GET /public/platforms n’affiche pas iOS comme publié', async () => {
+    const res = await request(app).get('/api/v1/public/platforms');
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.ios.released).toBe(false);
+    expect(res.body.data.ios.showAppStoreCta).toBe(false);
+    const ios = res.body.data.platforms.find((p: { id: string }) => p.id === 'ios');
+    expect(ios.storeUrl).toBeNull();
+    expect(ios.released).toBe(false);
+  });
+});
+
 describe('Integration — Routes protégées', () => {
   const app = createApp();
 

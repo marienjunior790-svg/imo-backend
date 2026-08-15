@@ -26,6 +26,7 @@ import notificationRoutes from '../modules/notifications/notification.routes.js'
 import notificationCenterRoutes from '../modules/notification-center/notification-center.routes.js';
 import inspectionRoutes from '../modules/inspections/inspection.routes.js';
 import agentsProvisionRoutes from '../modules/admin/agents.routes.js';
+import publicRoutes from '../modules/public/public.routes.js';
 import { PrismaService } from '../infrastructure/prisma/prisma.service.js';
 
 /** Priorité : APP_VERSION (start-prod) → npm_package_version → fallback RC */
@@ -78,10 +79,12 @@ router.get('/', (_req, res) => {
       health: '/api/v1/health',
       login: 'POST /api/v1/auth/login',
       dashboard: 'GET /api/v1/dashboard/stats',
+      platforms: 'GET /api/v1/public/platforms',
     },
   });
 });
 
+router.use('/public', publicRoutes);
 router.use('/auth', authRoutes);
 router.use('/onboarding', onboardingRoutes);
 router.use('/invitations', invitationRoutes);
