@@ -1,14 +1,20 @@
 ﻿[
     {
         "id":  "WA_PROPOSE",
-        "status":  "BLOCKED",
-        "detail":  "Pas de pending SEND_WHATSAPP_MESSAGE (tools=)",
-        "extra":  "Paiement introuvable dans votre organisation."
+        "status":  "PASS",
+        "detail":  "pending=c77974a1-053a-4bca-8398-8cdbcb3aefd6 tools=proposeSendWhatsAppMessage,getTenants",
+        "extra":  null
+    },
+    {
+        "id":  "WA_SEND",
+        "status":  "FAIL",
+        "detail":  "Provider a refusÃ© / erreur",
+        "extra":  "L’envoi WhatsApp a échoué.\nWhatsApp Cloud API HTTP 401: Authentication Error"
     },
     {
         "id":  "WA_E2E",
-        "status":  "BLOCKED",
-        "detail":  "Code WhatsApp non dÃ©ployÃ© ou non configurÃ© sur Railway.",
+        "status":  "FAIL",
+        "detail":  "Ã‰chec provider â€” pas de faux succÃ¨s.",
         "extra":  null
     },
     {

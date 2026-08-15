@@ -1,0 +1,307 @@
+{
+    "meta":  {
+                 "testedAt":  "2026-08-14T22:09:10.2605487+01:00",
+                 "baseUrl":  "https://imo-backend-production-d2d1.up.railway.app/api/v1",
+                 "phase":  "J/K regressions",
+                 "ownerEmail":  "ugcmanagemnet007@gmail.com",
+                 "normalizeText":  true,
+                 "whatsappMeta":  "SKIP",
+                 "note":  "WhatsApp/Meta channels not tested in this API smoke."
+             },
+    "aiStatus":  {
+                     "ok":  true,
+                     "error":  null,
+                     "vision":  true,
+                     "stt":  true,
+                     "rawKeys":  [
+                                     "mode",
+                                     "provider",
+                                     "model",
+                                     "multimodal",
+                                     "documents",
+                                     "message"
+                                 ],
+                     "raw":  {
+                                 "mode":  "openai",
+                                 "provider":  "openai",
+                                 "model":  "gpt-4o-mini",
+                                 "multimodal":  {
+                                                    "vision":  true,
+                                                    "stt":  true,
+                                                    "tts":  true
+                                                },
+                                 "documents":  [
+                                                   {
+                                                       "kind":  "LEASE_CONTRACT",
+                                                       "label":  "Contrat de location",
+                                                       "wave":  1,
+                                                       "available":  true
+                                                   },
+                                                   {
+                                                       "kind":  "PAYMENT_RECEIPT",
+                                                       "label":  "Reçu de paiement",
+                                                       "wave":  2,
+                                                       "available":  true
+                                                   },
+                                                   {
+                                                       "kind":  "PAYMENT_NOTICE",
+                                                       "label":  "Avis de paiement",
+                                                       "wave":  2,
+                                                       "available":  true
+                                                   },
+                                                   {
+                                                       "kind":  "PROPERTY_INSPECTION",
+                                                       "label":  "État des lieux",
+                                                       "wave":  2,
+                                                       "available":  false
+                                                   },
+                                                   {
+                                                       "kind":  "PROPERTY_SHEET",
+                                                       "label":  "Fiche logement",
+                                                       "wave":  2,
+                                                       "available":  false
+                                                   },
+                                                   {
+                                                       "kind":  "VISIT_REPORT",
+                                                       "label":  "Rapport de visite",
+                                                       "wave":  2,
+                                                       "available":  false
+                                                   },
+                                                   {
+                                                       "kind":  "AGENT_ACTIVITY",
+                                                       "label":  "Rapport d’activité agent",
+                                                       "wave":  2,
+                                                       "available":  false
+                                                   },
+                                                   {
+                                                       "kind":  "AGENT_MISSION",
+                                                       "label":  "Ordre de mission",
+                                                       "wave":  2,
+                                                       "available":  false
+                                                   },
+                                                   {
+                                                       "kind":  "TENANT_LETTER",
+                                                       "label":  "Courrier locataire",
+                                                       "wave":  2,
+                                                       "available":  false
+                                                   }
+                                               ],
+                                 "message":  "Modèle multimodal via backend."
+                             },
+                     "tts":  true,
+                     "mode":  "openai",
+                     "provider":  "openai",
+                     "model":  "gpt-4o-mini"
+                 },
+    "summary":  {
+                    "overall":  "PASS",
+                    "pass":  8,
+                    "fail":  0,
+                    "partial":  0,
+                    "blocked":  0,
+                    "total":  8
+                },
+    "scenarios":  [
+                      {
+                          "id":  1,
+                          "name":  "MFA",
+                          "message":  "à quoi sert l\u0027authentification MFA ?",
+                          "criteria":  "must NOT dump patrimoine; must mention MFA/sécurité",
+                          "ok":  true,
+                          "latencyMs":  8648,
+                          "verdict":  "PASS",
+                          "notes":  "mentions MFA/sécurité; no dump",
+                          "replySnippet":  "Authentification MFA (multi-facteurs) :\n\nElle ajoute une 2ᵉ vérification après le mot de passe (code temporaire / application d’authentification). Même si le mot de passe fuit, un tiers ne peut pas ou",
+                          "replyLength":  458,
+                          "poweredBy":  "openai",
+                          "hasPendingAction":  false,
+                          "pendingActionSummary":  null,
+                          "matchesDumpPatrimoine":  false,
+                          "dataKeys":  [
+                                           "reply",
+                                           "suggestions",
+                                           "actions",
+                                           "poweredBy",
+                                           "contextUsed"
+                                       ],
+                          "error":  null,
+                          "errorDetail":  null
+                      },
+                      {
+                          "id":  2,
+                          "name":  "Types",
+                          "message":  "combien de types de biens existent au sein de ITC ?",
+                          "criteria":  "product guide, not memory leak",
+                          "ok":  true,
+                          "latencyMs":  13676,
+                          "verdict":  "PASS",
+                          "notes":  "product guide tone; no dump",
+                          "replySnippet":  "Types de biens dans ITC :\n\nITC ne classe pas les logements dans une liste fermée du type « Studio / F2 / F3 ».\nChaque bien est un logement avec :\n• un libellé (ex. Appt 3B, Studio RDC)\n• un nombre de ",
+                          "replyLength":  412,
+                          "poweredBy":  "openai",
+                          "hasPendingAction":  false,
+                          "pendingActionSummary":  null,
+                          "matchesDumpPatrimoine":  false,
+                          "dataKeys":  [
+                                           "reply",
+                                           "suggestions",
+                                           "actions",
+                                           "poweredBy",
+                                           "contextUsed"
+                                       ],
+                          "error":  null,
+                          "errorDetail":  null
+                      },
+                      {
+                          "id":  3,
+                          "name":  "Temp password",
+                          "message":  "mais si nous n\u0027avons plus le mot de passe temporaire que faire ?",
+                          "criteria":  "guide régénérer, not dump",
+                          "ok":  true,
+                          "latencyMs":  8172,
+                          "verdict":  "PASS",
+                          "notes":  "guides regeneration/reset; no dump",
+                          "replySnippet":  "Mot de passe temporaire perdu :\n\nLe mot de passe temporaire n’est affiché qu’une seule fois à la création (sécurité). S’il n’est plus disponible :\n\n• Agent / collaborateur :\n  1. Menu → Équipe (Agents",
+                          "replyLength":  704,
+                          "poweredBy":  "local",
+                          "hasPendingAction":  false,
+                          "pendingActionSummary":  null,
+                          "matchesDumpPatrimoine":  false,
+                          "dataKeys":  [
+                                           "reply",
+                                           "suggestions",
+                                           "actions",
+                                           "poweredBy",
+                                           "contextUsed"
+                                       ],
+                          "error":  null,
+                          "errorDetail":  null
+                      },
+                      {
+                          "id":  4,
+                          "name":  "PDF propose",
+                          "message":  "crée moi le contrat en PDF de fortune libolo",
+                          "criteria":  "propose or list ACTIVE, not dump",
+                          "ok":  true,
+                          "latencyMs":  7322,
+                          "verdict":  "PASS",
+                          "notes":  "pendingAction present",
+                          "replySnippet":  "Voici les informations du contrat proposé :\n• Locataire : fortune libolo\n• Logement : big\n• Bail : cmsl81slh00ufwnm1n30oqnkz\n• Statut : ACTIVE\n\nConfirmez pour générer le PDF professionnel (signatures ",
+                          "replyLength":  242,
+                          "poweredBy":  "openai",
+                          "hasPendingAction":  true,
+                          "pendingActionSummary":  "{\"id\":\"c60db24e-7275-49f5-9716-d3e1758ab9d8\",\"type\":\"GENERATE_LEASE_PDF\",\"title\":\"Créer le contrat PDF\",\"summary\":\"Contrat PDF pour fortune libolo — big\",\"payload\":{\"leaseId\":\"cmsl81slh00ufwnm1n30oqnkz\",\"summary\":\"Contrat PDF pour fortune libolo — big\",\"tenantName\":\"fortune libolo\",\"apartmentLabel\":\"big\"}}",
+                          "matchesDumpPatrimoine":  false,
+                          "dataKeys":  [
+                                           "reply",
+                                           "suggestions",
+                                           "actions",
+                                           "poweredBy",
+                                           "contextUsed",
+                                           "pendingAction"
+                                       ],
+                          "error":  null,
+                          "errorDetail":  null
+                      },
+                      {
+                          "id":  5,
+                          "name":  "Confirm NL",
+                          "message":  "oui crée le PDF",
+                          "criteria":  "confirm/act on pending from 4, or clear no-pending; MUST NOT dump",
+                          "ok":  true,
+                          "latencyMs":  9338,
+                          "verdict":  "PASS",
+                          "notes":  "had pending from step4; confirm/act path; acted on pending but Cloudinary storage not configured in production (infra)",
+                          "replySnippet":  "Impossible de générer le contrat : Stockage Cloudinary obligatoire en production. Configurez CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY et CLOUDINARY_API_SECRET.",
+                          "replyLength":  160,
+                          "poweredBy":  "local",
+                          "hasPendingAction":  false,
+                          "pendingActionSummary":  null,
+                          "matchesDumpPatrimoine":  false,
+                          "dataKeys":  [
+                                           "reply",
+                                           "suggestions",
+                                           "actions",
+                                           "poweredBy",
+                                           "contextUsed"
+                                       ],
+                          "error":  null,
+                          "errorDetail":  null
+                      },
+                      {
+                          "id":  6,
+                          "name":  "Knowledge",
+                          "message":  "pourquoi un locataire est en retard alors que son contrat est actif ?",
+                          "criteria":  "bail≠impayé explanation",
+                          "ok":  true,
+                          "latencyMs":  14465,
+                          "verdict":  "PASS",
+                          "notes":  "bail≠impayé style explanation",
+                          "replySnippet":  "Un bail ACTIVE signifie que la relation locative est en cours — pas que tous les loyers sont soldés.\n\nEn retard = au moins un paiement en statut LATE, PENDING ou PARTIAL (échéance dépassée pour LATE).",
+                          "replyLength":  376,
+                          "poweredBy":  "local",
+                          "hasPendingAction":  false,
+                          "pendingActionSummary":  null,
+                          "matchesDumpPatrimoine":  false,
+                          "dataKeys":  [
+                                           "reply",
+                                           "suggestions",
+                                           "actions",
+                                           "poweredBy",
+                                           "contextUsed"
+                                       ],
+                          "error":  null,
+                          "errorDetail":  null
+                      },
+                      {
+                          "id":  7,
+                          "name":  "Clause",
+                          "message":  "trouve la clause concernant le préavis dans ce contrat PDF",
+                          "criteria":  "NOT_SUPPORTED or honest alt, not dump",
+                          "ok":  true,
+                          "latencyMs":  5184,
+                          "verdict":  "PASS",
+                          "notes":  "NOT_SUPPORTED or honest alternative",
+                          "replySnippet":  "Lecture OCR / extraction de clauses depuis un PDF fichier : pas encore disponible (NOT_SUPPORTED).\n\nCe que je peux faire maintenant :\n• faits structurés du bail (loyer, dates, durée, locataire, statut",
+                          "replyLength":  491,
+                          "poweredBy":  "local",
+                          "hasPendingAction":  false,
+                          "pendingActionSummary":  null,
+                          "matchesDumpPatrimoine":  false,
+                          "dataKeys":  [
+                                           "reply",
+                                           "suggestions",
+                                           "actions",
+                                           "poweredBy",
+                                           "contextUsed"
+                                       ],
+                          "error":  null,
+                          "errorDetail":  null
+                      },
+                      {
+                          "id":  8,
+                          "name":  "Maintenance NL",
+                          "message":  "crée un ticket maintenance pour une fuite sous l\u0027évier",
+                          "criteria":  "propose or ask logement, not dump",
+                          "ok":  true,
+                          "latencyMs":  5180,
+                          "verdict":  "PASS",
+                          "notes":  "asks/proposes maintenance without dump",
+                          "replySnippet":  "Pour créer un ticket maintenance, indiquez le logement (ex. « crée le ticket pour Appt 3B »).\nAprès une photo de dégât, je propose déjà le ticket si le logement est connu — dites alors « oui ».",
+                          "replyLength":  193,
+                          "poweredBy":  "local",
+                          "hasPendingAction":  false,
+                          "pendingActionSummary":  null,
+                          "matchesDumpPatrimoine":  false,
+                          "dataKeys":  [
+                                           "reply",
+                                           "suggestions",
+                                           "actions",
+                                           "poweredBy",
+                                           "contextUsed"
+                                       ],
+                          "error":  null,
+                          "errorDetail":  null
+                      }
+                  ]
+}
