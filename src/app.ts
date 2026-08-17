@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
-import { env, corsOrigins } from './config/env.js';
+import { env, corsOrigins, isLocalUploadEnabled } from './config/env.js';
 import routes from './routes/index.js';
 import { errorMiddleware } from './shared/middleware/validate.middleware.js';
 
@@ -40,8 +40,8 @@ export function createApp() {
     }),
   );
 
-  // Fichiers locaux — uniquement hors production (Cloudinary obligatoire en prod)
-  if (env.NODE_ENV !== 'production') {
+  // Fichiers locaux — dev, ou prod sans Cloudinary (ALLOW_LOCAL_UPLOADS)
+  if (isLocalUploadEnabled || env.NODE_ENV !== 'production') {
     app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
   }
 

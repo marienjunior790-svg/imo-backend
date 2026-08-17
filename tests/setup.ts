@@ -16,3 +16,5 @@ process.env.N8N_API_KEY = 'immo-tec-automation-key-32chars-min';
 process.env.DEFAULT_CURRENCY = 'XAF';
 process.env.DEFAULT_CITY = 'Brazzaville';
 process.env.DEFAULT_COUNTRY = 'CG';
+process.env.ALLOW_LOCAL_UPLOADS = process.env.ALLOW_LOCAL_UPLOADS ?? 'true';
+process.env.PUBLIC_API_URL = process.env.PUBLIC_API_URL ?? 'http://localhost:3001';

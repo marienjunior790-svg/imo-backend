@@ -54,6 +54,13 @@ describe('ai.capability-router (Phase J1)', () => {
     expect(r.blockPortfolioFallback).toBe(true);
   });
 
+  it('route « comment changer le prix » vers APP_HOWTO (pas dump / pas confirm flou)', () => {
+    const r = resolveCapabilityRoute('comment changer le prix d’un bien ou logement ?', {});
+    expect(r.capability).toBe('APP_HOWTO');
+    expect(r.blockPortfolioFallback).toBe(true);
+    expect(r.score).toBeGreaterThanOrEqual(9);
+  });
+
   it('« oui » seul sans pending → CONFIRM bloqué mais clarification', () => {
     const r = resolveCapabilityRoute('oui', { hasPending: false });
     expect(r.capability).toBe('CONFIRM_PENDING');

@@ -181,7 +181,7 @@ function scoreUtterance(q: string): Array<{ id: AiCapabilityId; score: number }>
     bump('MEMORY', 6);
   }
   if (isAppHowtoIntent(q)) {
-    bump('APP_HOWTO', 5);
+    bump('APP_HOWTO', 9);
   }
 
   return scores.sort((a, b) => b.score - a.score);
