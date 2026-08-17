@@ -697,6 +697,26 @@ export class AiService {
             },
           };
         }
+        // Howto détecté mais fiche absente : ne jamais renvoyer « Précisez l’action »
+        if (route.capability === 'APP_HOWTO' || isAppHowtoIntent(message)) {
+          const howto =
+            resolveAppHowtoReply(message) ??
+            `Voici comment avancer dans ITC :
+
+1. Précisez le module (Logements, Contrats, Paiements, Maintenance, Équipe…)
+2. Ou demandez « comment … ? » avec l’écran visé (ex. « comment changer le prix d’un logement ? »)
+3. Pour les données : « mes logements », « mes impayés », « génère le contrat PDF de … »
+
+Je guide les parcours UI ; je ne remplace pas les écrans d’édition.`;
+          void this.persistConversationSession(organizationId, userId, message, [], howto);
+          return {
+            reply: howto,
+            suggestions,
+            actions: this.dedupeActions([...actions, ...resolveChatActions(message)]),
+            poweredBy: 'local',
+            contextUsed: true,
+          };
+        }
         const reply =
           route.clarification ??
           'Précisez l’action (ex. « génère le contrat PDF de … », « mes impayés », « oui » pour confirmer).';
@@ -1428,17 +1448,33 @@ export class AiService {
         err instanceof Error ? err.message : err,
       );
       const ctxLocal = await this.contextService.buildContext(organizationId).catch(() => null);
+      const detail =
+        err instanceof Error && err.message && !/fetch failed|ECONNRESET/i.test(err.message)
+          ? err.message
+          : null;
+      const fromPrompt = classifyVisionReading('', userPrompt || '');
+      const softHint =
+        fromPrompt.kind === 'DAMAGE'
+          ? '\n\nSi c’est un dégât : précisez le logement (ex. « fuite sous l’évier du Appt 3B ») — je pourrai proposer un ticket maintenance.'
+          : fromPrompt.kind === 'DOCUMENT' || fromPrompt.kind === 'IDENTITY'
+            ? '\n\nPour un document : renvoyez une photo nette JPG/PNG, ou indiquez le bail (« génère le contrat PDF de … »).'
+            : '';
+      const reply =
+        (detail
+          ? `${detail}${softHint}`
+          : 'Je n’ai pas pu analyser cette image pour le moment (service vision indisponible ou image illisible). ' +
+            'Réessayez avec une photo nette JPG/PNG/WebP (idéalement < 4 Mo), ou décrivez le problème en texte' +
+            ' (ex. « fuite sous l’évier du logement X »).') + (detail ? '' : softHint);
       return {
-        reply:
-          'Je n’ai pas pu analyser cette image pour le moment (service vision indisponible ou image illisible). ' +
-          'Réessayez avec une photo nette, ou décrivez le problème en texte (ex. « fuite sous l’évier du logement X »).',
+        reply,
         suggestions: ctxLocal
           ? buildContextualSuggestions(ctxLocal)
           : ['Mes logements', 'Comment signaler une maintenance ?'],
-        actions: [
+        actions: this.dedupeActions([
+          ...buildVisionMetierActions(fromPrompt),
           { label: 'Maintenance', route: '/maintenance' },
           { label: 'Voir les logements', route: '/properties' },
-        ],
+        ]),
         poweredBy: 'local',
         contextUsed: !!ctxLocal,
       };
@@ -3280,8 +3316,11 @@ export class AiService {
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Génération impossible';
+      const cloudinaryHint = /Cloudinary|ALLOW_LOCAL_UPLOADS|Stockage/i.test(msg)
+        ? '\n\nAstuce : le stockage PDF doit être disponible côté serveur (Cloudinary ou fallback local). Réessayez dans un instant ; si le problème continue, contactez le support ITC.'
+        : '';
       return {
-        reply: `Impossible de générer le contrat : ${msg}`,
+        reply: `Impossible de générer le contrat : ${msg}${cloudinaryHint}`,
         suggestions: ['Voir les contrats'],
         actions: [{ label: 'Voir les contrats', route: '/leases' }],
         poweredBy: 'local',

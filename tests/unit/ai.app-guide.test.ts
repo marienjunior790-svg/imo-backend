@@ -76,4 +76,14 @@ describe('AI app guide (howto)', () => {
     expect(reply!.toLowerCase()).toMatch(/temporaire|régénér|reinitial|équipe|locataire|oubli/);
     expect(reply!).not.toMatch(/Voici ce que confirment|encaiss|371/);
   });
+
+  it('explique comment changer le prix d’un logement (pas « Précisez l’action »)', () => {
+    const q = 'comment changer le prix d’un bien ou logement ?';
+    expect(isAppHowtoIntent(q)).toBe(true);
+    const reply = resolveAppHowtoReply(q);
+    expect(reply).toBeTruthy();
+    expect(reply!.toLowerCase()).toMatch(/loyer|immeubles|logements|contrats/);
+    expect(reply!).not.toMatch(/Précisez l’action/);
+    expect(reply!).not.toMatch(/encaiss|occupation|vacant/i);
+  });
 });

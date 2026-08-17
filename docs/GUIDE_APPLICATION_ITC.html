@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<title>Guide Intelligence ITC</title>
+<style>
+@page { size: A4; margin: 18mm 14mm; }
+body { font-family: "DejaVu Sans", "Segoe UI", sans-serif; font-size: 10.5pt; line-height: 1.42; color: #111; }
+h1 { font-size: 20pt; color: #152238; border-bottom: 2px solid #c9a227; padding-bottom: 6px; }
+h2 { font-size: 13pt; color: #1e3354; margin-top: 1.1em; page-break-after: avoid; }
+h3 { font-size: 11pt; color: #334155; page-break-after: avoid; }
+table { border-collapse: collapse; width: 100%; font-size: 9.5pt; margin: 0.6em 0; page-break-inside: avoid; }
+th, td { border: 1px solid #cbd5e1; padding: 5px 7px; vertical-align: top; }
+th { background: #f1f5f9; }
+code, pre { font-family: monospace; font-size: 9pt; background: #f8fafc; }
+pre { padding: 8px; border: 1px solid #e2e8f0; white-space: pre-wrap; page-break-inside: avoid; }
+blockquote { border-left: 4px solid #c9a227; background: #fffbeb; padding: 8px 12px; margin: 0.8em 0; }
+hr { border: none; border-top: 1px solid #ddd; margin: 1.2em 0; }
+ul, ol { padding-left: 1.3em; }
+.cover { text-align: center; padding: 40mm 10mm 20mm; page-break-after: always; }
+.cover h1 { border: none; font-size: 26pt; }
+.cover p { color: #475569; }
+</style>
+</head>
+<body>
+<div class="cover">
+  <h1>Guide Intelligence ITC</h1>
+  <p>Application de gestion immobilière — Congo (XAF)</p>
+  <p>Version 1.0 — août 2026</p>
+</div>
+<h1 id="guide-complet-application-intelligence-itc">Guide complet — Application Intelligence ITC</h1>
+<p><strong>Version document :</strong> 1.0 — août 2026<br />
+<strong>Produit :</strong> ITC / IMMO-tec — gestion immobilière (Congo, monnaie <strong>XAF</strong>)<br />
+<strong>Application mobile :</strong> copilote « Intelligence ITC » — <em>Votre copilote immobilier</em><br />
+<strong>Backend API :</strong> <code>https://imo-backend-production-d2d1.up.railway.app/api/v1</code></p>
+<p>Ce document regroupe <strong>toutes les étapes</strong> et <strong>informations essentielles</strong> pour comprendre et utiliser l’application, du quotidien gestionnaire jusqu’aux actions avancées via l’IA.</p>
+<hr />
+<h2 id="table-des-matieres">Table des matières</h2>
+<ol>
+<li><a href="#1-vue-densemble">Vue d’ensemble</a></li>
+<li><a href="#2-hiérarchie-et-rôles">Hiérarchie et rôles</a></li>
+<li><a href="#3-navigation-dans-lapplication">Navigation dans l’application</a></li>
+<li><a href="#4-connexion-et-mots-de-passe">Connexion et mots de passe</a></li>
+<li><a href="#5-parc-immobilier-immeubles-et-logements">Parc immobilier (immeubles et logements)</a></li>
+<li><a href="#6-locataires-et-portail">Locataires et portail</a></li>
+<li><a href="#7-contrats--baux">Contrats / baux</a></li>
+<li><a href="#8-paiements-et-loyers">Paiements et loyers</a></li>
+<li><a href="#9-maintenance">Maintenance</a></li>
+<li><a href="#10-équipe-et-agents">Équipe et agents</a></li>
+<li><a href="#11-tableau-de-bord-et-rapports">Tableau de bord et rapports</a></li>
+<li><a href="#12-paramètres-sécurité-et-compte">Paramètres, sécurité et compte</a></li>
+<li><a href="#13-intelligence-itc-ia">Intelligence ITC (IA)</a></li>
+<li><a href="#14-whatsapp-et-messages">WhatsApp et messages</a></li>
+<li><a href="#15-documents-pdf">Documents PDF</a></li>
+<li><a href="#16-automatisations">Automatisations</a></li>
+<li><a href="#17-règles-métier-importantes">Règles métier importantes</a></li>
+<li><a href="#18-limites-actuelles-honnêteté-produit">Limites actuelles (honnêteté produit)</a></li>
+<li><a href="#19-référence-technique-rapide">Référence technique rapide</a></li>
+</ol>
+<hr />
+<h2 id="1-vue-densemble">1. Vue d’ensemble</h2>
+<p>ITC est une <strong>entreprise de gestion immobilière</strong> modélisée dans une application mobile :</p>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Organisation</strong></td>
+<td>Votre agence / société de gestion (une base de données isolée par org)</td>
+</tr>
+<tr>
+<td><strong>Immeuble</strong></td>
+<td>Bâtiment regroupant des logements</td>
+</tr>
+<tr>
+<td><strong>Logement (Apartment)</strong></td>
+<td>Unité locative (libellé, pièces, surface, loyer, statut)</td>
+</tr>
+<tr>
+<td><strong>Locataire</strong></td>
+<td>Personne CRM + éventuellement compte portail</td>
+</tr>
+<tr>
+<td><strong>Bail (Lease)</strong></td>
+<td>Contrat liant locataire + logement</td>
+</tr>
+<tr>
+<td><strong>Paiement</strong></td>
+<td>Échéance de loyer (en attente, payé, retard, partiel…)</td>
+</tr>
+<tr>
+<td><strong>Maintenance</strong></td>
+<td>Ticket d’intervention (fuite, réparation…)</td>
+</tr>
+<tr>
+<td><strong>Intelligence ITC</strong></td>
+<td>Chat IA connecté à vos <strong>données réelles</strong> (Prisma) + actions avec confirmation</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Principe d’or :</strong> l’IA lit vos données et <strong>propose</strong> des actions sensibles ; vous <strong>confirmez</strong> (« oui », « confirme », « annule ») avant toute création de PDF, ticket, envoi WhatsApp, etc.</p>
+<hr />
+<h2 id="2-hierarchie-et-roles">2. Hiérarchie et rôles</h2>
+<h3 id="21-les-roles-utilisateurs">2.1 Les rôles utilisateurs</h3>
+<table>
+<thead>
+<tr>
+<th>Rôle</th>
+<th>Libellé produit</th>
+<th>Mission principale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>OWNER</strong></td>
+<td>Propriétaire (supervision)</td>
+<td>Vue globale, équipe, abonnement, configuration, rapports</td>
+</tr>
+<tr>
+<td><strong>MANAGER</strong></td>
+<td>Agent gestionnaire</td>
+<td><strong>Centre ops</strong> : locataires, biens, contrats, paiements, maintenance (desk)</td>
+</tr>
+<tr>
+<td><strong>AGENT</strong></td>
+<td>Agent terrain</td>
+<td>Interventions <strong>assignées uniquement</strong> (espace terrain)</td>
+</tr>
+<tr>
+<td><strong>TENANT</strong></td>
+<td>Locataire</td>
+<td>Portail personnel : son logement, bail, loyers, SAV</td>
+</tr>
+<tr>
+<td><strong>ACCOUNTANT</strong></td>
+<td>Comptable</td>
+<td>Finances / paiements selon permissions</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Attention :</strong> « Agent » dans le langage courant peut désigner le <strong>gestionnaire</strong> (MANAGER). Le rôle <strong>AGENT</strong> en base = <strong>terrain / maintenance</strong>.</p>
+</blockquote>
+<h3 id="22-qui-fait-quoi-au-quotidien">2.2 Qui fait quoi au quotidien</h3>
+<pre><code>OWNER (supervision)
+  └── provisionne MANAGER + AGENT terrain
+MANAGER (ops)
+  └── locataires, baux, paiements, tickets, assignations
+AGENT (terrain)
+  └── accepte / démarre / termine les interventions assignées
+TENANT (portail)
+  └── consulte bail, paie (info), signale maintenance
+</code></pre>
+<h3 id="23-flux-metier-type">2.3 Flux métier type</h3>
+<ol>
+<li>Le <strong>propriétaire</strong> crée l’équipe (gestionnaires + agents terrain).</li>
+<li>Le <strong>gestionnaire</strong> enregistre immeubles, logements, locataires, baux.</li>
+<li>Les <strong>échéances de loyers</strong> suivent le bail actif.</li>
+<li>Le <strong>locataire</strong> signale un problème → ticket → le gestionnaire <strong>assigne</strong> → l’agent terrain <strong>intervient</strong>.</li>
+<li>Le <strong>propriétaire</strong> peut consulter l’historique sans traiter chaque ticket.</li>
+</ol>
+<hr />
+<h2 id="3-navigation-dans-lapplication">3. Navigation dans l’application</h2>
+<p>Barre de navigation mobile (4 onglets principaux) :</p>
+<table>
+<thead>
+<tr>
+<th>Onglet</th>
+<th>Contenu</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Tableau</strong></td>
+<td>Dashboard — KPIs occupation, encaissements, alertes</td>
+</tr>
+<tr>
+<td><strong>Immeubles</strong></td>
+<td>Parc immobilier — immeubles et logements</td>
+</tr>
+<tr>
+<td><strong>IA</strong></td>
+<td>Intelligence ITC — chat copilote, photo, voix</td>
+</tr>
+<tr>
+<td><strong>Réglages</strong></td>
+<td>Profil, sécurité, équipe, abonnement</td>
+</tr>
+</tbody>
+</table>
+<h3 id="menus-metier-via-navigation-ou-ia">Menus métier (via navigation ou IA)</h3>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Accès typique</th>
+<th>Contenu</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Locataires</strong></td>
+<td>Menu Locataires</td>
+<td>Fiches CRM, portail, retrait</td>
+</tr>
+<tr>
+<td><strong>Contrats</strong></td>
+<td>Menu Contrats</td>
+<td>Baux DRAFT / ACTIVE / EXPIRED</td>
+</tr>
+<tr>
+<td><strong>Paiements</strong></td>
+<td>Menu Paiements</td>
+<td>Échéances, impayés, reçus</td>
+</tr>
+<tr>
+<td><strong>Maintenance</strong></td>
+<td>Menu Maintenance</td>
+<td>Desk tickets, assignation</td>
+</tr>
+<tr>
+<td><strong>Équipe</strong></td>
+<td>Menu Équipe (Agents)</td>
+<td>Collaborateurs, LoginId</td>
+</tr>
+<tr>
+<td><strong>Notifications</strong></td>
+<td>Cloche / centre</td>
+<td>Alertes in-app</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4-connexion-et-mots-de-passe">4. Connexion et mots de passe</h2>
+<h3 id="41-identifiants">4.1 Identifiants</h3>
+<p>Chaque compte utilise :</p>
+<ul>
+<li><strong>E-mail</strong> <em>ou</em></li>
+<li><strong>LoginId</strong> au format <code>ITC-XXXXXXXX</code> (8 caractères alphanumériques)</li>
+</ul>
+<p>Au moins l’un des deux est obligatoire.</p>
+<h3 id="42-premiere-connexion-collaborateur-ou-locataire">4.2 Première connexion (collaborateur ou locataire)</h3>
+<ol>
+<li>Le <strong>propriétaire / gestionnaire</strong> crée le compte.</li>
+<li>ITC affiche <strong>une seule fois</strong> :</li>
+<li>le <strong>LoginId</strong> (ou l’e-mail)</li>
+<li>le <strong>mot de passe temporaire</strong></li>
+<li>Remettez ces identifiants à la personne.</li>
+<li>À la <strong>première connexion</strong>, ITC exige souvent de <strong>changer le mot de passe</strong>.</li>
+</ol>
+<blockquote>
+<p><strong>Sécurité :</strong> le mot de passe temporaire <strong>n’est plus visible</strong> sur la fiche après création. Il n’est jamais stocké en clair côté serveur.</p>
+</blockquote>
+<h3 id="43-mot-de-passe-perdu">4.3 Mot de passe perdu</h3>
+<table>
+<thead>
+<tr>
+<th>Profil</th>
+<th>Procédure</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Agent / gestionnaire</strong></td>
+<td>Propriétaire → Équipe → fiche → <strong>Régénérer</strong> mot de passe</td>
+</tr>
+<tr>
+<td><strong>Locataire</strong></td>
+<td>Locataires → fiche → régénérer accès portail <strong>ou</strong> « Mot de passe oublié » avec LoginId</td>
+</tr>
+<tr>
+<td><strong>Propriétaire</strong></td>
+<td>Écran login → « Mot de passe oublié »</td>
+</tr>
+</tbody>
+</table>
+<h3 id="44-mfa-authentification-multi-facteurs">4.4 MFA (authentification multi-facteurs)</h3>
+<ol>
+<li><strong>Réglages</strong> → sécurité du compte  </li>
+<li>Activer / gérer le MFA (code temporaire ou app d’authentification)  </li>
+<li><strong>Sessions</strong> : voir et révoquer les appareils connectés  </li>
+</ol>
+<p>Recommandé pour les comptes <strong>OWNER</strong> et <strong>MANAGER</strong>.</p>
+<hr />
+<h2 id="5-parc-immobilier-immeubles-et-logements">5. Parc immobilier (immeubles et logements)</h2>
+<h3 id="51-types-de-biens-dans-itc">5.1 Types de biens dans ITC</h3>
+<p>ITC ne classe pas les logements en liste fermée (Studio / F2 / F3). Chaque bien a :</p>
+<ul>
+<li>un <strong>libellé</strong> (ex. Appt 3B, Studio RDC)</li>
+<li>un <strong>nombre de pièces</strong> et une <strong>surface</strong></li>
+<li>un <strong>loyer</strong> (montant XAF)</li>
+<li>un <strong>statut</strong> :</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Statut</th>
+<th>Signification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>AVAILABLE</strong></td>
+<td>Vacant, commercialisable</td>
+</tr>
+<tr>
+<td><strong>OCCUPIED</strong></td>
+<td>Occupé (bail actif en principe)</td>
+</tr>
+<tr>
+<td><strong>MAINTENANCE</strong></td>
+<td>En travaux / indisponible temporairement</td>
+</tr>
+<tr>
+<td><strong>UNAVAILABLE</strong></td>
+<td>Hors parc locatif</td>
+</tr>
+</tbody>
+</table>
+<h3 id="52-creer-un-immeuble">5.2 Créer un immeuble</h3>
+<ol>
+<li>Menu → <strong>Immeubles</strong> → <strong>+</strong></li>
+<li>Saisir nom, adresse, informations du bâtiment</li>
+<li>Enregistrer</li>
+</ol>
+<h3 id="53-ajouter-un-logement">5.3 Ajouter un logement</h3>
+<ol>
+<li>Ouvrir l’<strong>immeuble</strong></li>
+<li><strong>Ajouter une unité</strong> : libellé, pièces, surface, <strong>loyer</strong>, statut</li>
+<li>Enregistrer  </li>
+</ol>
+<p><em>Alternative :</em> menu <strong>Biens / Logements</strong> pour la liste transversale.</p>
+<h3 id="54-changer-le-prix-loyer-dun-logement">5.4 Changer le prix (loyer) d’un logement</h3>
+<ol>
+<li>Menu → <strong>Immeubles</strong> (ou <strong>Biens / Logements</strong>)</li>
+<li>Ouvrir l’immeuble → ouvrir le <strong>logement</strong></li>
+<li>Modifier le champ <strong>Loyer</strong> (XAF) → <strong>Enregistrer</strong></li>
+</ol>
+<p><strong>Si un bail est déjà actif :</strong></p>
+<ul>
+<li>Le loyer du <strong>contrat</strong> peut rester celui du bail jusqu’à renouvellement / avenant.</li>
+<li>Menu → <strong>Contrats</strong> → ouvrir le bail → <strong>Renouveler</strong> ou ajuster le loyer du bail si proposé.</li>
+<li>Les <strong>prochaines échéances</strong> dans Paiements suivent le bail actif.</li>
+</ul>
+<blockquote>
+<p>L’IA <strong>explique</strong> ce parcours ; elle ne modifie pas encore le prix automatiquement sans passer par les écrans d’édition.</p>
+</blockquote>
+<hr />
+<h2 id="6-locataires-et-portail">6. Locataires et portail</h2>
+<h3 id="61-principe">6.1 Principe</h3>
+<blockquote>
+<p><strong>Un locataire ne crée jamais seul son compte.</strong><br />
+L’organisation <strong>provisionne</strong> l’accès portail.</p>
+</blockquote>
+<h3 id="62-ajouter-un-locataire-etapes">6.2 Ajouter un locataire (étapes)</h3>
+<ol>
+<li>Menu → <strong>Locataires</strong> → <strong>+</strong></li>
+<li>Identité : prénom, nom, pièce d’identité, contacts</li>
+<li>Associer un <strong>logement</strong> / créer le <strong>contrat</strong> si proposé</li>
+<li>ITC crée le <strong>compte portail</strong> + affiche identifiant et mot de passe temporaire (<strong>une fois</strong>)</li>
+<li>Remettre les accès au locataire (changement de mot de passe au 1er login)</li>
+</ol>
+<h3 id="63-statuts-du-compte-portail">6.3 Statuts du compte portail</h3>
+<table>
+<thead>
+<tr>
+<th>Statut</th>
+<th>Signification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PROVISIONED</strong></td>
+<td>Compte créé, jamais connecté</td>
+</tr>
+<tr>
+<td><strong>INVITE_SENT</strong></td>
+<td>Identifiants envoyés (e-mail / SMS)</td>
+</tr>
+<tr>
+<td><strong>ACTIVATED</strong></td>
+<td>Mot de passe définitif choisi</td>
+</tr>
+<tr>
+<td><strong>SUSPENDED</strong></td>
+<td>Accès coupé</td>
+</tr>
+<tr>
+<td><strong>ARCHIVED</strong></td>
+<td>Ancien locataire (historique conservé)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="64-provision-automatique">6.4 Provision automatique</h3>
+<p>Par défaut, quand un bail passe <strong>ACTIVE</strong>, ITC peut <strong>provisionner automatiquement</strong> le portail locataire (configurable dans les paramètres org).</p>
+<h3 id="65-retirer-un-locataire">6.5 Retirer un locataire</h3>
+<ol>
+<li><strong>Locataires</strong> → fiche</li>
+<li><strong>Retirer le locataire</strong></li>
+<li>Choisir le motif (départ, fin de bail, impayés…)</li>
+</ol>
+<p>ITC résilie le(s) bail(s), libère le logement et archive le portail. <strong>L’historique reste.</strong></p>
+<h3 id="66-espace-locataire-portail">6.6 Espace locataire (portail)</h3>
+<p>Le locataire voit <strong>uniquement</strong> :</p>
+<table>
+<thead>
+<tr>
+<th>Écran</th>
+<th>Contenu</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Accueil</td>
+<td>Résumé</td>
+</tr>
+<tr>
+<td>Bail</td>
+<td>Son contrat</td>
+</tr>
+<tr>
+<td>Loyers</td>
+<td>Échéances / paiements</td>
+</tr>
+<tr>
+<td>SAV</td>
+<td>Créer et suivre une maintenance</td>
+</tr>
+<tr>
+<td>Profil</td>
+<td>Compte, notifications</td>
+</tr>
+</tbody>
+</table>
+<p>Il <strong>ne voit jamais</strong> les autres locataires ni les finances de l’organisation.</p>
+<hr />
+<h2 id="7-contrats-baux">7. Contrats / baux</h2>
+<h3 id="71-statuts-de-bail">7.1 Statuts de bail</h3>
+<table>
+<thead>
+<tr>
+<th>Statut</th>
+<th>Signification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>DRAFT</strong></td>
+<td>Brouillon</td>
+</tr>
+<tr>
+<td><strong>ACTIVE</strong></td>
+<td>En cours</td>
+</tr>
+<tr>
+<td><strong>EXPIRED</strong></td>
+<td>Expiré</td>
+</tr>
+<tr>
+<td><strong>TERMINATED</strong></td>
+<td>Résilié</td>
+</tr>
+</tbody>
+</table>
+<h3 id="72-creer-activer-un-bail">7.2 Créer / activer un bail</h3>
+<ol>
+<li>Menu → <strong>Contrats</strong></li>
+<li>Créer un bail : locataire + logement + dates + loyer</li>
+<li><strong>Activer</strong> le bail → génération des échéances de loyers</li>
+</ol>
+<h3 id="73-actions-sur-un-bail">7.3 Actions sur un bail</h3>
+<ul>
+<li><strong>Générer le contrat PDF</strong></li>
+<li><strong>Renouveler</strong> (+12 mois par défaut)</li>
+<li><strong>Résilier</strong></li>
+</ul>
+<h3 id="74-generer-un-contrat-pdf-interface">7.4 Générer un contrat PDF (interface)</h3>
+<ol>
+<li><strong>Contrats</strong> → menu du bail → <strong>Générer le contrat PDF</strong>  </li>
+<li>Vérifier identité, loyers, blocs signature avant usage</li>
+</ol>
+<h3 id="75-generer-un-contrat-pdf-via-intelligence-itc">7.5 Générer un contrat PDF (via Intelligence ITC)</h3>
+<ol>
+<li>Onglet <strong>IA</strong> → « Génère le contrat PDF de [nom locataire] »</li>
+<li>ITC <strong>propose</strong> l’action (bail ACTIVE le plus pertinent)</li>
+<li>Répondre <strong>« oui »</strong> ou <strong>« confirme »</strong> → PDF créé + lien <strong>Ouvrir le PDF</strong></li>
+</ol>
+<blockquote>
+<p>Toute génération PDF passe par <strong>proposition → confirmation</strong>. Jamais de PDF automatique sans votre accord.</p>
+</blockquote>
+<hr />
+<h2 id="8-paiements-et-loyers">8. Paiements et loyers</h2>
+<h3 id="81-statuts-de-paiement">8.1 Statuts de paiement</h3>
+<table>
+<thead>
+<tr>
+<th>Statut</th>
+<th>Signification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PENDING</strong></td>
+<td>En attente</td>
+</tr>
+<tr>
+<td><strong>PAID</strong></td>
+<td>Payé</td>
+</tr>
+<tr>
+<td><strong>LATE</strong></td>
+<td>Retard (échéance dépassée)</td>
+</tr>
+<tr>
+<td><strong>PARTIAL</strong></td>
+<td>Paiement partiel</td>
+</tr>
+<tr>
+<td><strong>CANCELLED</strong></td>
+<td>Annulé</td>
+</tr>
+</tbody>
+</table>
+<h3 id="82-regle-importante">8.2 Règle importante</h3>
+<blockquote>
+<p><strong>Bail ACTIVE ≠ loyers à jour.</strong><br />
+Un locataire peut avoir un contrat actif <strong>et</strong> des impayés.</p>
+</blockquote>
+<h3 id="83-consulter-les-paiements">8.3 Consulter les paiements</h3>
+<ol>
+<li>Menu → <strong>Paiements</strong></li>
+<li>Filtrer : <strong>Impayés</strong> / <strong>En attente</strong> / <strong>Payés</strong></li>
+<li>Ouvrir une échéance pour le détail</li>
+</ol>
+<p><strong>Via IA :</strong> « mes impayés », « qui n’a pas payé », « encaissements du mois ».</p>
+<h3 id="84-marquer-un-loyer-comme-paye">8.4 Marquer un loyer comme payé</h3>
+<ol>
+<li><strong>Paiements</strong> → ouvrir l’échéance</li>
+<li><strong>Marquer payé</strong> : montant, mode de paiement, référence</li>
+<li>Enregistrer</li>
+</ol>
+<p>Les indicateurs du <strong>dashboard</strong> et de l’<strong>IA</strong> utilisent ces données.</p>
+<h3 id="85-recu-quittance-pdf">8.5 Reçu / quittance PDF</h3>
+<p><strong>Interface :</strong></p>
+<ol>
+<li><strong>Paiements</strong> → paiement <strong>déjà encaissé</strong> → générer le reçu</li>
+</ol>
+<p><strong>Via IA :</strong></p>
+<ol>
+<li>« Génère un reçu de paiement pour [locataire] »</li>
+<li>Confirmer → PDF reçu</li>
+</ol>
+<h3 id="86-avis-de-paiement-rappel">8.6 Avis de paiement (rappel)</h3>
+<p>Pour un loyer <strong>en attente</strong> ou <strong>en retard</strong> :</p>
+<ol>
+<li>« Génère un avis de paiement pour … »</li>
+<li>Confirmer → PDF avis</li>
+</ol>
+<hr />
+<h2 id="9-maintenance">9. Maintenance</h2>
+<h3 id="91-cycle-de-vie-dun-ticket">9.1 Cycle de vie d’un ticket</h3>
+<pre><code>OPEN → ASSIGNED → IN_PROGRESS → COMPLETED / CLOSED
+</code></pre>
+<p>Priorités : <strong>LOW</strong>, <strong>MEDIUM</strong>, <strong>HIGH</strong>, <strong>CRITICAL</strong>.</p>
+<h3 id="92-qui-cree-un-ticket">9.2 Qui crée un ticket ?</h3>
+<table>
+<thead>
+<tr>
+<th>Origine</th>
+<th>Comment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Locataire</strong></td>
+<td>Portail → SAV → signaler un problème</td>
+</tr>
+<tr>
+<td><strong>Gestionnaire / propriétaire</strong></td>
+<td>Menu Maintenance</td>
+</tr>
+<tr>
+<td><strong>Intelligence ITC</strong></td>
+<td>Photo dégât + confirmation</td>
+</tr>
+</tbody>
+</table>
+<h3 id="93-desk-maintenance-gestionnaire">9.3 Desk maintenance (gestionnaire)</h3>
+<ol>
+<li>Menu → <strong>Maintenance</strong></li>
+<li>Filtrer : ouvertes / assignées / clôturées</li>
+<li>Ouvrir un ticket → <strong>assigner</strong> un agent terrain ou <strong>clôturer</strong></li>
+</ol>
+<h3 id="94-espace-agent-terrain">9.4 Espace agent terrain</h3>
+<ol>
+<li><strong>Espace terrain</strong> → <strong>Interventions</strong></li>
+<li>Voir uniquement les missions <strong>assignées</strong></li>
+<li>Accepter → démarrer → terminer</li>
+</ol>
+<h3 id="95-maintenance-via-intelligence-itc-photo">9.5 Maintenance via Intelligence ITC (photo)</h3>
+<p><strong>Scénario complet (Phase K) :</strong></p>
+<table>
+<thead>
+<tr>
+<th>Étape</th>
+<th>Action</th>
+<th>Résultat attendu</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Envoyer une <strong>photo</strong> (fuite, dégât) + préciser le logement (ex. « Appt 3B »)</td>
+<td>Constat + <strong>proposition de ticket</strong></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Répondre <strong>« oui »</strong> / <strong>« confirme »</strong></td>
+<td>Ticket créé (statut OPEN)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>« Assigne le ticket à [Nom Agent] »</td>
+<td>Proposition d’assignation</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>« oui »</strong></td>
+<td>Statut <strong>ASSIGNED</strong> + nom de l’agent</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Si le logement est inconnu :</strong> l’IA demande le libellé — elle <strong>n’invente pas</strong> de ticket.</p>
+<hr />
+<h2 id="10-equipe-et-agents">10. Équipe et agents</h2>
+<h3 id="101-creer-un-collaborateur">10.1 Créer un collaborateur</h3>
+<ol>
+<li>Connecté en <strong>Propriétaire</strong></li>
+<li>Menu → <strong>Équipe (Agents)</strong> → <strong>+</strong></li>
+<li>Choisir le rôle :</li>
+<li><strong>Gestionnaire (MANAGER)</strong> — ops locatives complètes</li>
+<li><strong>Terrain (AGENT)</strong> — interventions seulement</li>
+<li>Remplir identité → <strong>Créer</strong></li>
+<li><strong>Noter immédiatement</strong> LoginId + mot de passe temporaire</li>
+</ol>
+<h3 id="102-ou-voir-le-loginid-dun-agent">10.2 Où voir le LoginId d’un agent</h3>
+<ol>
+<li>Menu → <strong>Équipe</strong></li>
+<li>Ouvrir la <strong>fiche</strong> de l’agent</li>
+<li>Section <strong>Compte / Identité</strong> : LoginId (ex. <code>ITC-XXXX</code>) et statut <strong>Actif</strong></li>
+</ol>
+<p><strong>Via IA :</strong> « mes agents » → liste avec LoginId.</p>
+<h3 id="103-mot-de-passe-agent-rappel">10.3 Mot de passe agent — rappel</h3>
+<table>
+<thead>
+<tr>
+<th>Moment</th>
+<th>Visible ?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>À la <strong>création</strong></td>
+<td>Oui, <strong>une seule fois</strong></td>
+</tr>
+<tr>
+<td>Sur la fiche ensuite</td>
+<td><strong>Non</strong> (LoginId + statut seulement)</td>
+</tr>
+<tr>
+<td>Après perte</td>
+<td>Propriétaire → <strong>Régénérer</strong> sur la fiche</td>
+</tr>
+</tbody>
+</table>
+<h3 id="104-se-connecter-en-agent">10.4 Se connecter en agent</h3>
+<ol>
+<li>Écran de connexion ITC</li>
+<li>Saisir <strong>LoginId</strong> (ou e-mail) + mot de passe</li>
+<li>Changer le mot de passe si demandé au 1er login</li>
+</ol>
+<hr />
+<h2 id="11-tableau-de-bord-et-rapports">11. Tableau de bord et rapports</h2>
+<h3 id="111-dashboard-tableau">11.1 Dashboard (Tableau)</h3>
+<ul>
+<li>Taux d’<strong>occupation</strong></li>
+<li><strong>Encaissements</strong> du mois</li>
+<li><strong>Impayés</strong> (nombre et montant XAF)</li>
+<li>Alertes et notifications</li>
+</ul>
+<h3 id="112-rapports">11.2 Rapports</h3>
+<ul>
+<li>Menu <strong>Rapports</strong> / <strong>Vue globale</strong> (surtout <strong>propriétaire</strong>)</li>
+<li>Exports selon abonnement et permissions</li>
+</ul>
+<h3 id="113-via-intelligence-itc-analyser">11.3 Via Intelligence ITC — Analyser</h3>
+<p>Onglet ou questions du type :</p>
+<ul>
+<li>« Résumé de mon parc »</li>
+<li>« Qui n’a pas payé ? »</li>
+<li>« Combien de logements vacants ? »</li>
+<li>« Pourquoi baisse les encaissements ? »</li>
+</ul>
+<p>L’IA s’appuie sur les <strong>données Prisma</strong> (pas d’invention de chiffres).</p>
+<hr />
+<h2 id="12-parametres-securite-et-compte">12. Paramètres, sécurité et compte</h2>
+<h3 id="121-parametres-profil">12.1 Paramètres / Profil</h3>
+<ul>
+<li>Identité, préférences notifications</li>
+<li><strong>Mot de passe</strong>, <strong>MFA</strong>, <strong>Sessions</strong></li>
+<li><strong>Abonnement</strong> (plan — propriétaire)</li>
+<li><strong>Équipe</strong> — créer gestionnaire ou terrain</li>
+</ul>
+<h3 id="122-visibilite-des-menus">12.2 Visibilité des menus</h3>
+<table>
+<thead>
+<tr>
+<th>Rôle</th>
+<th>Menus CRM (immeubles, équipe, finances globales)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OWNER / MANAGER</td>
+<td>Oui</td>
+</tr>
+<tr>
+<td>AGENT terrain</td>
+<td>Non (interventions seulement)</td>
+</tr>
+<tr>
+<td>TENANT</td>
+<td>Non (portail limité)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="13-intelligence-itc-ia">13. Intelligence ITC (IA)</h2>
+<h3 id="131-onglets-et-fonctions">13.1 Onglets et fonctions</h3>
+<table>
+<thead>
+<tr>
+<th>Fonction</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Chat</strong></td>
+<td>Questions données + « comment faire » dans l’app</td>
+</tr>
+<tr>
+<td><strong>Analyser</strong></td>
+<td>LIA — vue d’ensemble, revenus, occupation, impayés</td>
+</tr>
+<tr>
+<td><strong>Micro</strong></td>
+<td>Dictée vocale puis envoi</td>
+</tr>
+<tr>
+<td><strong>Image (+)</strong></td>
+<td>Photo → vision (OCR, dégâts, documents)</td>
+</tr>
+<tr>
+<td><strong>Lire la réponse</strong></td>
+<td>Synthèse vocale (TTS)</td>
+</tr>
+</tbody>
+</table>
+<p>Indicateur <strong>« IA connectée »</strong> : le service backend répond (clé OpenAI configurée côté serveur).</p>
+<h3 id="132-types-de-questions">13.2 Types de questions</h3>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Exemples</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Données</strong></td>
+<td>« mes impayés », « mes logements », « mes contrats », « mes agents »</td>
+</tr>
+<tr>
+<td><strong>Mode d’emploi</strong></td>
+<td>« comment ajouter un locataire ? », « comment changer le prix d’un logement ? »</td>
+</tr>
+<tr>
+<td><strong>Actions</strong></td>
+<td>« génère le contrat PDF de … », « crée le ticket », « envoie WhatsApp à … »</td>
+</tr>
+<tr>
+<td><strong>Confirmation</strong></td>
+<td>« oui », « confirme », « annule »</td>
+</tr>
+</tbody>
+</table>
+<h3 id="133-regle-propose-confirm">13.3 Règle propose → confirm</h3>
+<p>Actions <strong>sensibles</strong> (toujours avec confirmation) :</p>
+<ul>
+<li>Génération <strong>PDF</strong> (contrat, reçu, avis)</li>
+<li><strong>Création de bail</strong></li>
+<li><strong>Ticket maintenance</strong> et <strong>assignation</strong></li>
+<li><strong>Message locataire</strong> / <strong>WhatsApp</strong></li>
+<li><strong>Automatisations</strong> (relances impayés, etc.)</li>
+</ul>
+<p>Quand une action est en attente, l’IA rappelle : <em>« Répondez oui pour confirmer, ou annule »</em>.</p>
+<h3 id="134-vision-envoi-dimage">13.4 Vision (envoi d’image)</h3>
+<p><strong>Formats recommandés :</strong> JPG, PNG, WebP — photo nette, idéalement <strong>&lt; 4 Mo</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Type de photo</th>
+<th>Comportement</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Dégât</strong> (fuite, fissure…)</td>
+<td>Constat + gravité + plan maintenance + proposition ticket</td>
+</tr>
+<tr>
+<td><strong>Document / reçu</strong></td>
+<td>Extraction texte + résumé</td>
+</tr>
+<tr>
+<td><strong>Pièce d’identité</strong></td>
+<td>Lecture prudente (IDENTITY)</td>
+</tr>
+<tr>
+<td><strong>Photo de bien</strong></td>
+<td>Description état apparent</td>
+</tr>
+</tbody>
+</table>
+<p>En cas d’échec : message clair + invitation à décrire en texte ou renvoyer une photo plus légère.</p>
+<h3 id="135-exemples-de-phrases-utiles">13.5 Exemples de phrases utiles</h3>
+<pre><code>Comment ajouter un locataire ?
+Où voir les identifiants des agents ?
+Mes impayés
+Génère le contrat PDF de [Nom Prénom]
+Génère un reçu pour le paiement de …
+[Photo fuite] fuite sous l'évier Appt 3B
+Oui, crée le ticket
+Assigne le ticket à Jean
+Oui
+À quoi sert le MFA ?
+Comment changer le prix d'un logement ?
+</code></pre>
+<hr />
+<h2 id="14-whatsapp-et-messages">14. WhatsApp et messages</h2>
+<h3 id="141-whatsapp-texte-supporte">14.1 WhatsApp texte (supporté)</h3>
+<ol>
+<li>« Prépare une relance WhatsApp pour l’impayé de [locataire] »</li>
+<li>ITC <strong>propose</strong> le message</li>
+<li><strong>Confirmer</strong> → envoi via <strong>Meta Cloud API</strong></li>
+<li>Succès : ID fournisseur Meta + statut <strong>SENT</strong></li>
+</ol>
+<p>Erreur token Meta : message explicite <em>« Token Meta invalide… »</em> (pas de faux succès).</p>
+<h3 id="142-non-supporte">14.2 Non supporté</h3>
+<ul>
+<li>WhatsApp <strong>audio</strong></li>
+<li>WhatsApp <strong>image / média</strong></li>
+</ul>
+<h3 id="143-message-locataire-in-app">14.3 Message locataire in-app</h3>
+<p>« Envoie un message au locataire … » → proposition → confirmation.</p>
+<hr />
+<h2 id="15-documents-pdf">15. Documents PDF</h2>
+<table>
+<thead>
+<tr>
+<th>Document</th>
+<th>Déclencheur</th>
+<th>Confirmation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Contrat de location</strong></td>
+<td>UI Contrats ou IA</td>
+<td>Oui</td>
+</tr>
+<tr>
+<td><strong>Reçu de paiement</strong></td>
+<td>UI Paiements ou IA</td>
+<td>Oui</td>
+</tr>
+<tr>
+<td><strong>Avis de paiement</strong></td>
+<td>UI ou IA</td>
+<td>Oui</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Stockage :</strong> Cloudinary (recommandé) ou disque serveur <code>/uploads</code> si Cloudinary absent.</p>
+<p><strong>Non générable aujourd’hui par l’IA :</strong> état des lieux, rapport d’inspection, lettre locataire (templates futurs).</p>
+<p><strong>OCR clause PDF fichier :</strong> non supporté — utiliser les <strong>faits du bail</strong> en base ou une <strong>photo</strong> du document.</p>
+<hr />
+<h2 id="16-automatisations">16. Automatisations</h2>
+<p>Relances et tâches automatisées (ex. impayés, échéances de bail) :</p>
+<ol>
+<li>L’IA <strong>propose</strong> un plan d’automatisation</li>
+<li>Vous <strong>approuvez</strong> (<code>APPROVE_AUTOMATION_RUN</code>)</li>
+<li>Exécution via n8n / moteur automation (si activé org)</li>
+</ol>
+<blockquote>
+<p>Distinct du flux <strong>ticket maintenance</strong> photo → confirm (Phase K).</p>
+</blockquote>
+<hr />
+<h2 id="17-regles-metier-importantes">17. Règles métier importantes</h2>
+<ol>
+<li><strong>Périmètre</strong> = votre organisation uniquement (JWT).</li>
+<li><strong>Monnaie</strong> = <strong>XAF</strong> (Franc CFA).</li>
+<li><strong>Mémoire IA</strong> = préférences utilisateur ; <strong>jamais</strong> source des montants ou statuts.</li>
+<li><strong>Prisma / services backend</strong> = vérité pour loyers, impayés, baux.</li>
+<li><strong>Pas de création silencieuse</strong> : ticket, PDF, WhatsApp = toujours confirmés.</li>
+<li><strong>Logement OCCUPIED</strong> ↔ bail ACTIVE en principe ; <strong>AVAILABLE</strong> = vacant.</li>
+<li><strong>Comparaison de baux</strong> : possible par identifiants lease ; pas d’OCR inventé.</li>
+</ol>
+<hr />
+<h2 id="18-limites-actuelles-honnetete-produit">18. Limites actuelles (honnêteté produit)</h2>
+<table>
+<thead>
+<tr>
+<th>Demande</th>
+<th>Statut</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OCR / extraire une clause d’un <strong>PDF fichier</strong></td>
+<td><strong>NOT_SUPPORTED</strong> — photo ou faits bail</td>
+</tr>
+<tr>
+<td>WhatsApp audio / image</td>
+<td><strong>NOT_SUPPORTED</strong> — texte seulement</td>
+</tr>
+<tr>
+<td>État des lieux PDF</td>
+<td><strong>NOT_SUPPORTED</strong> (template prévu)</td>
+</tr>
+<tr>
+<td>Modifier le loyer <strong>directement par l’IA</strong></td>
+<td><strong>Non</strong> — écran Logements / Contrats</td>
+</tr>
+<tr>
+<td>Vision sur PDF upload chat</td>
+<td>Bridge <strong>faits Prisma</strong> ; pas OCR fichier</td>
+</tr>
+</tbody>
+</table>
+<p>L’IA répond <strong>honnêtement</strong> plutôt que d’inventer ou de lister tout le parc sans rapport.</p>
+<hr />
+<h2 id="19-reference-technique-rapide">19. Référence technique rapide</h2>
+<h3 id="191-application-mobile-reference">19.1 Application mobile (référence)</h3>
+<table>
+<thead>
+<tr>
+<th>Élément</th>
+<th>Valeur</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Package production (Flutter)</td>
+<td><code>cg.immo.tec.immo_tec</code></td>
+</tr>
+<tr>
+<td>Label</td>
+<td>ITC / Intelligence ITC</td>
+</tr>
+<tr>
+<td>Backend</td>
+<td>Railway <code>/api/v1</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="192-endpoints-ia-principaux">19.2 Endpoints IA principaux</h3>
+<table>
+<thead>
+<tr>
+<th>Méthode</th>
+<th>Route</th>
+<th>Usage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>/ai/chat</code></td>
+<td>Conversation texte</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/ai/vision</code></td>
+<td>Upload image</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/ai/confirm</code></td>
+<td>Confirmer action pending</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/ai/speak</code></td>
+<td>Synthèse vocale</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/ai/transcribe</code></td>
+<td>Dictée → texte</td>
+</tr>
+</tbody>
+</table>
+<h3 id="193-modules-api-backend">19.3 Modules API (backend)</h3>
+<p>Auth, Buildings, Apartments, Tenants, Leases, Payments, Maintenance, Dashboard, AI, Agents, Portal, Notifications, Documents, Automations, Subscriptions.</p>
+<h3 id="194-documentation-complementaire-depot">19.4 Documentation complémentaire (dépôt)</h3>
+<table>
+<thead>
+<tr>
+<th>Fichier</th>
+<th>Sujet</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>docs/BUSINESS_HIERARCHY.md</code></td>
+<td>Hiérarchie rôles</td>
+</tr>
+<tr>
+<td><code>docs/identity-tenant-provisioning-v1.md</code></td>
+<td>Portail locataire</td>
+</tr>
+<tr>
+<td><code>docs/feature-access-control.md</code></td>
+<td>Permissions features</td>
+</tr>
+<tr>
+<td><code>qa-e2e/PHASE_J_AI_INTELLIGENCE_2.0.md</code></td>
+<td>Intelligence 2.0</td>
+</tr>
+<tr>
+<td><code>qa-e2e/PHASE_K_REAL_ACTIONS.md</code></td>
+<td>Tickets / assignation</td>
+</tr>
+<tr>
+<td><code>src/modules/ai/ai.app-guide.ts</code></td>
+<td>Réponses « comment faire » (source code)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="annexe-a-checklist-demarrage-organisation">Annexe A — Checklist démarrage organisation</h2>
+<ul>
+<li>[ ] Compte <strong>propriétaire</strong> actif  </li>
+<li>[ ] Au moins un <strong>immeuble</strong> + <strong>logements</strong>  </li>
+<li>[ ] <strong>Gestionnaire</strong> créé (LoginId + mdp temporaire notés)  </li>
+<li>[ ] Premier <strong>locataire</strong> + <strong>bail ACTIVE</strong>  </li>
+<li>[ ] Vérifier <strong>échéances</strong> dans Paiements  </li>
+<li>[ ] Tester <strong>Intelligence ITC</strong> : « mes logements », « mes impayés »  </li>
+<li>[ ] (Optionnel) Agent <strong>terrain</strong> + test maintenance  </li>
+</ul>
+<hr />
+<h2 id="annexe-b-glossaire">Annexe B — Glossaire</h2>
+<table>
+<thead>
+<tr>
+<th>Terme</th>
+<th>Définition</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>LoginId</strong></td>
+<td>Identifiant <code>ITC-XXXXXXXX</code></td>
+</tr>
+<tr>
+<td><strong>Pending action</strong></td>
+<td>Action IA en attente de confirmation</td>
+</tr>
+<tr>
+<td><strong>Desk</strong></td>
+<td>Interface gestionnaire maintenance</td>
+</tr>
+<tr>
+<td><strong>SAV</strong></td>
+<td>Service après-vente locataire</td>
+</tr>
+<tr>
+<td><strong>LIA</strong></td>
+<td>Analyses IA sur le parc</td>
+</tr>
+<tr>
+<td><strong>XAF</strong></td>
+<td>Franc CFA (monnaie)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<p><em>Document généré à partir du code et de la documentation produit ITC (imo-backend). Pour toute évolution fonctionnelle, se référer aux releases et à <code>qa-e2e/</code>.</em></p>
+</body>
+</html>

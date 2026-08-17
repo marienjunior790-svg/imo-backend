@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { v2 as cloudinary } from 'cloudinary';
 import { injectable } from 'tsyringe';
-import { env, isCloudinaryConfigured } from '../../config/env.js';
+import { env, isCloudinaryConfigured, isLocalUploadEnabled } from '../../config/env.js';
 import { ValidationError } from '../../shared/errors/app.error.js';
 
 export interface UploadResult {
@@ -14,6 +14,12 @@ export interface UploadOptions {
   folder: string;
   fileName: string;
   resourceType?: 'image' | 'raw' | 'auto';
+}
+
+function absoluteUploadUrl(relativePath: string): string {
+  const base = (env.PUBLIC_API_URL ?? `http://localhost:${env.PORT}`).replace(/\/$/, '');
+  const path = relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
+  return `${base}${path}`;
 }
 
 @injectable()
@@ -52,10 +58,10 @@ export class CloudinaryService {
       });
     }
 
-    // Fallback local — développement uniquement
-    if (env.NODE_ENV === 'production') {
+    // Fallback disque local (dev + prod sans Cloudinary — ex. Railway avant config)
+    if (!isLocalUploadEnabled) {
       throw new ValidationError(
-        'Stockage Cloudinary obligatoire en production. Configurez CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY et CLOUDINARY_API_SECRET.',
+        'Stockage indisponible : configurez CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY et CLOUDINARY_API_SECRET, ou activez ALLOW_LOCAL_UPLOADS=true.',
       );
     }
 
@@ -64,8 +70,9 @@ export class CloudinaryService {
     const filePath = join(uploadsDir, options.fileName);
     await writeFile(filePath, buffer);
     const publicId = `${options.folder}/${options.fileName}`;
+    const relative = `/uploads/${options.folder}/${options.fileName}`;
     return {
-      url: `/uploads/${options.folder}/${options.fileName}`,
+      url: absoluteUploadUrl(relative),
       publicId,
     };
   }
