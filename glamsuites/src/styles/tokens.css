@@ -1,0 +1,22 @@
+:root {
+  /* Palette quiet glamour : espresso + ivoire + champagne fin */
+  --gs-ink:      #100e0b;
+  --gs-espresso: #1e1a15;
+  --gs-brown:    #3a3028;
+  --gs-stone:    #7c7060;
+  --gs-mist:     #b8b0a4;
+  --gs-ivory:    #f5f1ea;
+  --gs-warm:     #faf8f4;
+  --gs-cream:    #ede8df;
+  --gs-champagne:#b9975a;
+  --gs-champ-d:  rgba(185,151,90,.22);
+  --gs-line:     rgba(16,14,11,.1);
+  --gs-line-l:   rgba(245,241,234,.12);
+
+  --font-s: "Cormorant Garamond", "Times New Roman", serif;
+  --font-u: "DM Sans", system-ui, sans-serif;
+  --ease:   cubic-bezier(0.18, 1, 0.32, 1);
+  --ease-slow: cubic-bezier(0.05, 0.8, 0.2, 1);
+  --g: clamp(1.25rem, 4.5vw, 5rem);
+  --max: 1320px;
+}

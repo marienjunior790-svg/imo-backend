@@ -1,0 +1,36 @@
+import { useEffect, useRef } from 'react';
+export function GsCursor() {
+  const ref = useRef<HTMLDivElement>(null);
+  const label = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const fine = window.matchMedia('(hover:hover) and (pointer:fine)').matches;
+    const reduced = window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+    if (!fine || reduced) return;
+    let x = 0, y = 0, cx = 0, cy = 0, raf = 0;
+    const move = (e: PointerEvent) => {
+      x = e.clientX; y = e.clientY;
+      const t = e.target as HTMLElement;
+      const isImg = !!t.closest('img, .suite-item__visual, .gallery-masonry__item, .cinematic');
+      const isBtn = !!t.closest('a.btn, button.btn, button, a[href]');
+      if (label.current) {
+        if (isImg) { label.current.textContent = 'VIEW'; label.current.style.opacity = '1'; }
+        else if (isBtn) { label.current.textContent = 'OPEN'; label.current.style.opacity = '1'; }
+        else { label.current.style.opacity = '0'; }
+      }
+    };
+    const loop = () => {
+      cx += (x - cx) * .14; cy += (y - cy) * .14;
+      if (ref.current) ref.current.style.transform = `translate3d(${cx}px,${cy}px,0)`;
+      raf = requestAnimationFrame(loop);
+    };
+    window.addEventListener('pointermove', move, { passive: true });
+    raf = requestAnimationFrame(loop);
+    return () => { window.removeEventListener('pointermove', move); cancelAnimationFrame(raf); };
+  }, []);
+  return (
+    <div ref={ref} className="gs-cursor" aria-hidden="true">
+      <div className="gs-cursor__dot" />
+      <div ref={label} className="gs-cursor__label" />
+    </div>
+  );
+}
