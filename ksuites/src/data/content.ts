@@ -266,25 +266,25 @@ export const SERVICES: {
   {
     id: 'wifi',
     title: 'Wi-Fi',
-    text: 'Connexion dans l\'ensemble des suites du catalogue public.',
+    text: 'Une connexion dans chaque suite.',
     scope: 'collection',
   },
   {
     id: 'ac',
     title: 'Climatisation',
-    text: 'Chaque suite listée est climatisée.',
+    text: 'Un climat constant, pensé pour Pointe-Noire.',
     scope: 'collection',
   },
   {
     id: 'kitchen',
     title: 'Cuisine',
-    text: 'Appartements conçus pour l\'indépendance. Cuisine entièrement équipée confirmée sur la suite A07.',
+    text: 'L\'indépendance d\'un appartement. Cuisine entièrement équipée confirmée sur la A07.',
     scope: 'some',
   },
   {
     id: 'parking',
     title: 'Parking privé',
-    text: 'Annoncé sur certaines fiches (notamment 302 et A07). À confirmer suite par suite.',
+    text: 'Annoncé sur certaines adresses, notamment la 302 et la A07.',
     scope: 'some',
   },
   {
@@ -296,7 +296,7 @@ export const SERVICES: {
   {
     id: 'balcony',
     title: 'Balcon',
-    text: 'Confirmé sur A07 et 302. Autres suites : à renseigner.',
+    text: 'Un dehors à soi, confirmé sur la A07 et la 302.',
     scope: 'some',
   },
 ];

@@ -48,6 +48,7 @@
   background: var(--night-deep);
   display: grid;
   place-items: center;
+  pointer-events: none;
   transition: opacity 0.9s var(--ease), visibility 0.9s;
 }
 
@@ -512,7 +513,7 @@ section {
 .suite-spread {
   display: grid;
   gap: 1.5rem;
-  margin-bottom: clamp(3.5rem, 10vh, 7rem);
+  margin-bottom: clamp(2.8rem, 8vh, 5.5rem);
 }
 
 .suite-spread__visual {
@@ -534,18 +535,6 @@ section {
   transform: scale(1.04);
 }
 
-.suite-spread__index {
-  position: absolute;
-  left: 1rem;
-  bottom: 0.2rem;
-  font-family: var(--font-display);
-  font-size: clamp(5rem, 22vw, 10rem);
-  line-height: 0.75;
-  color: rgba(244, 239, 230, 0.14);
-  pointer-events: none;
-  font-weight: 300;
-}
-
 .suite-spread__meta {
   display: grid;
   gap: 0.85rem;
@@ -556,6 +545,20 @@ section {
   font-size: clamp(2rem, 5vw, 3rem);
   font-weight: 300;
   margin: 0;
+  font-variant-numeric: lining-nums;
+}
+
+.suite-spread__index {
+  position: absolute;
+  left: 1rem;
+  bottom: 0.2rem;
+  font-family: var(--font-ui);
+  font-size: clamp(4rem, 16vw, 8rem);
+  line-height: 0.75;
+  color: rgba(244, 239, 230, 0.16);
+  pointer-events: none;
+  font-weight: 300;
+  letter-spacing: 0.04em;
 }
 
 .quiet {
@@ -877,8 +880,8 @@ section {
 .overlay {
   position: fixed;
   inset: 0;
-  z-index: 65;
-  background: rgba(5, 6, 10, 0.62);
+  z-index: 90;
+  background: rgba(5, 6, 10, 0.78);
   display: flex;
   justify-content: flex-end;
 }
@@ -1061,17 +1064,17 @@ section {
     align-items: center;
   }
 
-  .suite-spread:nth-child(even) {
+  .suite-spread:nth-of-type(even) {
     grid-template-columns: 0.85fr 1.15fr;
   }
 
-  .suite-spread:nth-child(even) .suite-spread__visual {
+  .suite-spread:nth-of-type(even) .suite-spread__visual {
     order: 2;
   }
 
   .suite-spread__visual,
   .suite-spread__visual img {
-    min-height: 68vh;
+    min-height: 58vh;
   }
 
   .services-grid {
@@ -1135,13 +1138,16 @@ section {
     display: block;
     position: absolute;
     left: 1.15rem;
-    top: 50%;
+    top: 42%;
+    bottom: auto;
     writing-mode: vertical-rl;
-    transform: translateY(-50%) rotate(180deg);
+    transform: rotate(180deg);
     letter-spacing: 0.42em;
     font-size: 0.68rem;
     color: var(--champagne);
     margin: 0;
+    max-height: 46vh;
+    overflow: hidden;
   }
 
   .exp-wrap {

@@ -14,8 +14,8 @@ export function Suites({ onExplore }: Props) {
           <h2 className="display">Chaque adresse, une intimité.</h2>
           <p className="lede">
             Une collection d&apos;appartements à Pointe-Noire — Wharf, Mpita, centre-ville.
-            Présentation éditoriale des cinq suites les plus distinctes. L&apos;ensemble du
-            catalogue ({SUITES.length}) reste disponible à la réservation.
+            Cinq adresses à lire comme un éditorial. Les autres se découvrent ensuite,
+            une à une.
           </p>
         </div>
       </Reveal>
@@ -27,7 +27,7 @@ export function Suites({ onExplore }: Props) {
               alt={`${suite.name}, ${suite.district} — photographie de substitution`}
               width={1600}
               height={1200}
-              loading={i === 0 ? 'eager' : 'lazy'}
+              loading={i < 2 ? 'eager' : 'lazy'}
             />
             <span className="suite-spread__index">{suite.number}</span>
           </div>

@@ -8,8 +8,8 @@ export function Services() {
         <p className="kicker">Services</p>
         <h2 className="display">L&apos;essentiel, sans ostentation.</h2>
         <p className="lede">
-          Wi-Fi, climatisation, cuisine, vue mer : uniquement ce que le catalogue public
-          permet d&apos;affirmer. Le reste s&apos;ajoutera ici, sans reconstitution.
+          Ce que l&apos;on peut dire aujourd&apos;hui, sans en rajouter. Le reste
+          s&apos;écrira ici dès qu&apos;il sera confirmé.
         </p>
       </Reveal>
       <div className="services-grid">
