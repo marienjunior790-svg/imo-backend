@@ -1,9 +1,26 @@
+import { randomBytes } from 'crypto';
 import { mkdir, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { extname, join } from 'path';
 import { v2 as cloudinary } from 'cloudinary';
-import { injectable } from 'tsyringe';
+import { inject, injectable } from 'tsyringe';
 import { env, isCloudinaryConfigured } from '../../config/env.js';
 import { ValidationError } from '../../shared/errors/app.error.js';
+import { PrismaService } from '../prisma/prisma.service.js';
+
+const CONTENT_TYPES: Record<string, string> = {
+  '.pdf': 'application/pdf',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+};
+
+function publicApiBase(): string {
+  const base = env.PUBLIC_API_URL
+    ?? (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : '');
+  return base.replace(/\/$/, '');
+}
 
 export interface UploadResult {
   url: string;
@@ -19,6 +36,8 @@ export interface UploadOptions {
 @injectable()
 export class CloudinaryService {
   private initialized = false;
+
+  constructor(@inject(PrismaService) private readonly prisma: PrismaService) {}
 
   private ensureInit(): void {
     if (this.initialized) return;
@@ -52,11 +71,8 @@ export class CloudinaryService {
       });
     }
 
-    // Fallback local — développement uniquement
     if (env.NODE_ENV === 'production') {
-      throw new ValidationError(
-        'Stockage Cloudinary obligatoire en production. Configurez CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY et CLOUDINARY_API_SECRET.',
-      );
+      return this.storeInDatabase(buffer, options);
     }
 
     const uploadsDir = join(process.cwd(), 'uploads', options.folder);
@@ -70,11 +86,31 @@ export class CloudinaryService {
     };
   }
 
+  /** Production sans Cloudinary : fichier en base, servi par GET {API_PREFIX}/files/:token/:name */
+  private async storeInDatabase(buffer: Buffer, options: UploadOptions): Promise<UploadResult> {
+    const contentType = CONTENT_TYPES[extname(options.fileName).toLowerCase()] ?? 'application/octet-stream';
+    const stored = await this.prisma.storedFile.upsert({
+      where: { folder_fileName: { folder: options.folder, fileName: options.fileName } },
+      create: {
+        token: randomBytes(24).toString('hex'),
+        folder: options.folder,
+        fileName: options.fileName,
+        contentType,
+        data: buffer,
+      },
+      update: { contentType, data: buffer },
+    });
+    return {
+      url: `${publicApiBase()}${env.API_PREFIX}/files/${stored.token}/${encodeURIComponent(stored.fileName)}`,
+      publicId: `db:${options.folder}/${options.fileName}`,
+    };
+  }
+
   async uploadFile(file: Express.Multer.File, options: Omit<UploadOptions, 'fileName'> & { fileName?: string }): Promise<UploadResult> {
     if (!file?.buffer) throw new ValidationError('Fichier invalide');
     return this.uploadBuffer(file.buffer, {
       ...options,
-      fileName: options.fileName ?? file.originalname,
+      fileName: options.fileName ?? (isCloudinaryConfigured ? file.originalname : `${Date.now()}-${file.originalname}`),
       resourceType: file.mimetype.startsWith('image/') ? 'image' : 'raw',
     });
   }

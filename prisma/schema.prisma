@@ -1181,3 +1181,18 @@ model AiAutomationRun {
   @@index([organizationId, kind, status, createdAt])
   @@map("ai_automation_runs")
 }
+
+/// Fichiers servis par l'API quand Cloudinary n'est pas configuré (lien public non devinable)
+model StoredFile {
+  id          String   @id @default(cuid())
+  token       String   @unique
+  folder      String
+  fileName    String
+  contentType String
+  data        Bytes
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([folder, fileName])
+  @@map("stored_files")
+}
