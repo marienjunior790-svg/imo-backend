@@ -6,6 +6,7 @@ import { RbacService } from './shared/rbac/rbac.service.js';
 import { bootstrapSuperAdmin, seedFeatureCatalog } from './bootstrap/system-bootstrap.js';
 import { initSentry } from './infrastructure/monitoring/sentry.js';
 import { container } from 'tsyringe';
+import { RentFollowUpService } from './modules/rent-followup/rent-followup.service.js';
 
 async function bootstrap() {
   initSentry();
@@ -30,13 +31,43 @@ async function bootstrap() {
     console.log(`   Health        : ${publicUrl}${env.API_PREFIX}/health\n`);
   });
 
+  const followUpTimer = startRentFollowUpScheduler();
+
   const shutdown = async () => {
+    if (followUpTimer) clearInterval(followUpTimer);
     await prisma.disconnect();
     process.exit(0);
   };
 
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+}
+
+/**
+ * Suivi des loyers sans dépendre d'un cron externe : échéances du mois, retards, rappels et relances.
+ * Chaque étape est idempotente (échéance unique par contrat/mois, relance journalisée), donc
+ * plusieurs passages par jour ou plusieurs instances ne créent pas de doublons.
+ */
+function startRentFollowUpScheduler(): NodeJS.Timeout | null {
+  if (env.NODE_ENV === 'test' || process.env.RENT_FOLLOW_UP_SCHEDULER === 'off') return null;
+
+  const everyMs = 6 * 60 * 60 * 1000;
+  let running = false;
+  const run = async () => {
+    if (running) return;
+    running = true;
+    try {
+      const result = await container.resolve(RentFollowUpService).runDailyFollowUp();
+      console.log('[rent-follow-up]', JSON.stringify(result));
+    } catch (err) {
+      console.warn('[rent-follow-up] échec:', err instanceof Error ? err.message : err);
+    } finally {
+      running = false;
+    }
+  };
+
+  setTimeout(run, 60 * 1000);
+  return setInterval(run, everyMs);
 }
 
 bootstrap().catch((err) => {
