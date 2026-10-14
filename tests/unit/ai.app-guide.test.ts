@@ -1,4 +1,67 @@
 import { isAppHowtoIntent, resolveAppHowtoReply } from '../../src/modules/ai/ai.app-guide.js';
+import {
+  APP_MANUAL,
+  MANUAL_CATEGORIES,
+  manualPromptFor,
+  resolveManualAnswer,
+  searchAppManual,
+} from '../../src/modules/ai/ai.app-manual.js';
+
+/** Routes réellement ouvertes par l'application mobile (HomeScreen.navigate). */
+const APP_ROUTES = [
+  '/dashboard', '/settings', '/assistant', '/properties', '/properties/create', '/tenants', '/tenants/new',
+  '/leases', '/leases/new', '/payments', '/maintenance', '/maintenance/new', '/team', '/team/agents/new',
+  '/notifications', '/reports',
+];
+
+describe('Guide officiel de l’application', () => {
+  it('a des fiches cohérentes (id unique, catégorie connue, route ouverte par l’app)', () => {
+    const ids = APP_MANUAL.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const s of APP_MANUAL) {
+      expect((MANUAL_CATEGORIES as readonly string[]).includes(s.category)).toBe(true);
+      expect(s.keywords.length).toBeGreaterThan(0);
+      expect(s.body.length).toBeGreaterThan(80);
+      if (s.route) expect(APP_ROUTES).toContain(s.route);
+    }
+  });
+
+  it.each([
+    ['À quoi sert l’onglet Biens ?', 'properties', /immeuble/i],
+    ['Que signifie la couleur orange ?', 'colors', /ORANGE, attention/],
+    ['Comment encaisser un loyer ?', 'payment-record', /Valider l’encaissement/],
+    ['Que veut dire le statut Partiel ?', 'status-catalogue', /Partiel/],
+    ['Pourquoi la fenêtre clignote dans la maquette 3D ?', 'building-detail', /clignote/],
+    ['Comment changer le thème en mode sombre ?', 'themes', /Noir/],
+    ['Les relances sont-elles automatiques ? comment ça marche', 'reminders', /J\+15/],
+    ['Comment confier une intervention à un prestataire ?', 'ticket-assign', /Assigner le prestataire/],
+    ['Combien coûte la formule Pro ?', 'subscription', /45 000/],
+    ['À quoi sert le taux de recouvrement ?', 'dashboard-month', /encaissé ÷ attendu/],
+  ])('« %s » → fiche %s', (question, id, expected) => {
+    const answer = resolveManualAnswer(question, { requireCue: false });
+    expect(answer?.sectionIds[0]).toBe(id);
+    expect(answer?.reply).toMatch(expected);
+  });
+
+  it('laisse passer les demandes de données et les ordres d’action', () => {
+    expect(resolveManualAnswer('Voir mes impayés')).toBeNull();
+    expect(resolveManualAnswer('Crée un ticket pour la fuite chez Jean')).toBeNull();
+    expect(resolveManualAnswer('Qui n’a pas encore payé ce mois-ci ?')).toBeNull();
+  });
+
+  it('propose le bouton vers l’écran concerné', () => {
+    const answer = resolveManualAnswer('Comment ajouter un locataire ?');
+    expect(answer?.actions[0]).toEqual({ label: 'Nouveau locataire', route: '/tenants/new' });
+  });
+
+  it('fournit au modèle OpenAI la carte des écrans et les extraits pertinents', () => {
+    const prompt = manualPromptFor('Comment encaisser un loyer ?');
+    expect(prompt).toContain('GUIDE OFFICIEL');
+    expect(prompt).toContain('Onglets du bas');
+    expect(prompt).toContain('Valider l’encaissement');
+    expect(searchAppManual('bonjour', 3)).toEqual([]);
+  });
+});
 
 describe('AI app guide (howto)', () => {
   it('détecte les questions mode d’emploi', () => {
@@ -6,6 +69,8 @@ describe('AI app guide (howto)', () => {
     expect(isAppHowtoIntent('Comment ajouter un locataire ?')).toBe(true);
     expect(isAppHowtoIntent('Comment créer un agent ?')).toBe(true);
     expect(isAppHowtoIntent('Voir mes impayés')).toBe(false);
+    expect(isAppHowtoIntent('Que signifie la couleur rouge ?')).toBe(true);
+    expect(isAppHowtoIntent('À quoi sert l’onglet Biens ?')).toBe(true);
   });
 
   it('explique la hiérarchie', () => {

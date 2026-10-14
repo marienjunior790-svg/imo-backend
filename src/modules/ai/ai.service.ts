@@ -13,6 +13,7 @@ import {
   type AiActionHint,
 } from './ai.fallback.js';
 import { APP_GUIDE_PROMPT, isAppHowtoIntent, resolveAppHowtoReply } from './ai.app-guide.js';
+import { manualPromptFor, resolveManualAnswer, searchAppManual } from './ai.app-manual.js';
 import { ITC_KNOWLEDGE_PROMPT, resolveKnowledgeClarification } from './ai.knowledge.js';
 import { resolveCapabilityRoute } from './ai.capability-router.js';
 import {
@@ -333,6 +334,30 @@ export class AiService {
       }
     }
 
+    // Phase J3 — question sur l'application (« à quoi sert », « que signifie », « comment … ») → guide officiel.
+    // Un impératif (« crée un ticket… ») n'a pas de formulation explicative et continue vers les actions.
+    {
+      const manual = resolveManualAnswer(message);
+      if (manual) {
+        const qManual = message.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+        const dataIntent =
+          !!detectPaymentReminderPlan(message) ||
+          !!resolveTeamMembersLocalIntent(qManual) ||
+          this.tools.resolveLocalToolIntents(message, sessionEntities, history).length > 0;
+        if (manual.strong || manual.score >= 5 || !dataIntent) {
+          const ctxGuide = await this.contextService.buildContext(organizationId);
+          void this.persistConversationSession(organizationId, userId, message, [], manual.reply);
+          return {
+            reply: manual.reply,
+            suggestions: buildContextualSuggestions(ctxGuide),
+            actions: this.dedupeActions(manual.actions),
+            poweredBy: 'local',
+            contextUsed: true,
+          };
+        }
+      }
+    }
+
     // Phase J4 — document pipeline (faits Prisma : loyer / dates / durée / anomalies)
     {
       const docIntent = detectDocumentAskIntent(message);
@@ -450,7 +475,7 @@ export class AiService {
           return {
             reply: howto,
             suggestions: buildContextualSuggestions(ctxGuide),
-            actions: resolveChatActions(message),
+            actions: this.dedupeActions([...this.manualActions(message), ...resolveChatActions(message)]),
             poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
             contextUsed: true,
           };
@@ -656,7 +681,7 @@ export class AiService {
         return {
           reply: howto,
           suggestions,
-          actions: this.dedupeActions([...actions, ...resolveChatActions(message)]),
+          actions: this.dedupeActions([...this.manualActions(message), ...actions, ...resolveChatActions(message)]),
           poweredBy: 'local',
           contextUsed: true,
         };
@@ -822,6 +847,7 @@ export class AiService {
     const contextJson = this.contextService.toPromptContext(ctx);
     const messages: ChatMessage[] = [
       { role: 'system', content: ASSISTANT_PROMPT },
+      { role: 'system', content: manualPromptFor(message) },
       { role: 'system', content: `Contexte organisation (JSON):\n${contextJson}` },
     ];
 
@@ -1176,6 +1202,13 @@ export class AiService {
       seen.add(key);
       return true;
     }).slice(0, 6);
+  }
+
+  /** Boutons « ouvrir l'écran » des fiches du guide correspondant à la question. */
+  private manualActions(message: string): AiActionHint[] {
+    return searchAppManual(message, 2)
+      .filter((m) => m.section.route)
+      .map((m) => ({ label: m.section.routeLabel ?? m.section.title, route: m.section.route! }));
   }
 
   /** Audio → transcription → chat immobilier */
