@@ -30,6 +30,7 @@ import {
   mergeLeaseFields,
   parseLeaseFields,
   resolveLeaseDates,
+  tenantChoiceLabel,
 } from './ai.lease-request.js';
 import { ITC_KNOWLEDGE_PROMPT, resolveKnowledgeClarification } from './ai.knowledge.js';
 import { resolveCapabilityRoute } from './ai.capability-router.js';
@@ -1850,7 +1851,7 @@ export class AiService {
     const [tenants, apartments, openLeases] = await Promise.all([
       this.prisma.tenant.findMany({
         where: { organizationId },
-        select: { id: true, firstName: true, lastName: true },
+        select: { id: true, firstName: true, lastName: true, phone: true },
         orderBy: { createdAt: 'desc' },
         take: 500,
       }),
@@ -1949,18 +1950,19 @@ export class AiService {
       const busy = new Set(openLeases.filter((l) => l.status === LeaseStatus.ACTIVE).map((l) => l.tenantId));
       const free = tenants.filter((t) => !busy.has(t.id));
       const pool = (free.length ? free : tenants).slice(0, 6);
+      const labels = pool.map((t) => tenantChoiceLabel(t, tenants));
       return respond(
-        `${header}pour quel locataire ?\n${pool.map((t) => `• ${fullName(t)}`).join('\n')}\n\n` +
+        `${header}pour quel locataire ?\n${labels.map((l) => `• ${l}`).join('\n')}\n\n` +
           `Répondez avec son nom. S'il n'est pas encore enregistré, ajoutez-le d'abord dans Locataires.`,
-        pool.map(fullName),
+        labels,
         [{ label: 'Ajouter un locataire', route: '/tenants/new' }],
       );
     }
     if (tenantHits.length > 1) {
-      const pool = tenantHits.slice(0, 6);
+      const labels = tenantHits.slice(0, 6).map((t) => tenantChoiceLabel(t, tenants));
       return respond(
-        `${header}plusieurs locataires correspondent :\n${pool.map((t) => `• ${fullName(t)}`).join('\n')}\n\nLequel ?`,
-        pool.map(fullName),
+        `${header}plusieurs locataires correspondent :\n${labels.map((l) => `• ${l}`).join('\n')}\n\nLequel ? Touchez une suggestion ou précisez son téléphone.`,
+        labels,
       );
     }
     const tenant = tenantHits[0];

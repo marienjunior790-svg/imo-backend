@@ -297,10 +297,28 @@ export interface TenantCandidate {
   id: string;
   firstName: string;
   lastName: string;
+  phone?: string | null;
 }
+
+const phoneKey = (phone?: string | null) => (phone ?? '').replace(/\D/g, '').slice(-8);
 
 /** Locataires dont le nom apparaît dans le texte (meilleur score d'abord, ex-aequo inclus). */
 export function matchTenantsInText<T extends TenantCandidate>(text: string, tenants: T[]): T[] {
+  const top = matchTenantsByName(text, tenants);
+  if (top.length < 2) return top;
+  const digits = text.replace(/\D/g, '');
+  const byPhone = top.filter((t) => phoneKey(t.phone).length >= 6 && digits.includes(phoneKey(t.phone)));
+  return byPhone.length ? byPhone : top;
+}
+
+/** Homonymes : le téléphone permet de les distinguer. */
+export function tenantChoiceLabel<T extends TenantCandidate>(t: T, all: T[]): string {
+  const name = `${t.firstName} ${t.lastName}`.trim();
+  const twins = all.filter((o) => `${o.firstName} ${o.lastName}`.trim().toLowerCase() === name.toLowerCase());
+  return twins.length > 1 && t.phone ? `${name} ${t.phone}` : name;
+}
+
+function matchTenantsByName<T extends TenantCandidate>(text: string, tenants: T[]): T[] {
   const tokens = leaseTokens(text).filter((t) => t.length >= 2 && !NAME_STOP.has(t) && !/^\d+$/.test(t));
   if (!tokens.length) return [];
   const scored = tenants

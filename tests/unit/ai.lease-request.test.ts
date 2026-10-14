@@ -10,6 +10,7 @@ import {
   mergeLeaseFields,
   parseLeaseFields,
   resolveLeaseDates,
+  tenantChoiceLabel,
 } from '../../src/modules/ai/ai.lease-request.js';
 
 const today = new Date(2026, 9, 15);
@@ -98,6 +99,18 @@ describe('ai.lease-request — correspondances', () => {
     expect(matchTenantsInText('contrat pour Jean', tenants).map((t) => t.id)).toEqual(['t1', 't2']);
     expect(matchTenantsInText('fortune libolo', tenants).map((t) => t.id)).toEqual(['t3']);
     expect(matchTenantsInText('contrat pour 1 an', tenants)).toEqual([]);
+  });
+
+  it('homonymes départagés par le téléphone', () => {
+    const twins = [
+      { id: 'y1', firstName: 'yannick', lastName: 'noah', phone: '055719922' },
+      { id: 'y2', firstName: 'yannick', lastName: 'noah', phone: '06 571 99 22' },
+    ];
+    expect(matchTenantsInText('yannick noah', twins).map((t) => t.id)).toEqual(['y1', 'y2']);
+    expect(tenantChoiceLabel(twins[1], twins)).toBe('yannick noah 06 571 99 22');
+    expect(matchTenantsInText(tenantChoiceLabel(twins[1], twins), twins).map((t) => t.id)).toEqual(['y2']);
+    expect(matchTenantsInText('yannick noah 055719922', twins).map((t) => t.id)).toEqual(['y1']);
+    expect(tenantChoiceLabel(tenants[0], tenants)).toBe('Jean Mbemba');
   });
 
   it('logement par libellé', () => {
