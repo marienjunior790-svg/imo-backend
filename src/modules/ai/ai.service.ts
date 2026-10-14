@@ -1,5 +1,5 @@
 import { inject, injectable } from 'tsyringe';
-import { LeaseStatus, UserRole, type MaintenancePriority } from '@prisma/client';
+import { ApartmentStatus, LeaseStatus, UserRole, type MaintenancePriority } from '@prisma/client';
 import { env, isAiMemoryEnabled, isAiSecurityStrict } from '../../config/env.js';
 import { OpenAiClient, ChatMessage } from '../../infrastructure/openai/openai.client.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
@@ -13,7 +13,24 @@ import {
   type AiActionHint,
 } from './ai.fallback.js';
 import { APP_GUIDE_PROMPT, isAppHowtoIntent, resolveAppHowtoReply } from './ai.app-guide.js';
-import { manualPromptFor, resolveManualAnswer, searchAppManual } from './ai.app-manual.js';
+import { hasHowtoCue, manualPromptFor, resolveManualAnswer, searchAppManual } from './ai.app-manual.js';
+import {
+  LEASE_DRAFT_MARKER,
+  collectLeaseDraftMessages,
+  formatDateFr,
+  formatXaf,
+  hasLeaseCreateCue,
+  hasLeaseDetails,
+  hasLeaseMakeCue,
+  hasLeasePdfCue,
+  leaseStatusFr,
+  matchApartmentsInText,
+  matchTenantsInText,
+  mentionsContract,
+  mergeLeaseFields,
+  parseLeaseFields,
+  resolveLeaseDates,
+} from './ai.lease-request.js';
 import { ITC_KNOWLEDGE_PROMPT, resolveKnowledgeClarification } from './ai.knowledge.js';
 import { resolveCapabilityRoute } from './ai.capability-router.js';
 import {
@@ -332,6 +349,12 @@ export class AiService {
           contextUsed: true,
         };
       }
+    }
+
+    // Contrat en langage naturel : création de bail guidée (noms, dates, loyer) ou PDF d'un bail existant.
+    {
+      const contract = await this.handleContractRequest(organizationId, userId, role, message, history);
+      if (contract) return contract;
     }
 
     // Phase J3 — question sur l'application (« à quoi sert », « que signifie », « comment … ») → guide officiel.
@@ -1800,6 +1823,257 @@ export class AiService {
     return this.proposeLeasePdf(organizationId, userId, role, input.leaseId);
   }
 
+  /**
+   * Demande de contrat en français libre. Retourne null si le message ne concerne pas
+   * la création / le PDF d'un contrat (le reste du pipeline prend alors le relais).
+   */
+  private async handleContractRequest(
+    organizationId: string,
+    userId: string,
+    role: UserRole,
+    message: string,
+    history?: AiChatInput['history'],
+  ): Promise<AiChatResponse | null> {
+    const startsNew =
+      mentionsContract(message) && (hasLeaseCreateCue(message) || hasLeaseMakeCue(message) || hasLeasePdfCue(message));
+    const draft = startsNew ? [message] : collectLeaseDraftMessages(message, history);
+    const continuing = draft.length > 1;
+
+    if (!continuing) {
+      if (!startsNew) return null;
+      if (this.isNoticeIntent(message) || this.isReceiptIntent(message) || detectPaymentReminderPlan(message)) {
+        return null;
+      }
+      if (/\b(tenantId|apartmentId)\b/i.test(message)) return null;
+    }
+
+    const [tenants, apartments, openLeases] = await Promise.all([
+      this.prisma.tenant.findMany({
+        where: { organizationId },
+        select: { id: true, firstName: true, lastName: true },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+      }),
+      this.prisma.apartment.findMany({
+        where: { organizationId },
+        select: { id: true, label: true, status: true, rentAmount: true, building: { select: { name: true } } },
+        orderBy: { label: 'asc' },
+        take: 500,
+      }),
+      this.prisma.lease.findMany({
+        where: { organizationId, status: { in: [LeaseStatus.ACTIVE, LeaseStatus.DRAFT, LeaseStatus.EXPIRED] } },
+        select: { id: true, tenantId: true, apartmentId: true, status: true, updatedAt: true },
+        orderBy: { updatedAt: 'desc' },
+        take: 500,
+      }),
+    ]);
+    const units = apartments.map((a) => ({ ...a, buildingName: a.building?.name ?? null }));
+
+    const lastHit = <T>(fn: (text: string) => T[]): T[] => {
+      let hits: T[] = [];
+      for (const text of draft) {
+        const found = fn(text);
+        if (found.length) hits = found;
+      }
+      return hits;
+    };
+    let tenantHits = lastHit((t) => matchTenantsInText(t, tenants));
+    let unitHits = lastHit((t) => matchApartmentsInText(t, units));
+    const fields = mergeLeaseFields(draft.map((t) => parseLeaseFields(t)));
+
+    if (continuing) {
+      const own = parseLeaseFields(message);
+      const contributes =
+        matchTenantsInText(message, tenants).length > 0 ||
+        matchApartmentsInText(message, units).length > 0 ||
+        hasLeaseDetails(own) ||
+        own.activate !== undefined;
+      if (!contributes) return null;
+    } else if (hasHowtoCue(message) && !tenantHits.length && !unitHits.length) {
+      return null;
+    }
+
+    const leaseOf = (tenantId: string, apartmentId?: string) => {
+      const rank = (s: LeaseStatus) => (s === LeaseStatus.ACTIVE ? 0 : s === LeaseStatus.DRAFT ? 1 : 2);
+      return openLeases
+        .filter((l) => l.tenantId === tenantId && (!apartmentId || l.apartmentId === apartmentId))
+        .sort((a, b) => rank(a.status) - rank(b.status))[0];
+    };
+
+    let mode: 'create' | 'pdf';
+    const cuid = this.extractCuid(message, 'leaseId');
+    const createCue = hasLeaseCreateCue(message);
+    const pdfCue = hasLeasePdfCue(message);
+    if (continuing) mode = 'create';
+    else if (createCue && (!pdfCue || unitHits.length > 0 || hasLeaseDetails(fields))) mode = 'create';
+    else if (pdfCue || cuid) mode = 'pdf';
+    else {
+      const existing = tenantHits.length === 1 ? leaseOf(tenantHits[0].id, unitHits[0]?.id) : undefined;
+      mode = unitHits.length > 0 || hasLeaseDetails(fields) || !existing ? 'create' : 'pdf';
+    }
+
+    if (mode === 'pdf') {
+      if (cuid) return this.proposeLeasePdf(organizationId, userId, role, cuid);
+      if (tenantHits.length === 1) {
+        const lease = leaseOf(tenantHits[0].id, unitHits.length === 1 ? unitHits[0].id : undefined);
+        if (lease) return this.proposeLeasePdf(organizationId, userId, role, lease.id);
+      } else {
+        return this.proposeLeasePdf(organizationId, userId, role, undefined, message);
+      }
+    }
+
+    const header = `${LEASE_DRAFT_MARKER} — `;
+    const poweredBy: AiChatResponse['poweredBy'] = 'local';
+    const fullName = (t: { firstName: string; lastName: string }) => `${t.firstName} ${t.lastName}`.trim();
+    const unitLine = (u: (typeof units)[number]) =>
+      `${u.label}${u.buildingName ? ` (${u.buildingName})` : ''} — ${formatXaf(decimalToNumber(u.rentAmount))}/mois`;
+    const respond = (reply: string, suggestions: string[], actions: AiActionHint[] = []): AiChatResponse => {
+      void this.persistConversationSession(organizationId, userId, message, [], reply);
+      return {
+        reply,
+        suggestions: suggestions.slice(0, 6),
+        actions: this.dedupeActions([...actions, { label: 'Voir les contrats', route: '/leases' }]),
+        poweredBy,
+        contextUsed: true,
+      };
+    };
+
+    if (!tenants.length) {
+      return respond(
+        `${header}aucun locataire n'est encore enregistré. Ajoutez d'abord le locataire (nom et téléphone), puis redemandez le contrat.`,
+        [],
+        [{ label: 'Ajouter un locataire', route: '/tenants/new' }],
+      );
+    }
+    if (!tenantHits.length) {
+      const busy = new Set(openLeases.filter((l) => l.status === LeaseStatus.ACTIVE).map((l) => l.tenantId));
+      const free = tenants.filter((t) => !busy.has(t.id));
+      const pool = (free.length ? free : tenants).slice(0, 6);
+      return respond(
+        `${header}pour quel locataire ?\n${pool.map((t) => `• ${fullName(t)}`).join('\n')}\n\n` +
+          `Répondez avec son nom. S'il n'est pas encore enregistré, ajoutez-le d'abord dans Locataires.`,
+        pool.map(fullName),
+        [{ label: 'Ajouter un locataire', route: '/tenants/new' }],
+      );
+    }
+    if (tenantHits.length > 1) {
+      const pool = tenantHits.slice(0, 6);
+      return respond(
+        `${header}plusieurs locataires correspondent :\n${pool.map((t) => `• ${fullName(t)}`).join('\n')}\n\nLequel ?`,
+        pool.map(fullName),
+      );
+    }
+    const tenant = tenantHits[0];
+    const tenantName = fullName(tenant);
+
+    const available = units.filter((u) => u.status === ApartmentStatus.AVAILABLE);
+    if (unitHits.length > 1) {
+      const free = unitHits.filter((u) => u.status === ApartmentStatus.AVAILABLE);
+      if (free.length === 1) unitHits = free;
+    }
+    if (!unitHits.length || unitHits.length > 1) {
+      const pool = (unitHits.length > 1 ? unitHits : available).slice(0, 8);
+      if (!pool.length) {
+        return respond(
+          `${header}aucun logement n'est disponible pour ${tenantName}. Un contrat se crée sur un logement au statut « Disponible » : libérez ou ajoutez un logement, puis redemandez.`,
+          [],
+          [{ label: 'Voir les biens', route: '/properties' }],
+        );
+      }
+      const question = unitHits.length > 1 ? 'plusieurs logements portent ce nom' : `quel logement pour ${tenantName} ?`;
+      const sameLabel = (u: (typeof units)[number]) => pool.filter((o) => o.label === u.label).length > 1;
+      return respond(
+        `${header}${question}\n${pool.map((u) => `• ${unitLine(u)}`).join('\n')}\n\nRépondez avec le nom du logement.`,
+        pool.map((u) => `Logement ${u.label}${sameLabel(u) && u.buildingName ? ` ${u.buildingName}` : ''}`),
+        [{ label: 'Voir les biens', route: '/properties' }],
+      );
+    }
+    const unit = unitHits[0];
+    if (unit.status !== ApartmentStatus.AVAILABLE) {
+      const statusFr: Record<string, string> = {
+        OCCUPIED: 'occupé',
+        MAINTENANCE: 'en travaux',
+        UNAVAILABLE: 'indisponible',
+      };
+      const pool = available.slice(0, 8);
+      return respond(
+        `${header}le logement ${unit.label} est ${statusFr[unit.status] ?? unit.status.toLowerCase()} : impossible d'y créer un contrat.` +
+          (pool.length
+            ? `\nLogements disponibles :\n${pool.map((u) => `• ${unitLine(u)}`).join('\n')}`
+            : `\nAucun autre logement n'est disponible pour le moment.`),
+        pool.map((u) => `Logement ${u.label}`),
+        [{ label: 'Voir les biens', route: '/properties' }],
+      );
+    }
+
+    const dates = resolveLeaseDates(fields);
+    if (dates.endDate <= dates.startDate) {
+      return respond(
+        `${header}la date de fin (${formatDateFr(dates.endDate)}) doit être après la date de début (${formatDateFr(dates.startDate)}). Indiquez par exemple « pour 12 mois ».`,
+        ['Pour 12 mois', 'Pour 6 mois'],
+      );
+    }
+    const unitRent = decimalToNumber(unit.rentAmount);
+    const monthlyRent = fields.monthlyRent ?? unitRent;
+    const depositAmount =
+      fields.depositAmount ?? (fields.depositMonths ? monthlyRent * fields.depositMonths : undefined);
+    const activate = fields.activate === true;
+    const summary =
+      `Contrat ${tenantName} — ${unit.label}, du ${formatDateFr(dates.startDate)} au ${formatDateFr(dates.endDate)}, ` +
+      `${formatXaf(monthlyRent)}/mois${activate ? ', activé' : ', brouillon'}`;
+
+    const pending = await createPendingAction({
+      organizationId,
+      userId,
+      type: 'CREATE_LEASE',
+      payload: {
+        tenantId: tenant.id,
+        apartmentId: unit.id,
+        startDate: dates.startDate,
+        endDate: dates.endDate,
+        monthlyRent,
+        depositAmount,
+        activate,
+        tenantName,
+        apartmentLabel: unit.label,
+        summary,
+      },
+    });
+
+    const reply =
+      `${header}récapitulatif :\n` +
+      `• Locataire : ${tenantName}\n` +
+      `• Logement : ${unit.label}${unit.buildingName ? ` (${unit.buildingName})` : ''}\n` +
+      `• Début : ${formatDateFr(dates.startDate)}${dates.startDefaulted ? ' (aujourd’hui, par défaut)' : ''}\n` +
+      `• Fin : ${formatDateFr(dates.endDate)}${dates.endDefaulted ? ' (12 mois, par défaut)' : ''}\n` +
+      `• Loyer : ${formatXaf(monthlyRent)} / mois${fields.monthlyRent ? '' : ' (loyer du logement)'}\n` +
+      `• Caution : ${depositAmount ? formatXaf(depositAmount) : 'non précisée'}\n` +
+      `• Statut : ${activate ? 'activé dès la création (loyers suivis, accès locataire)' : 'brouillon (à activer ensuite)'}\n\n` +
+      `Appuyez sur Confirmer pour créer le contrat ; je vous proposerai ensuite le PDF à signer.\n` +
+      `Pour modifier, écrivez par exemple « pour 6 mois », « à partir du 1er décembre », « loyer 120 000 » ou « caution 2 mois ».`;
+
+    void this.persistConversationSession(organizationId, userId, message, ['proposeCreateLease'], reply);
+    return {
+      reply,
+      suggestions: [
+        ...(dates.endDefaulted ? ['Pour 6 mois'] : []),
+        ...(depositAmount ? [] : ['Caution 2 mois']),
+        ...(activate ? [] : ['Et active-le']),
+      ],
+      actions: [{ label: 'Voir les contrats', route: '/leases' }],
+      poweredBy,
+      contextUsed: true,
+      toolsUsed: ['proposeCreateLease'],
+      pendingAction: {
+        id: pending.id,
+        type: pending.type,
+        title: 'Créer le contrat',
+        summary,
+        payload: pending.payload,
+      },
+    };
+  }
+
   async proposeLeasePdf(
     organizationId: string,
     userId: string,
@@ -1905,14 +2179,16 @@ export class AiService {
         const list = pool
           .map(
             (x, i) =>
-              `${i + 1}. ${x.lease.tenant.firstName} ${x.lease.tenant.lastName} — ${x.lease.apartment.label} (${x.lease.status}) · id \`${x.lease.id}\``,
+              `${i + 1}. ${x.lease.tenant.firstName} ${x.lease.tenant.lastName} — ${x.lease.apartment.label} (${leaseStatusFr(x.lease.status)})`,
           )
           .join('\n');
         return {
           reply:
-            `Plusieurs baux correspondent. Lequel voulez-vous en PDF ?\n\n${list}\n\n` +
-            `Répondez « génère le contrat <id> » (préférez un bail ACTIVE).`,
-          suggestions: pool.slice(0, 3).map((x) => `Génère le contrat ${x.lease.id}`),
+            `Plusieurs contrats correspondent. Lequel voulez-vous en PDF ?\n\n${list}\n\n` +
+            `Touchez une suggestion ci-dessous.`,
+          suggestions: pool
+            .slice(0, 6)
+            .map((x) => `Génère le contrat PDF de ${x.lease.tenant.firstName} ${x.lease.tenant.lastName}, logement ${x.lease.apartment.label}`),
           actions: [{ label: 'Ouvrir les contrats', route: '/leases' }],
           poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
           contextUsed: true,
@@ -1923,16 +2199,17 @@ export class AiService {
         .slice(0, 8)
         .map(
           (l, i) =>
-            `${i + 1}. ${l.tenant.firstName} ${l.tenant.lastName} — ${l.apartment.label} (${l.status}) · id \`${l.id}\``,
+            `${i + 1}. ${l.tenant.firstName} ${l.tenant.lastName} — ${l.apartment.label} (${leaseStatusFr(l.status)})`,
         )
         .join('\n');
 
       return {
         reply:
-          `Voici les baux disponibles pour un contrat PDF professionnel.\n` +
-          `Demandez « génère le contrat <id> » ou précisez le nom du locataire.\n\n${list}\n\n` +
-          `La génération PDF exigera votre confirmation explicite.`,
-        suggestions: leases.slice(0, 3).map((l) => `Génère le contrat ${l.id}`),
+          `De quel contrat voulez-vous le PDF ?\n\n${list}\n\n` +
+          `Touchez une suggestion ou écrivez le nom du locataire. Pour un nouveau contrat, dites « crée un contrat pour … ».`,
+        suggestions: leases
+          .slice(0, 6)
+          .map((l) => `Génère le contrat PDF de ${l.tenant.firstName} ${l.tenant.lastName}, logement ${l.apartment.label}`),
         actions: [{ label: 'Ouvrir les contrats', route: '/leases' }],
         poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
         contextUsed: true,
@@ -1976,8 +2253,7 @@ export class AiService {
         `Voici les informations du contrat proposé :\n` +
         `• Locataire : ${tenantName}\n` +
         `• Logement : ${apartmentLabel}\n` +
-        `• Bail : ${lease.id}\n` +
-        `• Statut : ${lease.status}\n\n` +
+        `• Statut : ${leaseStatusFr(lease.status)}\n\n` +
         `Confirmez pour générer le PDF professionnel (signatures bailleur / locataire / agent), ou annulez.`,
       suggestions: ['Voir les contrats', 'Résumer mon patrimoine'],
       actions: [{ label: 'Voir les contrats', route: '/leases' }],
@@ -3025,10 +3301,10 @@ export class AiService {
         terms: payload.terms,
       });
 
-      let statusNote = `Statut : ${lease.status}`;
+      let statusNote = 'Statut : brouillon (activez-le depuis Contrats quand le locataire emménage)';
       if (payload.activate === true) {
-        const activated = await this.leaseService.activate(organizationId, lease.id, userId);
-        statusNote = `Statut : ${activated.status} (activé)`;
+        await this.leaseService.activate(organizationId, lease.id, userId);
+        statusNote = 'Statut : actif (loyers suivis à partir du début du contrat)';
       }
 
       const tenantName =
@@ -3037,22 +3313,41 @@ export class AiService {
       const apartmentLabel = payload.apartmentLabel ?? lease.apartment.label;
       const rent = decimalToNumber(lease.monthlyRent);
 
+      const pdfPending = await createPendingAction({
+        organizationId,
+        userId,
+        type: 'GENERATE_LEASE_PDF',
+        payload: {
+          leaseId: lease.id,
+          tenantName,
+          apartmentLabel,
+          summary: `Contrat PDF pour ${tenantName} — ${apartmentLabel}`,
+        },
+      });
+
       return {
         reply:
           `Contrat créé avec succès.\n` +
-          `• ID : ${lease.id}\n` +
           `• Locataire : ${tenantName}\n` +
           `• Logement : ${apartmentLabel}\n` +
-          `• Période : ${payload.startDate} → ${payload.endDate}\n` +
-          `• Loyer : ${rent.toLocaleString('fr-FR')} XAF/mois\n` +
-          `• ${statusNote}`,
-        suggestions: ['Générer le contrat PDF', 'Voir les contrats'],
+          `• Période : du ${formatDateFr(payload.startDate)} au ${formatDateFr(payload.endDate)}\n` +
+          `• Loyer : ${formatXaf(rent)} / mois\n` +
+          `• ${statusNote}\n\n` +
+          `Voulez-vous le document PDF à signer maintenant ? Appuyez sur Confirmer.`,
+        suggestions: [`Génère le contrat PDF de ${tenantName}`, 'Voir les contrats'],
         actions: [
           { label: 'Voir le contrat', route: `/leases/${lease.id}` },
           { label: 'Voir les contrats', route: '/leases' },
         ],
         poweredBy: this.openai.isAvailable() ? 'openai' : 'local',
         contextUsed: true,
+        pendingAction: {
+          id: pdfPending.id,
+          type: pdfPending.type,
+          title: 'Créer le contrat PDF',
+          summary: pdfPending.payload.summary ?? '',
+          payload: pdfPending.payload,
+        },
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Création impossible';

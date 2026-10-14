@@ -551,7 +551,9 @@ L’historique (contrats, paiements, tickets) est conservé. La suppression d’
 5. « Activer le contrat maintenant » : actif tout de suite avec échéances mensuelles, ou brouillon.
 6. Clauses particulières (facultatif) › « Créer le contrat ».
 
-Pour un nouveau locataire, le plus simple est « Nouveau locataire », qui crée la fiche et le contrat en une fois.`,
+Pour un nouveau locataire, le plus simple est « Nouveau locataire », qui crée la fiche et le contrat en une fois.
+
+Avec l’assistant IA : écrivez par exemple « Crée un contrat pour Jean Mbemba au logement A2 à partir du 1er novembre pour 1 an, caution 2 mois ». L’assistant demande ce qui manque (locataire, logement), affiche le récapitulatif puis « Confirmer » ; il propose ensuite le PDF à signer.`,
   },
   {
     id: 'lease-detail',
@@ -866,6 +868,8 @@ Ces alertes vous sont adressées, à vous et à votre équipe de gestion (notifi
     keywords: [
       'assistant', 'ia', 'intelligence', 'intelligence itc', 'chatbot', 'discussion', 'analyses',
       'lancer l analyse', 'que peut faire l ia', 'que sais tu faire', 'que peux tu faire', 'poser une question',
+      'envoyer une photo', 'envoyer une image', 'lire une image', 'analyser une photo', 'joindre une photo',
+      'photo a l ia', 'image a l ia', 'prendre une photo',
     ],
     route: '/assistant',
     routeLabel: 'Ouvrir l’assistant',
@@ -874,7 +878,9 @@ Ces alertes vous sont adressées, à vous et à votre équipe de gestion (notifi
 « Discussion » :
 • Posez vos questions en français : données (« Qui n’a pas encore payé ce mois-ci ? », « Quels contrats arrivent à échéance ? », « Résume l’état de mon parc ») ou mode d’emploi (« Comment encaisser un loyer ? », « Que veut dire la couleur orange ? »).
 • Des suggestions sont proposées sous la zone de saisie ; les boutons dorés « … › » ouvrent directement l’écran concerné.
-• Pour les actions (contrat PDF, reçu, avis de paiement, ticket, assignation), l’assistant prépare l’action et affiche « Confirmer » / « Annuler » : rien n’est fait sans votre accord. Un document généré s’ouvre avec « Ouvrir le document ».
+• Pour les actions (création de contrat, contrat PDF, reçu, avis de paiement, ticket, assignation), l’assistant prépare l’action et affiche « Confirmer » / « Annuler » : rien n’est fait sans votre accord. Un document généré s’ouvre avec « Ouvrir le document ».
+• Contrats : « Crée un contrat pour [locataire] au logement [nom] pour 1 an » crée le bail après confirmation, puis propose le PDF ; « Génère le contrat PDF de [locataire] » produit le document d’un bail existant.
+• Photos : le bouton « + » à gauche de la zone de saisie permet de « Choisir une photo » ou « Prendre une photo » (document, facture, reçu manuscrit, dégât). Ajoutez une question si besoin (« Que dit ce document ? ») puis envoyez : l’assistant lit et analyse l’image, et propose par exemple un ticket de maintenance pour un dégât.
 
 « Analyses » :
 • Prévisions calculées automatiquement.
