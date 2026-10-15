@@ -94,7 +94,7 @@ import { PaymentService } from '../payments/payment.service.js';
 import { NotificationCenterService } from '../notification-center/notification-center.service.js';
 import { MaintenanceService } from '../maintenance/maintenance.service.js';
 import { RbacService } from '../../shared/rbac/rbac.service.js';
-import { PlanLimitError } from '../../shared/errors/subscription.error.js';
+import { Capability } from '../subscriptions/plans.config.js';
 import { ForbiddenError, ValidationError } from '../../shared/errors/app.error.js';
 import { decimalToNumber } from '../../shared/utils/response.util.js';
 import type { AiAnalyzeDto, AiChatInput, AiContractInput } from './ai.types.js';
@@ -3929,17 +3929,9 @@ export class AiService {
 
   private async assertAiAccess(organizationId: string, userId: string, role: UserRole): Promise<void> {
     const subCtx = await this.subscriptionService.resolveAccessContext(organizationId);
-    const { getPlanLimits } = await import('../../shared/constants/plan-limits.js');
-    const limits = getPlanLimits(subCtx.plan);
-
-    if (!limits.aiAssistant) {
-      throw new PlanLimitError('Assistant ITC disponible à partir du plan Pro', 'aiAssistant');
-    }
-
-    // OWNER / ORG_ADMIN : OK. Les autres rôles staff : accès AI si le plan l’inclut
-    // (ne bloque plus sur proAccessEnabled pour permettre les tests Starter).
+    const denial = this.subscriptionService.denialFor(subCtx, role, Capability.AI);
+    if (denial) throw denial;
     void userId;
-    void role;
   }
 
   private async assertLiaAccess(organizationId: string, userId: string, role: UserRole): Promise<void> {

@@ -158,15 +158,26 @@ enum DocumentType {
 
 enum SubscriptionStatus {
   ACTIVE
-  GRACE_PERIOD
-  SUSPENDED
+  GRACE_PERIOD // ancien modèle — conservé pour les données existantes
+  SUSPENDED    // ancien modèle — conservé pour les données existantes
   CANCELLED
+  TRIALING     // essai Standard de 48 h en cours
+  PAST_DUE     // renouvellement refusé, relances du fournisseur en cours
+  EXPIRED      // essai terminé ou période payée échue sans paiement
 }
 
 enum SubscriptionPlan {
-  STARTER
+  STARTER    // ancien modèle — n'est plus attribué
   PRO
-  ENTERPRISE
+  ENTERPRISE // ancien modèle — n'est plus attribué
+  STANDARD   // essai gratuit de 48 h (capacités Pro)
+  PLUS
+  PRO_MAX
+}
+
+enum BillingPeriod {
+  MONTHLY
+  ANNUAL
 }
 
 /// Statut d'accès portail locataire (spec v1.0 D-T6)
@@ -232,6 +243,8 @@ model Organization {
   aiPendingActions  AiPendingAction[]
   aiAutomationRules AiAutomationRule[]
   aiAutomationRuns  AiAutomationRun[]
+  subscriptionEvents SubscriptionEvent[]
+  aiUsage            AiUsage[]
 
   @@index([type])
   @@index([subscriptionStatus])
@@ -247,12 +260,26 @@ model Subscription {
   plan                   SubscriptionPlan
   status                 SubscriptionStatus @default(ACTIVE)
   startedAt              DateTime           @default(now())
+  /// Fin des droits : fin d'essai ou fin de la période payée (copie de currentPeriodEnd / trialEndsAt)
   expiresAt              DateTime?
   gracePeriodEndsAt      DateTime?
-  // Préparation Stripe (non utilisé pour l'instant)
+  /// Identifiant client chez le fournisseur de paiement (Stripe : cus_…)
   customerId             String?
+  /// Identifiant d'abonnement chez le fournisseur de paiement (Stripe : sub_…)
   externalSubscriptionId String?
+  /// trial | stripe | legacy | manual (ancien modèle)
   paymentProvider        String             @default("manual")
+  billingPeriod          BillingPeriod?
+  trialStartedAt         DateTime?
+  trialEndsAt            DateTime?
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean            @default(false)
+  cancelledAt            DateTime?
+  /// Valeurs d'avant la transition, pour le retour arrière
+  legacyPlan             SubscriptionPlan?
+  legacyStatus           SubscriptionStatus?
+  legacyExpiresAt        DateTime?
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt
 
@@ -262,7 +289,83 @@ model Subscription {
   @@index([organizationId])
   @@index([status])
   @@index([expiresAt])
+  @@index([externalSubscriptionId])
+  @@index([customerId])
+  @@index([trialEndsAt])
   @@map("subscriptions")
+}
+
+/// Historique des changements d'abonnement (jamais modifié après écriture)
+model SubscriptionEvent {
+  id             String              @id @default(cuid())
+  organizationId String
+  subscriptionId String?
+  type           String
+  fromPlan       SubscriptionPlan?
+  toPlan         SubscriptionPlan?
+  fromStatus     SubscriptionStatus?
+  toStatus       SubscriptionStatus?
+  /// stripe | system | migration | admin | signup
+  source         String
+  actorUserId    String?
+  externalRef    String?
+  details        Json?
+  createdAt      DateTime            @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([type])
+  @@map("subscription_events")
+}
+
+/// Événements reçus d'un fournisseur de paiement — l'unicité empêche un double traitement
+model PaymentProviderEvent {
+  id             String    @id @default(cuid())
+  provider       String
+  eventId        String
+  type           String
+  /// PROCESSING | PROCESSED | IGNORED | FAILED
+  status         String
+  organizationId String?
+  error          String?
+  receivedAt     DateTime  @default(now())
+  processedAt    DateTime?
+
+  @@unique([provider, eventId])
+  @@index([organizationId])
+  @@map("payment_provider_events")
+}
+
+/// Consommation des quotas IA par organisation, unité et période
+model AiUsage {
+  id             String   @id @default(cuid())
+  organizationId String
+  unit           String
+  periodStart    DateTime
+  used           Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, unit, periodStart])
+  @@map("ai_usage")
+}
+
+/// Essais déjà consommés (e-mail ou téléphone normalisé, haché) — survit à la suppression d'une organisation
+model TrialClaim {
+  id             String   @id @default(cuid())
+  /// EMAIL | PHONE
+  kind           String
+  valueHash      String
+  organizationId String?
+  /// signup | migration
+  source         String   @default("signup")
+  createdAt      DateTime @default(now())
+
+  @@unique([kind, valueHash])
+  @@map("trial_claims")
 }
 
 // ─── Utilisateurs & Auth ─────────────────────────────────────────────────────

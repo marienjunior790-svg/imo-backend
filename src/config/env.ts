@@ -73,6 +73,21 @@ const envSchema = z.object({
   // Mémoire intelligente ITC (Phase C)
   AI_MEMORY_ENABLED: z.coerce.boolean().default(true),
   AI_SESSION_TTL_HOURS: z.coerce.number().default(24),
+  // Abonnements — Stripe (clés saisies uniquement dans .env local ou les variables Railway)
+  STRIPE_SECRET_KEY: z.string().min(10).optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().min(10).optional(),
+  STRIPE_PRICE_PRO_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_PRO_ANNUAL: z.string().optional(),
+  STRIPE_PRICE_PLUS_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_PLUS_ANNUAL: z.string().optional(),
+  STRIPE_PRICE_PRO_MAX_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_PRO_MAX_ANNUAL: z.string().optional(),
+  /**
+   * Délai technique laissé à Stripe pour confirmer un renouvellement automatique après la fin de période
+   * (la facture est réglée peu après l'échéance). Ce n'est pas une période de grâce commerciale.
+   */
+  SUBSCRIPTION_RENEWAL_CONFIRMATION_MINUTES: z.coerce.number().min(0).max(24 * 60).default(120),
+  SUBSCRIPTION_ALERTS_SCHEDULER: z.enum(['on', 'off']).default('on'),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -104,6 +119,8 @@ export const isMailerConfigured = Boolean(
   (env.RESEND_API_KEY && env.MAIL_FROM) ||
     (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS && env.MAIL_FROM),
 );
+
+export const isStripeConfigured = Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET);
 
 export const isWhatsAppConfigured = Boolean(
   env.WHATSAPP_ENABLED && env.WHATSAPP_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID,

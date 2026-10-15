@@ -3,6 +3,8 @@ import { container } from 'tsyringe';
 import { InvitationService } from './invitation.service.js';
 import { acceptInvitationSchema, createInvitationSchema } from './invitation.schema.js';
 import { adminUsersPipeline } from '../../shared/middleware/security.stack.js';
+import { requireCapability } from '../../shared/middleware/subscription.middleware.js';
+import { Capability } from '../subscriptions/plans.config.js';
 import { requirePermission } from '../../shared/middleware/permission.middleware.js';
 import { Permission } from '../../shared/auth/permissions.js';
 import { authRateLimit } from '../../shared/middleware/auth-rate-limit.middleware.js';
@@ -17,6 +19,7 @@ router.post(
   '/',
   ...adminUsersPipeline,
   requirePermission(Permission.USER_CREATE, Permission.PLATFORM_USER_MANAGE),
+  requireCapability(Capability.AGENT_MENU),
   validateBody(createInvitationSchema),
   asyncHandler(async (req, res) => {
     const result = await service.create(

@@ -1,13 +1,21 @@
 import { z } from 'zod';
-import { SubscriptionPlan } from '@prisma/client';
+import { BillingPeriod } from '@prisma/client';
+import { PAID_PLANS } from './plans.config.js';
 
-export const changePlanSchema = z.object({
-  plan: z.nativeEnum(SubscriptionPlan),
+const paidPlan = z.enum(PAID_PLANS as unknown as [string, ...string[]]);
+
+export const checkoutSchema = z.object({
+  plan: paidPlan,
+  period: z.nativeEnum(BillingPeriod),
 });
 
-export const reactivateSchema = z.object({
-  plan: z.nativeEnum(SubscriptionPlan).optional(),
+export const changePlanSchema = checkoutSchema;
+
+export const adminGrantSchema = z.object({
+  plan: paidPlan,
+  until: z.coerce.date(),
+  reason: z.string().trim().min(3).max(300),
 });
 
-export type ChangePlanDto = z.infer<typeof changePlanSchema>;
-export type ReactivateDto = z.infer<typeof reactivateSchema>;
+export type CheckoutDto = z.infer<typeof checkoutSchema>;
+export type AdminGrantDto = z.infer<typeof adminGrantSchema>;

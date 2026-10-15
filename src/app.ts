@@ -7,6 +7,9 @@ import path from 'path';
 import { env, corsOrigins } from './config/env.js';
 import routes from './routes/index.js';
 import { errorMiddleware } from './shared/middleware/validate.middleware.js';
+import { container } from 'tsyringe';
+import { asyncHandler } from './shared/utils/response.util.js';
+import { StripeBillingService } from './modules/subscriptions/stripe-billing.service.js';
 
 export function createApp() {
   const app = express();
@@ -28,6 +31,19 @@ export function createApp() {
   };
   app.use(cors(corsOptions));
   app.use(morgan(env.NODE_ENV === 'development' ? 'dev' : 'combined'));
+
+  // Webhook Stripe : la signature se vérifie sur le corps brut, donc avant express.json().
+  app.post(
+    `${env.API_PREFIX}/subscription/stripe/webhook`,
+    express.raw({ type: 'application/json', limit: '1mb' }),
+    asyncHandler(async (req, res) => {
+      const outcome = await container
+        .resolve(StripeBillingService)
+        .handleWebhook(req.body as Buffer, req.header('stripe-signature'));
+      res.status(200).json({ received: true, outcome });
+    }),
+  );
+
   app.use(express.json({ limit: '2mb' }));
   app.use(express.urlencoded({ extended: true }));
 
@@ -76,6 +92,45 @@ export function createApp() {
     <a href="${deepLink}" style="display:inline-block;background:#152238;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:600">Ouvrir l’application</a>
   </p>
   <p><a href="${webFallback}" style="color:#1e3354">Continuer sur le web</a></p>
+</body>
+</html>`);
+  });
+
+  // Retour du paiement Stripe → application (itc://subscription). N'active rien : seul le webhook le fait.
+  app.get('/billing/return', (req, res) => {
+    const raw = typeof req.query.status === 'string' ? req.query.status : '';
+    const status = ['success', 'cancel', 'portal'].includes(raw) ? raw : 'cancel';
+    const deepLink = `itc://subscription?status=${status}`;
+    const title =
+      status === 'success'
+        ? 'Paiement envoyé'
+        : status === 'portal'
+          ? 'Retour à ITC'
+          : 'Paiement annulé';
+    const message =
+      status === 'success'
+        ? 'Votre paiement est en cours de confirmation. Votre offre s\'activera dans ITC dès que le paiement sera confirmé.'
+        : status === 'portal'
+          ? 'Vous pouvez revenir à l\'application.'
+          : 'Aucun montant n\'a été prélevé.';
+    res
+      .status(200)
+      .type('html')
+      .setHeader('Cache-Control', 'no-store')
+      .send(`<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta http-equiv="refresh" content="0;url=${deepLink}"/>
+  <title>ITC — ${title}</title>
+</head>
+<body style="font-family:system-ui,Segoe UI,sans-serif;padding:2rem;text-align:center;background:#0b1424;color:#f8fafc">
+  <h1 style="font-size:1.25rem;color:#d4af37">${title}</h1>
+  <p style="color:#cbd5e1;max-width:28rem;margin:1rem auto">${message}</p>
+  <p style="margin:1.5rem 0">
+    <a href="${deepLink}" style="display:inline-block;background:#d4af37;color:#0b1424;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:600">Revenir à ITC</a>
+  </p>
 </body>
 </html>`);
   });

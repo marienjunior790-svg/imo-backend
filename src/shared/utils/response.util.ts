@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
 import { AppError } from '../errors/app.error.js';
-import { SubscriptionError, PlanLimitError } from '../errors/subscription.error.js';
+import { SubscriptionError, PlanLimitError, BillingAccessError } from '../errors/subscription.error.js';
 import { ApiResponse } from '../types/express.js';
 
 export function sendSuccess<T>(res: Response, data: T, message?: string, status = 200, meta?: Record<string, unknown>): void {
@@ -10,7 +10,7 @@ export function sendSuccess<T>(res: Response, data: T, message?: string, status 
 }
 
 export function sendError(res: Response, error: unknown): void {
-  if (error instanceof SubscriptionError || error instanceof PlanLimitError) {
+  if (error instanceof SubscriptionError || error instanceof PlanLimitError || error instanceof BillingAccessError) {
     res.status(error.statusCode).json(error.toJSON());
     return;
   }

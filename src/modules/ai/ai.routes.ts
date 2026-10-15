@@ -21,9 +21,14 @@ import { asyncHandler, sendError, sendSuccess } from '../../shared/utils/respons
 import { AuditAction } from '../../shared/audit/audit-actions.js';
 import { auditFailure, auditSuccess, withAudit } from '../../shared/audit/audit-request.js';
 import { ValidationError } from '../../shared/errors/app.error.js';
+import { requireCapability } from '../../shared/middleware/subscription.middleware.js';
+import { Capability } from '../subscriptions/plans.config.js';
+import { AiQuotaService } from '../subscriptions/ai-quota.service.js';
+import { AiUnit } from '../subscriptions/quotas.config.js';
 
 const router = Router();
 const service = container.resolve(AiService);
+const quota = container.resolve(AiQuotaService);
 
 const mediaUpload = multer({
   storage: multer.memoryStorage(),
@@ -40,6 +45,7 @@ const mediaUpload = multer({
 });
 
 router.use(...orgStaffPipeline); // TENANT excluded — ORG_STAFF_ROLES only (no portal AI routes)
+router.use(requireCapability(Capability.AI));
 
 /** GET /ai/status — mode openai | local (jamais de secret exposé) */
 router.get(
@@ -122,7 +128,10 @@ router.post(
     const result = await withAudit(
       req,
       AuditAction.AI_CHAT,
-      () => service.chat(getOrganizationId(req), req.user!.userId, req.user!.role, req.body),
+      () =>
+        quota.run(getOrganizationId(req), AiUnit.AI_MESSAGE, () =>
+          service.chat(getOrganizationId(req), req.user!.userId, req.user!.role, req.body),
+        ),
       (r) => ({
         resourceType: 'AiChat',
         newValue: {
@@ -156,12 +165,14 @@ router.post(
       req,
       AuditAction.AI_USE,
       () =>
-        service.chatFromAudio(
-          getOrganizationId(req),
-          req.user!.userId,
-          req.user!.role,
-          req.file!,
-          history,
+        quota.run(getOrganizationId(req), AiUnit.AI_AUDIO, () =>
+          service.chatFromAudio(
+            getOrganizationId(req),
+            req.user!.userId,
+            req.user!.role,
+            req.file!,
+            history,
+          ),
         ),
       () => ({ resourceType: 'AiAudio', newValue: { mode: 'transcribe' } }),
     );
@@ -190,13 +201,15 @@ router.post(
       req,
       AuditAction.AI_USE,
       () =>
-        service.chatFromImage(
-          getOrganizationId(req),
-          req.user!.userId,
-          req.user!.role,
-          req.file!,
-          message,
-          history,
+        quota.run(getOrganizationId(req), AiUnit.AI_IMAGE, () =>
+          service.chatFromImage(
+            getOrganizationId(req),
+            req.user!.userId,
+            req.user!.role,
+            req.file!,
+            message,
+            history,
+          ),
         ),
       () => ({ resourceType: 'AiVision', newValue: { mode: 'vision' } }),
     );
@@ -232,11 +245,13 @@ router.post(
       req,
       AuditAction.AI_CONTRACT_PROPOSE,
       () =>
-        service.proposeLeasePdf(
-          getOrganizationId(req),
-          req.user!.userId,
-          req.user!.role,
-          req.body.leaseId,
+        quota.run(getOrganizationId(req), AiUnit.AI_MESSAGE, () =>
+          service.proposeLeasePdf(
+            getOrganizationId(req),
+            req.user!.userId,
+            req.user!.role,
+            req.body.leaseId,
+          ),
         ),
       (r) => ({
         resourceType: 'AiContract',
@@ -310,11 +325,8 @@ router.post(
   asyncHandler(async (req, res) => {
     try {
       // TTS d’abord — l’audit ne doit pas bloquer ni perdre l’audio.
-      const audio = await service.speak(
-        getOrganizationId(req),
-        req.user!.userId,
-        req.user!.role,
-        req.body.text,
+      const audio = await quota.run(getOrganizationId(req), AiUnit.AI_AUDIO, () =>
+        service.speak(getOrganizationId(req), req.user!.userId, req.user!.role, req.body.text),
       );
       try {
         await auditSuccess(req, AuditAction.AI_TTS, {

@@ -16,3 +16,13 @@ process.env.N8N_API_KEY = 'immo-tec-automation-key-32chars-min';
 process.env.DEFAULT_CURRENCY = 'XAF';
 process.env.DEFAULT_CITY = 'Brazzaville';
 process.env.DEFAULT_COUNTRY = 'CG';
+// Valeurs factices : aucun appel réel à Stripe n'est fait pendant les tests (client remplacé).
+process.env.STRIPE_SECRET_KEY = 'sk_test_itc_fake_key_for_tests';
+process.env.STRIPE_WEBHOOK_SECRET = 'whsec_itc_fake_secret_for_tests';
+process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_test_pro_monthly';
+process.env.STRIPE_PRICE_PRO_ANNUAL = 'price_test_pro_annual';
+process.env.STRIPE_PRICE_PLUS_MONTHLY = 'price_test_plus_monthly';
+process.env.STRIPE_PRICE_PLUS_ANNUAL = 'price_test_plus_annual';
+process.env.STRIPE_PRICE_PRO_MAX_MONTHLY = 'price_test_pro_max_monthly';
+process.env.STRIPE_PRICE_PRO_MAX_ANNUAL = 'price_test_pro_max_annual';
+process.env.SUBSCRIPTION_ALERTS_SCHEDULER = 'off';

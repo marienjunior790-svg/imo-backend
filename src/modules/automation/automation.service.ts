@@ -94,7 +94,14 @@ export class AutomationQueryService {
   async getSubscriptionsNeedingAttention() {
     return this.prisma.organization.findMany({
       where: {
-        subscriptionStatus: { in: [SubscriptionStatus.GRACE_PERIOD, SubscriptionStatus.SUSPENDED] },
+        subscriptionStatus: {
+          in: [
+            SubscriptionStatus.GRACE_PERIOD,
+            SubscriptionStatus.SUSPENDED,
+            SubscriptionStatus.PAST_DUE,
+            SubscriptionStatus.EXPIRED,
+          ],
+        },
       },
       include: {
         activeSubscription: true,
@@ -118,47 +125,28 @@ export class AutomationJobService {
     return { marked, notified: marked };
   }
 
-  /** Synchronise les statuts d'abonnement expirés + émet webhooks */
-  async syncSubscriptionStatuses(): Promise<{ grace: number; suspended: number }> {
+  /** Synchronise les statuts d'abonnement échus + émet webhooks */
+  async syncSubscriptionStatuses(): Promise<{ expired: number }> {
     const orgs = await this.prisma.organization.findMany({
       where: { subscriptionId: { not: null } },
       select: { id: true, name: true, subscriptionStatus: true },
     });
 
-    let grace = 0;
-    let suspended = 0;
-
+    let expired = 0;
     for (const org of orgs) {
       const before = org.subscriptionStatus;
       const ctx = await this.subscriptionService.resolveAccessContext(org.id);
-      const after = ctx.status;
-
-      if (before !== after) {
-        if (after === SubscriptionStatus.GRACE_PERIOD) {
-          grace++;
-          this.n8n.emit({
-            event: AutomationEvent.SUBSCRIPTION_GRACE,
-            organizationId: org.id,
-            organizationName: org.name,
-            data: {
-              plan: ctx.plan,
-              expiresAt: ctx.expiresAt,
-              gracePeriodEndsAt: ctx.gracePeriodEndsAt,
-            },
-          });
-        }
-        if (after === SubscriptionStatus.SUSPENDED) {
-          suspended++;
-          this.n8n.emit({
-            event: AutomationEvent.SUBSCRIPTION_SUSPENDED,
-            organizationId: org.id,
-            organizationName: org.name,
-            data: { plan: ctx.plan },
-          });
-        }
+      if (before !== ctx.status && !ctx.entitled) {
+        expired++;
+        this.n8n.emit({
+          event: AutomationEvent.SUBSCRIPTION_SUSPENDED,
+          organizationId: org.id,
+          organizationName: org.name,
+          data: { plan: ctx.plan, status: ctx.status, accessEndsAt: ctx.accessEndsAt },
+        });
       }
     }
 
-    return { grace, suspended };
+    return { expired };
   }
 }

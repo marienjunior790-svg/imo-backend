@@ -9,6 +9,9 @@ import { validateBody } from '../../shared/middleware/validate.middleware.js';
 import { asyncHandler, sendSuccess } from '../../shared/utils/response.util.js';
 import { AuditAction } from '../../shared/audit/audit-actions.js';
 import { auditSuccess } from '../../shared/audit/audit-request.js';
+import { SubscriptionService } from '../subscriptions/subscription.service.js';
+import { adminGrantSchema } from '../subscriptions/subscription.schema.js';
+import { PaidPlan } from '../subscriptions/plans.config.js';
 
 const router = Router();
 const service = container.resolve(PlatformService);
@@ -89,6 +92,24 @@ router.patch(
   validateBody(z.object({ isActive: z.boolean() })),
   asyncHandler(async (req, res) => {
     sendSuccess(res, await service.setOrganizationActive(req.user!.role, req.params.id, req.body.isActive, req.user!.userId));
+  }),
+);
+
+/** Geste commercial de l'équipe ITC : période offerte sans paiement, tracée dans l'historique. */
+router.post(
+  '/organizations/:id/subscription/grant',
+  requirePermission(Permission.PLATFORM_ORG_MANAGE),
+  validateBody(adminGrantSchema),
+  asyncHandler(async (req, res) => {
+    const view = await container
+      .resolve(SubscriptionService)
+      .adminGrant(req.params.id, { plan: req.body.plan as PaidPlan, until: req.body.until, reason: req.body.reason }, req.user!.userId);
+    await auditSuccess(req, AuditAction.SUBSCRIPTION_CHANGE, {
+      resourceType: 'Subscription',
+      resourceId: view.id,
+      newValue: { plan: req.body.plan, until: req.body.until, reason: req.body.reason, grant: true },
+    });
+    sendSuccess(res, view, 'Période offerte enregistrée');
   }),
 );
 

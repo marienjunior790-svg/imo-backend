@@ -14,6 +14,8 @@ import {
 import { getOrganizationId } from '../../shared/middleware/auth.middleware.js';
 import { Permission } from '../../shared/auth/permissions.js';
 import { orgStaffPipeline } from '../../shared/middleware/security.stack.js';
+import { requireCapabilityWhen } from '../../shared/middleware/subscription.middleware.js';
+import { Capability } from '../subscriptions/plans.config.js';
 import { requirePermission } from '../../shared/middleware/permission.middleware.js';
 import { requireOrgResource } from '../../shared/middleware/resource-guard.middleware.js';
 import { validateBody, validateQuery } from '../../shared/middleware/validate.middleware.js';
@@ -40,6 +42,8 @@ function actor(req: { user?: { userId: string; role: import('@prisma/client').Us
 }
 
 router.use(...orgStaffPipeline);
+// Accès des locataires à leur espace : menu Locataire (offres Plus et Pro Max).
+router.use(requireCapabilityWhen(Capability.TENANT_MENU, (req) => req.path.includes('portal-access')));
 
 router.get(
   '/portal-access-settings',

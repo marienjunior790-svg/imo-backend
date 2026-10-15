@@ -26,7 +26,8 @@ describeIntegration('Integration — Auth + DB', () => {
         lastName: 'Db',
         organizationName: `ITC AuthDB ${stamp}`,
         organizationType: 'AGENCY',
-        phone: '0600000010',
+        // Unique par exécution : un téléphone ne donne droit qu'à un seul essai.
+        phone: `06${String(stamp).slice(-7)}`,
       });
 
     expect(res.status).toBe(201);

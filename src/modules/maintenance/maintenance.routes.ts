@@ -11,6 +11,8 @@ import {
 import { getOrganizationId } from '../../shared/middleware/auth.middleware.js';
 import { Permission } from '../../shared/auth/permissions.js';
 import { orgStaffPipeline } from '../../shared/middleware/security.stack.js';
+import { requireCapability, requireCapabilityWhen } from '../../shared/middleware/subscription.middleware.js';
+import { Capability } from '../subscriptions/plans.config.js';
 import { requirePermission } from '../../shared/middleware/permission.middleware.js';
 import { requireOrgResource } from '../../shared/middleware/resource-guard.middleware.js';
 import { validateBody, validateQuery } from '../../shared/middleware/validate.middleware.js';
@@ -55,6 +57,7 @@ router.get(
 router.get(
   '/agents',
   requirePermission(Permission.MAINTENANCE_ASSIGN),
+  requireCapability(Capability.AGENT_MENU),
   asyncHandler(async (req, res) => {
     sendSuccess(res, await service.listMaintenanceAgents(getOrganizationId(req)));
   }),
@@ -105,6 +108,8 @@ router.post(
   requirePermission(Permission.MAINTENANCE_ASSIGN),
   requireOrgResource('maintenanceTicket'),
   validateBody(assignMaintenanceSchema),
+  // Affecter à un agent ITC relève du menu Agent ; un prestataire externe (nom seul) reste possible en Pro.
+  requireCapabilityWhen(Capability.AGENT_MENU, (req) => Boolean(req.body?.assignedToId)),
   asyncHandler(async (req, res) => {
     const assigned = await withAudit(
       req,

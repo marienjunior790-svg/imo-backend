@@ -22,6 +22,7 @@ import {
   verifyTotpCode,
 } from '../../shared/auth/totp.js';
 import { env, isMailerConfigured } from '../../config/env.js';
+import { clock } from '../../shared/time/clock.js';
 import { AppError } from '../../shared/errors/app.error.js';
 import { buildPasswordResetEmail, sendMail } from '../../shared/mail/mail.service.js';
 import {
@@ -67,10 +68,14 @@ export class AuthRepository {
     });
   }
 
-  createOrganizationWithAdmin(data: RegisterInput & { passwordHash: string }) {
+  createOrganizationWithAdmin(
+    data: RegisterInput & { passwordHash: string },
+    afterCreate?: (tx: Prisma.TransactionClient, org: { id: string; createdAt: Date }) => Promise<unknown>,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       const org = await tx.organization.create({
         data: {
+          createdAt: clock.now(),
           name: data.organizationName,
           type: data.organizationType,
           email: data.email.toLowerCase(),
@@ -82,6 +87,8 @@ export class AuthRepository {
           }) as unknown as Prisma.InputJsonValue,
         },
       });
+
+      if (afterCreate) await afterCreate(tx, org);
 
       const user = await tx.user.create({
         data: {
@@ -473,8 +480,17 @@ export class AuthService {
     console.log('[auth] Password hashed');
 
     let user;
+    let trialGranted = false;
     try {
-      user = await this.repo.createOrganizationWithAdmin({ ...input, email, passwordHash });
+      user = await this.repo.createOrganizationWithAdmin({ ...input, email, passwordHash }, async (tx, org) => {
+        const trial = await this.subscriptionService.startTrial(tx, {
+          organizationId: org.id,
+          startedAt: org.createdAt,
+          email,
+          phone: input.phone,
+        });
+        trialGranted = trial.granted;
+      });
       console.log('[auth] Auth user + organization created', {
         userId: user.id,
         role: user.role,
@@ -489,19 +505,7 @@ export class AuthService {
       throw err;
     }
 
-    if (user.organizationId) {
-      try {
-        await this.subscriptionService.createDefaultSubscription(user.organizationId);
-        console.log('[auth] Default subscription created', { organizationId: user.organizationId });
-      } catch (err) {
-        // Compte déjà commité : ne pas bloquer la session — l'utilisateur doit pouvoir se connecter.
-        console.error('[auth] Subscription create failed (non-blocking)', {
-          organizationId: user.organizationId,
-          message: err instanceof Error ? err.message : String(err),
-          stack: err instanceof Error ? err.stack : undefined,
-        });
-      }
-    }
+    console.log('[auth] Subscription', { organizationId: user.organizationId, trialGranted });
 
     const extras = await this.buildSessionExtras(user);
     const tokens = await this.issueTokens(
@@ -535,6 +539,7 @@ export class AuthService {
       user: sanitizeUser(user),
       organization: user.organization,
       subscription,
+      trial: trialGranted ? { granted: true } : { granted: false, reason: 'TRIAL_ALREADY_USED' },
       permissions,
       rbac,
       homePath: resolveHomePath(user.role),
@@ -952,16 +957,10 @@ export class AuthService {
       role: user.role,
     });
     const capabilities = await this.rbacService.getPermissionsForRole(user.role);
-    const plan =
-      user.organization && 'plan' in (user.organization ?? {})
-        ? (user.organization as { plan?: string }).plan
-        : undefined;
-    let resolvedPlan = plan;
-    if (!resolvedPlan && user.organizationId) {
-      const sub = await this.subscriptionService.getSubscription(user.organizationId).catch(() => null);
-      resolvedPlan = sub?.plan;
-    }
-    const modules = resolveModulesForRole(user.role, resolvedPlan);
+    const planCapabilities = user.organizationId
+      ? (await this.subscriptionService.getAccess(user.organizationId).catch(() => null))?.capabilities ?? []
+      : [];
+    const modules = resolveModulesForRole(user.role, planCapabilities);
     return {
       membership: {
         id: membership.id,

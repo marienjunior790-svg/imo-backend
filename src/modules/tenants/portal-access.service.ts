@@ -18,6 +18,8 @@ import {
 import { isLettingManager, isOrgAdminLevel } from '../../shared/auth/roles.js';
 import { generateLoginId, generateTemporaryPassword } from '../../shared/auth/credential-crypto.js';
 import bcrypt from 'bcrypt';
+import { SubscriptionService } from '../subscriptions/subscription.service.js';
+import { Capability } from '../subscriptions/plans.config.js';
 
 export type PortalActor = {
   userId: string;
@@ -30,7 +32,13 @@ export class PortalAccessService {
   constructor(
     @inject(PrismaService) private readonly prisma: PrismaService,
     @inject(AuditService) private readonly audit: AuditService,
+    @inject(SubscriptionService) private readonly subscriptions: SubscriptionService,
   ) {}
+
+  /** L'espace locataire fait partie du menu Locataire (offres Plus et Pro Max). */
+  isAvailable(organizationId: string): Promise<boolean> {
+    return this.subscriptions.hasCapability(organizationId, Capability.TENANT_MENU);
+  }
 
   getOrgSettings(portalAccess: unknown): PortalAccessSettings {
     return parsePortalAccessSettings(portalAccess);
@@ -106,6 +114,7 @@ export class PortalAccessService {
   ) {
     this.assertCanProvision(actor);
     const organizationId = actor.organizationId!;
+    await this.subscriptions.assertAccess(organizationId, actor.role, Capability.TENANT_MENU);
     const { tenant, user: existing } = await this.loadTenantUser(actor, tenantId);
 
     if (existing && !opts?.forceRegenerate) {
@@ -363,6 +372,13 @@ export class PortalAccessService {
   async maybeAutoProvisionOnLeaseActive(organizationId: string, tenantId: string, actorUserId: string) {
     const org = await this.prisma.organization.findUnique({ where: { id: organizationId } });
     if (!org) return null;
+    if (!(await this.isAvailable(organizationId))) {
+      return {
+        skipped: true,
+        reason: 'PLAN_UPGRADE_REQUIRED',
+        message: 'L\'espace locataire est inclus à partir de l\'offre Plus',
+      };
+    }
     const settings = parsePortalAccessSettings(org.portalAccess);
     if (!settings.autoProvisionOnLeaseActive) {
       return {

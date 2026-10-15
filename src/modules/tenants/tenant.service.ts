@@ -139,6 +139,13 @@ export class TenantService {
     }
 
     const tenant = await this.repo.create(organizationId, { ...data, email });
+    if (!(await this.portalAccess.isAvailable(organizationId))) {
+      return {
+        tenant: await this.get(organizationId, tenant.id),
+        portalAccess: null,
+        message: 'Locataire créé — l\'espace locataire est inclus à partir de l\'offre Plus',
+      };
+    }
     try {
       const portalAccess = await this.portalAccess.provision(actor, tenant.id, {
         revealTemporaryPassword: true,

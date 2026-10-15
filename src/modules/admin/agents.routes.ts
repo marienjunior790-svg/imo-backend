@@ -4,6 +4,8 @@ import { StaffProvisionService } from '../admin/staff-provision.service.js';
 import { staffProvisionSchema } from '../admin/staff-provision.schema.js';
 import { Permission } from '../../shared/auth/permissions.js';
 import { orgStaffPipeline } from '../../shared/middleware/security.stack.js';
+import { requireCapability } from '../../shared/middleware/subscription.middleware.js';
+import { Capability } from '../subscriptions/plans.config.js';
 import { requirePermission } from '../../shared/middleware/permission.middleware.js';
 import { validateBody } from '../../shared/middleware/validate.middleware.js';
 import { asyncHandler, sendSuccess } from '../../shared/utils/response.util.js';
@@ -14,7 +16,7 @@ import { roleLabel } from '../../shared/auth/roles.js';
 const router = Router();
 const staffProvision = container.resolve(StaffProvisionService);
 
-router.use(...orgStaffPipeline);
+router.use(...orgStaffPipeline, requireCapability(Capability.AGENT_MENU));
 
 /**
  * POST /agents — provisionne un collaborateur métier.

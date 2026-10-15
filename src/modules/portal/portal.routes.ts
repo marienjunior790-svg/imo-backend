@@ -4,6 +4,8 @@ import { PortalService } from './portal.service.js';
 import { portalMaintenanceSchema, portalMaintenanceCommentSchema } from './portal.schema.js';
 import { Permission } from '../../shared/auth/permissions.js';
 import { tenantPipeline } from '../../shared/middleware/security.stack.js';
+import { requireCapability } from '../../shared/middleware/subscription.middleware.js';
+import { Capability } from '../subscriptions/plans.config.js';
 import { requirePermission } from '../../shared/middleware/permission.middleware.js';
 import { validateBody } from '../../shared/middleware/validate.middleware.js';
 import { asyncHandler, sendSuccess } from '../../shared/utils/response.util.js';
@@ -13,7 +15,7 @@ import { withAudit } from '../../shared/audit/audit-request.js';
 const router = Router();
 const service = container.resolve(PortalService);
 
-router.use(...tenantPipeline);
+router.use(...tenantPipeline, requireCapability(Capability.TENANT_MENU));
 
 router.get(
   '/dashboard',

@@ -44,7 +44,8 @@ export class TenantOnboardService {
       throw new ForbiddenError('Organisation invalide');
     }
 
-    const provisionPortal = true; // Toujours provisionner Identity + Membership (jamais CRM orphelin)
+    // Identity + Membership TENANT dès que l'offre inclut l'espace locataire (Plus, Pro Max).
+    const provisionPortal = await this.portalAccess.isAvailable(organizationId);
     const leaseInput = input.lease;
     const activateLease = leaseInput ? leaseInput.activate !== false : false;
 

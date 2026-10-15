@@ -7,6 +7,7 @@ import { bootstrapSuperAdmin, seedFeatureCatalog } from './bootstrap/system-boot
 import { initSentry } from './infrastructure/monitoring/sentry.js';
 import { container } from 'tsyringe';
 import { RentFollowUpService } from './modules/rent-followup/rent-followup.service.js';
+import { SubscriptionService } from './modules/subscriptions/subscription.service.js';
 
 async function bootstrap() {
   initSentry();
@@ -32,9 +33,11 @@ async function bootstrap() {
   });
 
   const followUpTimer = startRentFollowUpScheduler();
+  const subscriptionTimer = startSubscriptionScheduler();
 
   const shutdown = async () => {
     if (followUpTimer) clearInterval(followUpTimer);
+    if (subscriptionTimer) clearInterval(subscriptionTimer);
     await prisma.disconnect();
     process.exit(0);
   };
@@ -67,6 +70,35 @@ function startRentFollowUpScheduler(): NodeJS.Timeout | null {
   };
 
   setTimeout(run, 60 * 1000);
+  return setInterval(run, everyMs);
+}
+
+/**
+ * Abonnements : alertes avant la fin de l'essai (24 h et 2 h) et passage à l'état échu.
+ * Les droits sont de toute façon recalculés à chaque requête ; cette tâche sert aux notifications.
+ * Idempotente (événements journalisés, mises à jour conditionnelles).
+ */
+function startSubscriptionScheduler(): NodeJS.Timeout | null {
+  if (env.NODE_ENV === 'test' || env.SUBSCRIPTION_ALERTS_SCHEDULER === 'off') return null;
+
+  const everyMs = 15 * 60 * 1000;
+  let running = false;
+  const run = async () => {
+    if (running) return;
+    running = true;
+    try {
+      const service = container.resolve(SubscriptionService);
+      const warned = await service.sendTrialWarnings();
+      const expired = await service.expireDue();
+      if (warned || expired) console.log('[subscriptions]', JSON.stringify({ warned, expired }));
+    } catch (err) {
+      console.warn('[subscriptions] échec:', err instanceof Error ? err.message : err);
+    } finally {
+      running = false;
+    }
+  };
+
+  setTimeout(run, 90 * 1000);
   return setInterval(run, everyMs);
 }
 

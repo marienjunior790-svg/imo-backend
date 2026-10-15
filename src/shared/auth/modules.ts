@@ -1,8 +1,8 @@
-import { SubscriptionPlan } from '@prisma/client';
+import { Capability } from '../../modules/subscriptions/plans.config.js';
 
 import { isMaintenanceAgent, isPlatformAdmin, isTenant, normalizeRole } from './roles.js';
 
-/** Catalogue modules produit (P3) — activés selon le plan. */
+/** Catalogue modules produit (P3) — activés selon les capacités de l'offre. */
 export type ModuleKey = 'core' | 'payments' | 'maintenance' | 'accounting' | 'portal' | 'platform';
 
 export type ModuleDef = {
@@ -15,43 +15,38 @@ export const MODULE_CATALOG: ModuleDef[] = [
   { key: 'core', label: 'Cœur', description: 'Org, biens, locataires, contrats' },
   { key: 'payments', label: 'Paiements', description: 'Encaissements et retards' },
   { key: 'maintenance', label: 'Maintenance', description: 'Tickets et techniciens' },
-  { key: 'accounting', label: 'Comptabilité', description: 'Exports et vue finance' },
+  { key: 'accounting', label: 'Comptabilité', description: 'Dépenses et rapports' },
   { key: 'portal', label: 'Portail locataire', description: 'Espace locataire' },
   { key: 'platform', label: 'Plateforme ITC', description: 'Console équipe ITC' },
 ];
 
-const PLAN_MODULES: Record<SubscriptionPlan, ModuleKey[]> = {
-  STARTER: ['core', 'payments', 'portal'],
-  PRO: ['core', 'payments', 'maintenance', 'portal'],
-  ENTERPRISE: ['core', 'payments', 'maintenance', 'accounting', 'portal'],
+const MODULE_CAPABILITY: Record<Exclude<ModuleKey, 'platform'>, Capability> = {
+  core: Capability.CORE_MANAGEMENT,
+  payments: Capability.CORE_MANAGEMENT,
+  maintenance: Capability.CORE_MANAGEMENT,
+  accounting: Capability.CORE_MANAGEMENT,
+  portal: Capability.TENANT_MENU,
 };
 
-export function resolveModulesForPlan(plan: SubscriptionPlan | string | null | undefined): ModuleKey[] {
-  const p = (plan ?? 'STARTER') as SubscriptionPlan;
-  return PLAN_MODULES[p] ?? PLAN_MODULES.STARTER;
+export function resolveModulesForCapabilities(capabilities: readonly string[]): ModuleKey[] {
+  return (Object.keys(MODULE_CAPABILITY) as Array<keyof typeof MODULE_CAPABILITY>).filter((key) =>
+    capabilities.includes(MODULE_CAPABILITY[key]),
+  );
 }
 
 export function resolveModulesForRole(
   role: string,
-  plan: SubscriptionPlan | string | null | undefined,
+  capabilities: readonly string[],
 ): Array<ModuleDef & { enabled: boolean }> {
   const canonical = normalizeRole(role);
-  const enabled = new Set(resolveModulesForPlan(plan));
+  const enabled = new Set<ModuleKey>(resolveModulesForCapabilities(capabilities));
   if (isPlatformAdmin(canonical)) enabled.add('platform');
   if (isTenant(canonical)) {
-    return MODULE_CATALOG.map((m) => ({
-      ...m,
-      enabled: m.key === 'portal',
-    }));
+    return MODULE_CATALOG.map((m) => ({ ...m, enabled: m.key === 'portal' && enabled.has('portal') }));
   }
   if (isMaintenanceAgent(canonical)) {
-    return MODULE_CATALOG.map((m) => ({
-      ...m,
-      enabled: m.key === 'maintenance' && enabled.has('maintenance'),
-    }));
+    const agentMenu = capabilities.includes(Capability.AGENT_MENU);
+    return MODULE_CATALOG.map((m) => ({ ...m, enabled: m.key === 'maintenance' && agentMenu }));
   }
-  return MODULE_CATALOG.map((m) => ({
-    ...m,
-    enabled: enabled.has(m.key),
-  }));
+  return MODULE_CATALOG.map((m) => ({ ...m, enabled: enabled.has(m.key) }));
 }

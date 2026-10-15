@@ -130,9 +130,11 @@ function buildAiServiceForConfirm(opts?: { denyMessageSend?: boolean }) {
   };
   const subscriptionService = {
     resolveAccessContext: jest.fn().mockResolvedValue({
-      hasFeature: () => true,
-      plan: 'PRO',
+      entitled: true,
+      plan: 'PRO_MAX',
+      capabilities: ['CORE_MANAGEMENT', 'AGENT_MENU', 'TENANT_MENU', 'AI', 'PREMIUM'],
     }),
+    denialFor: jest.fn().mockReturnValue(null),
   };
   const openai = {
     isAvailable: () => false,
