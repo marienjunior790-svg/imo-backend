@@ -2314,11 +2314,15 @@ export function formatToolResultForLocalReply(toolName: string, result: unknown)
     const items = (data.items as Array<Record<string, unknown>>) ?? [];
     const total = Number(data.totalRemainingXaf ?? 0);
     const filter = (data.filter as { period?: string | null; periodMonth?: number | null; periodYear?: number | null }) ?? {};
+    const monthName =
+      filter.periodMonth && filter.periodYear
+        ? formatDateFr(`${filter.periodYear}-${String(filter.periodMonth).padStart(2, '0')}-01`).replace(/^1er /, '')
+        : '';
     const periodNote =
       filter.period === 'last_month'
-        ? ` (mois dernier${filter.periodMonth && filter.periodYear ? ` ${filter.periodMonth}/${filter.periodYear}` : ''})`
+        ? monthName ? ` le mois dernier (${monthName})` : ' le mois dernier'
         : filter.period === 'this_month'
-          ? ` (ce mois${filter.periodMonth && filter.periodYear ? ` ${filter.periodMonth}/${filter.periodYear}` : ''})`
+          ? monthName ? ` en ${monthName}` : ' ce mois-ci'
           : '';
     if (!items.length) {
       return `Aucun loyer à encaisser${periodNote} : tout est à jour.`;
@@ -2331,7 +2335,9 @@ export function formatToolResultForLocalReply(toolName: string, result: unknown)
         return `• ${p.tenantName} (${p.apartmentLabel}) — ${formatXaf(remaining)} · ${paymentStatusFr(String(p.status))}${due}`;
       })
       .join('\n');
-    return `Vous avez ${data.count} loyer(s) à suivre${periodNote}${total > 0 ? ` pour un total restant de ${total.toLocaleString('fr-FR')} XAF` : ''} :
+    const count = Number(data.count ?? items.length);
+    const head = `${count} loyer${count > 1 ? 's' : ''} à suivre${periodNote}`;
+    return `${head}${total > 0 ? `, pour un total restant de ${formatXaf(total)}` : ''} :
 ${list}`;
   }
   if (toolName === 'getVacantUnits') {
