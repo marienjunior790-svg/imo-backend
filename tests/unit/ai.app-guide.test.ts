@@ -11,7 +11,7 @@ import {
 const APP_ROUTES = [
   '/dashboard', '/settings', '/assistant', '/properties', '/properties/create', '/tenants', '/tenants/new',
   '/leases', '/leases/new', '/payments', '/maintenance', '/maintenance/new', '/team', '/team/agents/new',
-  '/notifications', '/reports',
+  '/notifications', '/reports', '/subscription',
 ];
 
 describe('Guide officiel de l’application', () => {
@@ -35,7 +35,8 @@ describe('Guide officiel de l’application', () => {
     ['Comment changer le thème en mode sombre ?', 'themes', /Noir/],
     ['Les relances sont-elles automatiques ? comment ça marche', 'reminders', /J\+15/],
     ['Comment confier une intervention à un prestataire ?', 'ticket-assign', /Assigner le prestataire/],
-    ['Combien coûte la formule Pro ?', 'subscription', /45 000/],
+    ['Combien coûte la formule Pro ?', 'subscription', /Les tarifs s’affichent sur la page des offres/],
+    ['Combien de temps dure l’essai gratuit ?', 'subscription', /48 heures/],
     ['À quoi sert le taux de recouvrement ?', 'dashboard-month', /encaissé ÷ attendu/],
   ])('« %s » → fiche %s', (question, id, expected) => {
     const answer = resolveManualAnswer(question, { requireCue: false });

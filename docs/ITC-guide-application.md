@@ -86,7 +86,7 @@ Il est généré automatiquement depuis le guide intégré à l’assistant IA d
 
 **Abonnement**
 
-- [Abonnement : formules, limites et blocage](#fiche-subscription)
+- [Abonnement : offres Standard, Pro, Plus et Pro Max](#fiche-subscription)
 
 **Espace agent terrain**
 
@@ -236,7 +236,7 @@ Formulaire :
 2. Vous ajoutez vos agents terrain : identifiant et mot de passe générés, espace agent.  
 3. Vous ajoutez vos locataires : identifiant et mot de passe générés, espace locataire.  
   
-L’abonnement démarre pour 30 jours. Les agents et les locataires ne passent jamais par cette inscription : ils utilisent les identifiants remis par l’agence.
+Un essai gratuit de 48 heures (offre Standard) démarre à la création du compte ; choisissez ensuite une offre dans Paramètres › Abonnement. Les agents et les locataires ne passent jamais par cette inscription : ils utilisent les identifiants remis par l’agence.
 
 *Questions reconnues par l’IA : creer mon entreprise, creer une entreprise, creer son entreprise, inscription, s inscrire, creer un compte, ouvrir un compte, nouvelle agence, essai gratuit, periode d essai*
 
@@ -251,7 +251,7 @@ L’abonnement démarre pour 30 jours. Les agents et les locataires ne passent j
 L’Accueil donne en un coup d’œil l’état de votre gestion. De haut en bas :  
 1. En-tête : logo ITC et cloche des notifications (pastille rouge = nombre de notifications non lues).  
 2. Salutation : votre prénom, le nom de l’organisation et votre rôle.  
-3. Bandeau orange « Abonnement … » : seulement si l’abonnement n’est plus actif (consultation possible, ajouts et modifications bloqués).  
+3. Bandeau d’abonnement : temps restant de l’essai gratuit, paiement refusé ou résiliation programmée (touchez-le pour ouvrir les offres).  
 4. « À traiter » : les urgences du moment (impayés en rouge, tickets de maintenance en orange) ou « Rien d’urgent pour le moment » en vert.  
 5. « Situation du mois » : attendu, encaissé, impayés, taux d’occupation et barre de recouvrement.  
 6. « Gestion » : 4 tuiles Locataires, Contrats, Paiements, Maintenance.  
@@ -416,7 +416,7 @@ Onglet Biens › ouvrez l’immeuble › « Ajouter des logements ». Deux modes
 • « Plusieurs d’un coup » : nombre de logements (1 à 200), pièces, surface, loyer › « Générer les logements ». Ils sont nommés « Porte 1 », « Porte 2 »… et répartis par 4 par étage.  
   
 Le loyer mensuel est obligatoire. Les nouveaux logements sont Libres (bleu).  
-Limite : la formule Starter est plafonnée à 10 logements (« Limite atteinte ») ; les formules Pro et Enterprise sont illimitées.
+Si votre offre comporte un plafond de logements, le message « Limite atteinte » l’indique : passez à une offre supérieure dans Paramètres › Abonnement.
 
 *Questions reconnues par l’IA : ajouter des logements, ajouter un logement, creer un logement, creer des logements, nouveau logement, generer les logements, plusieurs logements, porte 1, ajouter un appartement, creer un appartement, d un coup, en une fois*
 
@@ -618,7 +618,7 @@ Sur la fiche d’un paiement (Accueil › Paiements › touchez la ligne) :
 • « Avis de paiement PDF » : pour une échéance À payer, En retard ou Partielle. C’est le rappel du montant dû.  
 Le document s’ouvre dans le navigateur ou le lecteur PDF du téléphone, d’où vous pouvez le partager.  
   
-Formules : le reçu et l’avis de paiement sont réservés aux formules Pro et Enterprise (message « Quittances PDF réservées au plan Pro et Enterprise » en Starter). Le contrat PDF est inclus dans toutes les formules.  
+Le reçu, l’avis de paiement et le contrat PDF sont inclus dans toutes les offres.  
   
 Vous pouvez aussi demander à l’assistant IA : « Génère un reçu de paiement » ; il propose le document et vous confirmez.
 
@@ -766,7 +766,7 @@ Chaque jour, le serveur ITC suit les loyers à votre place :
 • relances progressives « Relance loyer (J+1) », « (J+7) » et « (J+15) » ;  
 • à J+15 : « Alerte impayé — action requise ».  
   
-Ces alertes vous sont adressées, à vous et à votre équipe de gestion (notifications, et e-mail si activé). Le locataire voit ses loyers en retard dans son espace, mais ITC ne lui envoie pas de SMS automatique : appelez-le ou envoyez un SMS depuis sa fiche, ou générez un avis de paiement PDF (formules Pro et Enterprise).
+Ces alertes vous sont adressées, à vous et à votre équipe de gestion (notifications, et e-mail si activé). Le locataire voit ses loyers en retard dans son espace, mais ITC ne lui envoie pas de SMS automatique : appelez-le ou envoyez un SMS depuis sa fiche, ou générez un avis de paiement PDF.
 
 *Questions reconnues par l’IA : relance, rappel, automatique, j 1, j 7, j 15, retard de paiement, date d echeance, relancer, relancer un locataire, alerte impaye, relances automatiques*
 
@@ -820,7 +820,7 @@ L’assistant travaille uniquement sur les données de votre organisation.
 Onglet Paramètres, de haut en bas :  
 • Profil : avatar, nom, rôle (badge doré), organisation, « Membre depuis », bouton « Modifier le profil ».  
 • Apparence : 4 thèmes (Auto, Clair, Noir, Bleu ITC).  
-• Abonnement (propriétaire) : formule, échéance, statut, limites.  
+• Abonnement (propriétaire) : offre actuelle, échéance, comparatif des offres, paiement et historique.  
 • Compte : e-mail ou identifiant, téléphone, adresse, organisation.  
 • Notifications : « Alertes par e-mail » et « Notifications dans l’application ».  
 • Sécurité : Mot de passe, Double authentification, Appareils connectés, Activité du compte.  
@@ -890,21 +890,25 @@ Vous pouvez aussi poser n’importe quelle question sur l’application à l’a
 
 <a id="fiche-subscription"></a>
 
-### Abonnement : formules, limites et blocage
+### Abonnement : offres Standard, Pro, Plus et Pro Max
 
-Formules (par mois, cycle de 30 jours) :  
-• Starter : 15 000 XAF, jusqu’à 10 logements, contrat PDF, assistant IA.  
-• Pro : 45 000 XAF, logements illimités, contrat PDF, reçus et avis de paiement PDF, assistant IA.  
-• Enterprise : 120 000 XAF, tout illimité, reçus et avis PDF, analytique avancée, assistant IA.  
+Quatre offres :  
+• Standard : essai gratuit de 48 heures à partir de la création du compte, avec les fonctions de l’offre Pro. Un seul essai par e-mail et par numéro de téléphone.  
+• Pro : la gestion essentielle (biens, locataires, contrats, loyers, maintenance, documents, rapports). Sans menu Agent, sans espace locataire, sans assistant IA.  
+• Plus : tout Pro, plus le menu Agent (équipe, missions) et l’espace locataire.  
+• Pro Max : tout Plus, plus l’assistant IA, avec une consommation mensuelle suivie (remise à zéro le 1er du mois).  
   
-Où le voir : Paramètres › Abonnement (formule, date d’échéance, statut, limites).  
-Statuts : Actif (vert) ; Période de grâce (orange, 7 jours après l’échéance) ; Suspendu ; Résilié.  
+Paiement mensuel ou annuel, par carte via Stripe. Les tarifs s’affichent sur la page des offres ; s’ils ne sont pas encore affichés, l’offre n’est pas encore en vente. L’offre n’est activée qu’après confirmation réelle du paiement.  
   
-Quand l’abonnement n’est plus actif, un bandeau orange apparaît sur l’Accueil : vos données restent consultables, mais les ajouts et modifications (encaissements, locataires, contrats, tickets, documents, assistant IA) sont bloqués jusqu’au renouvellement. Pour renouveler ou changer de formule, contactez l’équipe ITC (Paramètres › Aide et support).  
+Où le voir : Paramètres › Abonnement (offre actuelle, échéance, comparatif, historique, gestion du paiement). Le bandeau de l’Accueil affiche le temps restant de l’essai.  
+Changer d’offre : passage à une offre supérieure immédiat (au prorata) ; passage à une offre inférieure à la fin de la période payée. Résiliation : l’offre reste active jusqu’à la fin de la période payée.  
+Paiement refusé au renouvellement : mettez à jour votre carte (« Gérer le paiement ») ; l’accès est bloqué à la fin de la période payée si le paiement n’aboutit pas.  
   
-« Limite atteinte » à la création d’un logement = plafond de la formule Starter (10 logements).
+À la fin de l’essai ou de l’abonnement : vous pouvez toujours ouvrir l’application et vos données sont conservées, mais les menus de gestion affichent « Abonnement requis » jusqu’au paiement. Les agents et locataires de l’organisation sont aussi bloqués.  
+Un menu marqué « Plus » ou « Pro Max » n’est pas inclus dans votre offre : touchez-le pour découvrir l’offre qui le contient.  
+Seul le propriétaire du compte gère l’abonnement. Pour un remboursement, contactez l’équipe ITC (Paramètres › Aide et support).
 
-*Questions reconnues par l’IA : abonnement, formule, formules, plan, starter, formule pro, plan pro, enterprise, formule entreprise, prix, tarif, tarifs…*
+*Questions reconnues par l’IA : abonnement, formule, formules, offre, offres, plan, standard, essai, essai gratuit, periode d essai, 48 heures, formule pro…*
 
 ---
 
@@ -969,7 +973,7 @@ Le locataire ne voit jamais les autres locataires ni les finances de l’agence.
 Les couleurs ont le même sens partout dans ITC, du plus urgent au plus neutre :  
   
 • ROUGE, urgent : de l’argent ou la sécurité est en jeu. Impayés, paiement En retard, priorité Critique, « Alerte impayé », bouton « Se déconnecter » et confirmations sensibles (résilier, supprimer), erreurs.  
-• ORANGE, attention, à surveiller : paiement Partiel, ticket Ouvert, priorité Haute, contrat Expiré, logement En maintenance (fenêtre clignotante), accès Suspendu, abonnement en période de grâce, double authentification désactivée, notifications « Loyer ».  
+• ORANGE, attention, à surveiller : paiement Partiel, ticket Ouvert, priorité Haute, contrat Expiré, logement En maintenance (fenêtre clignotante), accès Suspendu, abonnement en paiement refusé ou expiré, double authentification désactivée, notifications « Loyer ».  
 • BLEU, information, en attente normale : paiement À payer, contrat Brouillon, ticket Assigné, priorité Moyenne, accès « Compte créé », logement Libre, notifications « Maintenance ».  
 • DORÉ, marque ITC et « en cours » : boutons principaux, ticket En cours, notification non lue (point doré), identifiants, logement Occupé (ambre).  
 • VERT, tout va bien : Payé, contrat Actif, ticket Terminé, « Compte actif », « Rien d’urgent », encaissé, recouvrement, « Tout est à jour ».  
@@ -992,7 +996,7 @@ Priorités : Basse (gris), Moyenne (bleu), Haute (orange), Critique (rouge).
 Accès locataire : Pas de compte (gris), Compte créé (bleu), Compte actif (vert), Suspendu (orange), Archivé (gris).  
 Compte agent : Compte actif (vert), Compte suspendu (orange).  
 Demandes côté locataire : Reçue, Technicien désigné, Intervention en cours, À confirmer, Résolue, Annulée.  
-Abonnement : Actif (vert), Période de grâce, Suspendu, Résilié (orange quand il n’est pas actif).  
+Abonnement : Essai gratuit, Actif (vert) ; Paiement en attente, Résiliation programmée, Essai terminé, Paiement refusé, Expiré, Résilié (orange).  
 Notifications : Impayé (rouge), Loyer (orange), Paiement (vert), Maintenance (bleu), autres (doré).  
 Catégories de dépenses : Entretien, Réparation, Électricité, Eau, Nettoyage, Gardiennage, Assurance, Impôts et taxes, Travaux, Autre.
 
@@ -1053,6 +1057,6 @@ Pour ces besoins, contactez l’équipe ITC via Paramètres › Aide et support.
 • Identifiant ITC : identifiant de connexion (ITC-XXXX) des agents et des locataires.  
 • Mot de passe provisoire : mot de passe affiché une seule fois à la création, à changer à la première connexion.  
 • Double authentification (MFA) : code à 6 chiffres en plus du mot de passe.  
-• Période de grâce : 7 jours après l’échéance de l’abonnement, avant suspension.
+• Essai gratuit (offre Standard) : 48 heures à partir de la création du compte, avec les fonctions de l’offre Pro.
 
 *Questions reconnues par l’IA : glossaire, definition, vocabulaire, lexique, c est quoi un, c est quoi une, bail, echeance, quittance*
