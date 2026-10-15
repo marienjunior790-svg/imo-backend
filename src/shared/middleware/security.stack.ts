@@ -14,7 +14,7 @@ import { requirePasswordChangedMiddleware } from './password-change.middleware.j
  * 1. Authentification JWT
  * 2. Utilisateur actif (+ rôle/org à jour en base)
  * 3. Organisation active & validée (si applicable)
- * 4. Abonnement valide pour mutations (via verifySubscription)
+ * 4. Abonnement valide, lecture comprise (via verifySubscription)
  * 5. Rôle autorisé
  * 6. Permission métier (requirePermission par route)
  * 7. Appartenance ressource (requireOrgResource par route :id)
