@@ -8,6 +8,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { decimalToNumber } from '../../shared/utils/response.util.js';
+import { formatDateFr } from './ai.lease-request.js';
 import {
   occupancyRatePct,
   periodLabel,
@@ -479,7 +480,7 @@ export class AiAnalyticsService {
         label: `Loyer en retard — ${name} (${p.lease.apartment.label})`,
         severity: 'critical',
         score: 100 + rem / 1000,
-        why: `Statut LATE · reste ${rem.toLocaleString('fr-FR')} XAF · échéance ${p.dueDate.toISOString().slice(0, 10)} · ${p.periodMonth}/${p.periodYear}`,
+        why: `En retard · reste ${rem.toLocaleString('fr-FR')} XAF · échéance le ${formatDateFr(p.dueDate.toISOString())} · ${p.periodMonth}/${p.periodYear}`,
         entityIds: {
           paymentId: p.id,
           tenantId: p.lease.tenant.id,

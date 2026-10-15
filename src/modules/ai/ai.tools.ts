@@ -29,6 +29,7 @@ import {
   type ChatHistoryTurn,
 } from './ai.context-manager.js';
 import { env, isAiMemoryEnabled, isWhatsAppConfigured } from '../../config/env.js';
+import { formatDateFr, formatXaf, paymentStatusFr } from './ai.lease-request.js';
 import { isValidWhatsAppPhone, normalizePhoneE164 } from '../../shared/utils/phone.util.js';
 
 export type AiToolName =
@@ -2320,13 +2321,14 @@ export function formatToolResultForLocalReply(toolName: string, result: unknown)
           ? ` (ce mois${filter.periodMonth && filter.periodYear ? ` ${filter.periodMonth}/${filter.periodYear}` : ''})`
           : '';
     if (!items.length) {
-      return `Aucun loyer à encaisser (PENDING / PARTIAL / LATE)${periodNote} sur vos données actuelles.`;
+      return `Aucun loyer à encaisser${periodNote} : tout est à jour.`;
     }
     const list = items
       .slice(0, 12)
       .map((p) => {
         const remaining = Number(p.remainingXaf ?? p.amountXaf ?? 0);
-        return `• ${p.tenantName} (${p.apartmentLabel}) — ${remaining.toLocaleString('fr-FR')} XAF · ${p.status} · échéance ${p.dueDate}`;
+        const due = p.dueDate ? ` · échéance le ${formatDateFr(String(p.dueDate))}` : '';
+        return `• ${p.tenantName} (${p.apartmentLabel}) — ${formatXaf(remaining)} · ${paymentStatusFr(String(p.status))}${due}`;
       })
       .join('\n');
     return `Vous avez ${data.count} loyer(s) à suivre${periodNote}${total > 0 ? ` pour un total restant de ${total.toLocaleString('fr-FR')} XAF` : ''} :

@@ -412,6 +412,17 @@ export function leaseStatusFr(status: string): string {
   return labels[status] ?? status.toLowerCase();
 }
 
+export function paymentStatusFr(status: string): string {
+  const labels: Record<string, string> = {
+    PENDING: 'à payer',
+    PARTIAL: 'partiel',
+    LATE: 'en retard',
+    PAID: 'payé',
+    CANCELLED: 'annulé',
+  };
+  return labels[status] ?? status.toLowerCase();
+}
+
 export function formatXaf(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR').replace(/\u202f|\u00a0/g, ' ')} XAF`;
 }
