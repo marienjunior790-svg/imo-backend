@@ -21,17 +21,27 @@ export type Capability = (typeof Capability)[keyof typeof Capability];
 
 export const ALL_CAPABILITIES: readonly Capability[] = Object.values(Capability);
 
-/** Offres commerciales en vigueur. STARTER / ENTERPRISE n'existent plus que dans les données anciennes. */
+/**
+ * Offres commerciales en vigueur. STARTER / ENTERPRISE n'existent plus que dans les données anciennes.
+ * STANDARD est l'identifiant technique (enum en base) de l'offre d'essai, présentée sous le nom « Free ».
+ */
 export type CommercialPlan = 'STANDARD' | 'PRO' | 'PLUS' | 'PRO_MAX';
 export type PaidPlan = Exclude<CommercialPlan, 'STANDARD'>;
 
 export const PAID_PLANS: readonly PaidPlan[] = ['PRO', 'PLUS', 'PRO_MAX'];
 export const COMMERCIAL_PLANS: readonly CommercialPlan[] = ['STANDARD', 'PRO', 'PLUS', 'PRO_MAX'];
 
+const PLUS_CAPABILITIES: readonly Capability[] = [
+  Capability.CORE_MANAGEMENT,
+  Capability.AGENT_MENU,
+  Capability.TENANT_MENU,
+];
+
 export const PLAN_CAPABILITIES: Record<CommercialPlan, readonly Capability[]> = {
-  STANDARD: [Capability.CORE_MANAGEMENT],
+  /** Free : les droits de Plus pendant l'essai ; l'IA reste réservée à Pro Max. */
+  STANDARD: PLUS_CAPABILITIES,
   PRO: [Capability.CORE_MANAGEMENT],
-  PLUS: [Capability.CORE_MANAGEMENT, Capability.AGENT_MENU, Capability.TENANT_MENU],
+  PLUS: PLUS_CAPABILITIES,
   PRO_MAX: [
     Capability.CORE_MANAGEMENT,
     Capability.AGENT_MENU,
@@ -42,30 +52,30 @@ export const PLAN_CAPABILITIES: Record<CommercialPlan, readonly Capability[]> = 
 };
 
 export const PLAN_LABELS: Record<CommercialPlan, string> = {
-  STANDARD: 'Standard',
+  STANDARD: 'Free',
   PRO: 'Pro',
   PLUS: 'Plus',
   PRO_MAX: 'Pro Max',
 };
 
-/** Essai Standard : exactement 48 heures à partir de la création du compte (horloge serveur). */
+/** Essai Free : exactement 48 heures à partir de la création du compte (horloge serveur). */
 export const TRIAL_DURATION_MS = 48 * 60 * 60 * 1000;
 
 /**
  * Limites par offre. null = aucune limite appliquée tant que la valeur n'est pas décidée.
- * Standard reprend les limites de Pro (l'essai donne les capacités de Pro).
+ * Free reprend les limites de Plus (l'essai donne les capacités de Plus).
  */
 export interface PlanLimits {
   maxApartments: number | null;
   maxUsers: number | null;
 }
 
-const PRO_LIMITS: PlanLimits = { maxApartments: null, maxUsers: null };
+const PLUS_LIMITS: PlanLimits = { maxApartments: null, maxUsers: null };
 
 export const PLAN_LIMITS: Record<CommercialPlan, PlanLimits> = {
-  STANDARD: PRO_LIMITS,
-  PRO: PRO_LIMITS,
-  PLUS: { maxApartments: null, maxUsers: null },
+  STANDARD: PLUS_LIMITS,
+  PRO: { maxApartments: null, maxUsers: null },
+  PLUS: PLUS_LIMITS,
   PRO_MAX: { maxApartments: null, maxUsers: null },
 };
 

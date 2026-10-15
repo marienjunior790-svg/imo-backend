@@ -1,5 +1,5 @@
 /**
- * Transition des abonnements existants vers les offres Standard · Pro · Plus · Pro Max.
+ * Transition des abonnements existants vers les offres Free (plan technique STANDARD) · Pro · Plus · Pro Max.
  *
  *   npx tsx scripts/subscriptions-transition.ts                 → rapport seul (aucune écriture)
  *   npx tsx scripts/subscriptions-transition.ts --apply         → applique la transition

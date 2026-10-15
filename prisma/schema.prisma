@@ -161,7 +161,7 @@ enum SubscriptionStatus {
   GRACE_PERIOD // ancien modèle — conservé pour les données existantes
   SUSPENDED    // ancien modèle — conservé pour les données existantes
   CANCELLED
-  TRIALING     // essai Standard de 48 h en cours
+  TRIALING     // essai Free (plan STANDARD) de 48 h en cours
   PAST_DUE     // renouvellement refusé, relances du fournisseur en cours
   EXPIRED      // essai terminé ou période payée échue sans paiement
 }
@@ -170,7 +170,7 @@ enum SubscriptionPlan {
   STARTER    // ancien modèle — n'est plus attribué
   PRO
   ENTERPRISE // ancien modèle — n'est plus attribué
-  STANDARD   // essai gratuit de 48 h (capacités Pro)
+  STANDARD   // offre « Free » : essai gratuit de 48 h (capacités Plus, sans IA)
   PLUS
   PRO_MAX
 }

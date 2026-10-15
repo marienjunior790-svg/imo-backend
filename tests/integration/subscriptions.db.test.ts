@@ -1,5 +1,6 @@
 /**
- * Abonnements Standard · Pro · Plus · Pro Max — parcours réels sur la base de test (RUN_DB_TESTS=true).
+ * Abonnements Free (plan technique STANDARD) · Pro · Plus · Pro Max — parcours réels sur la base de test
+ * (RUN_DB_TESTS=true).
  *
  * Horloge serveur contrôlée (ManualClock) pour les bornes de l'essai. Stripe : signature vérifiée par la
  * bibliothèque officielle avec un secret de test ; seul l'appel réseau `subscriptions.retrieve` est remplacé,
@@ -79,18 +80,20 @@ describeDb('Abonnements — parcours réels', () => {
     await prisma.$disconnect();
   });
 
-  // ─── Essai Standard ────────────────────────────────────────────────────────
+  // ─── Essai Free ────────────────────────────────────────────────────────────
 
-  describe('Essai Standard de 48 heures', () => {
+  describe('Essai Free de 48 heures', () => {
     let owner: Account;
     let start: number;
+    let trialAgentToken: string;
     const email = `jean.essai.${stamp}@gmail.com`;
     const phone = `06${String(stamp).slice(-7)}`;
 
-    it('[1][2] démarre à la création du compte, fin = horloge serveur + 48 h exactement', async () => {
+    it('[1][2] démarre à la création du compte sous le nom Free, fin = horloge serveur + 48 h exactement', async () => {
       start = clk.now().getTime();
       owner = await register(email, phone);
       expect(owner.body.trial).toEqual({ granted: true });
+      expect(owner.body.subscription).toMatchObject({ plan: 'STANDARD', planLabel: 'Free', isTrial: true, entitled: true });
 
       const sub = await activeSub(owner.orgId);
       expect(sub.plan).toBe(SubscriptionPlan.STANDARD);
@@ -100,7 +103,12 @@ describeDb('Abonnements — parcours réels', () => {
 
       const status = await get(owner.token, '/subscription/status');
       expect(status.status).toBe(200);
+      expect(status.body.data.planLabel).toBe('Free');
       expect(status.body.data.trialEndsAt).toBe(new Date(start + 48 * H).toISOString());
+
+      const plans = await get(owner.token, '/subscription/plans');
+      expect(plans.body.data.plans.map((p: { label: string }) => p.label)).toEqual(['Free', 'Pro', 'Plus', 'Pro Max']);
+      expect(JSON.stringify(plans.body)).not.toContain('Standard');
     });
 
     it('[3] 47 h 59 min 59 s : accès autorisé, données créées', async () => {
@@ -110,27 +118,62 @@ describeDb('Abonnements — parcours réels', () => {
       expect(created.status).toBe(201);
     });
 
-    it('[7] pendant l\'essai (capacités Pro) : pas de menu Agent, Locataire ni IA', async () => {
-      const agents = await get(owner.token, '/maintenance/agents');
-      expect(agents.status).toBe(403);
-      expect(agents.body).toMatchObject({ code: 'PLAN_UPGRADE_REQUIRED', kind: 'SUBSCRIPTION', requiredPlan: 'PLUS' });
+    it('[7][8] pendant l\'essai Free (droits de Plus) : menus Agent et Locataire ouverts, IA réservée à Pro Max', async () => {
+      expect((await get(owner.token, '/maintenance/agents')).status).toBe(200);
+      expect((await get(owner.token, '/tenants/portal-access-settings')).status).toBe(200);
 
-      const portal = await get(owner.token, '/tenants/portal-access-settings');
-      expect(portal.body).toMatchObject({ code: 'PLAN_UPGRADE_REQUIRED', requiredPlan: 'PLUS' });
+      const agentEmail = `agent.essai.${stamp}@itc-test.cg`;
+      const created = await post(owner.token, '/admin/users', {
+        email: agentEmail,
+        password: PASSWORD,
+        firstName: 'Agent',
+        lastName: 'Essai',
+        role: 'AGENT',
+      });
+      expect([200, 201]).toContain(created.status);
+      const login = await post(null, '/auth/login', { email: agentEmail, password: PASSWORD });
+      trialAgentToken = login.body.data.accessToken;
+      expect((await get(trialAgentToken, '/agent/dashboard')).status).toBe(200);
+      // Les permissions propres du rôle restent appliquées : l'essai n'ouvre pas les droits du propriétaire.
+      expect((await get(trialAgentToken, '/buildings')).body.code).toBe('FORBIDDEN');
 
       const ai = await get(owner.token, '/ai/analysis-types');
+      expect(ai.status).toBe(403);
       expect(ai.body).toMatchObject({ code: 'PLAN_UPGRADE_REQUIRED', requiredPlan: 'PRO_MAX' });
+      const caps = (await get(owner.token, '/subscription/status')).body.data.capabilities;
+      expect(caps).toEqual(expect.arrayContaining(['CORE_MANAGEMENT', 'AGENT_MENU', 'TENANT_MENU']));
+      expect(caps).not.toContain('AI');
     });
 
-    it('[4] 48 h exactement : bloqué avec un code métier', async () => {
+    it('[4] 48 h exactement : bloqué avec un code métier, propriétaire comme agent', async () => {
       clk.set(start + 48 * H);
       const res = await get(owner.token, '/buildings');
       expect(res.status).toBe(403);
       expect(res.body).toMatchObject({ code: 'TRIAL_EXPIRED', kind: 'SUBSCRIPTION' });
       expect((await post(owner.token, '/buildings', { name: 'Après essai', address: '1 rue Bloquée' })).status).toBe(403);
+      expect((await get(owner.token, '/maintenance/agents')).status).toBe(403);
+      expect((await get(owner.token, '/tenants/portal-access-settings')).status).toBe(403);
+      const agent = await get(trialAgentToken, '/agent/dashboard');
+      expect(agent.status).toBe(403);
+      expect(agent.body).toMatchObject({ code: 'ORGANIZATION_SUBSCRIPTION_INACTIVE', kind: 'SUBSCRIPTION' });
 
       clk.set(start + 48 * H + 1);
       expect((await get(owner.token, '/buildings')).body.code).toBe('TRIAL_EXPIRED');
+    });
+
+    it('expiration Free : ni paiement, ni changement d\'offre, ni résiliation enregistrés', async () => {
+      await subscriptions().expireDue();
+      const sub = await activeSub(owner.orgId);
+      expect(sub).toMatchObject({ plan: SubscriptionPlan.STANDARD, status: SubscriptionStatus.EXPIRED, paymentProvider: 'trial' });
+      expect(sub.cancelledAt).toBeNull();
+      expect(await prisma.paymentProviderEvent.count({ where: { organizationId: owner.orgId } })).toBe(0);
+      const types = (await prisma.subscriptionEvent.findMany({ where: { organizationId: owner.orgId } })).map((e) => e.type);
+      expect(types).not.toEqual(expect.arrayContaining(['CANCELLED']));
+      expect(types).not.toEqual(expect.arrayContaining(['ACTIVATED']));
+      const view = await get(owner.token, '/subscription/status');
+      expect(view.body.data).toMatchObject({ planLabel: 'Free', isTrial: true, entitled: false, denial: 'TRIAL_EXPIRED' });
+      expect(view.body.data.denialMessage).toContain('Free');
+      expect(view.body.data.denialMessage).toContain('données sont conservés');
     });
 
     it('[14] l\'heure envoyée par le téléphone est ignorée', async () => {
@@ -143,7 +186,10 @@ describeDb('Abonnements — parcours réels', () => {
       expect(res.body.code).toBe('TRIAL_EXPIRED');
     });
 
-    it('[5] les écrans d\'abonnement restent accessibles après expiration', async () => {
+    it('[5] après expiration : connexion, profil, paramètres et page Abonnement restent accessibles', async () => {
+      const relog = await post(null, '/auth/login', { email, password: PASSWORD });
+      expect(relog.status).toBe(200);
+      expect(relog.body.data.user.id).toBe(owner.userId);
       expect((await get(owner.token, '/auth/me')).status).toBe(200);
       const overview = await get(owner.token, '/subscription');
       expect(overview.status).toBe(200);

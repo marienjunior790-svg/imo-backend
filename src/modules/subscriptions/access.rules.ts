@@ -156,7 +156,7 @@ export function computeAccess(sub: SubscriptionRecord, now: Date, options: Acces
 
 export const DENIAL_MESSAGES: Record<AccessDenial, string> = {
   TRIAL_EXPIRED:
-    'Votre essai gratuit de 48 heures est terminé. Choisissez une offre pour continuer à utiliser ITC — vos données sont conservées.',
+    'Votre essai Free de 48 heures est terminé. Aucun paiement n\'a été prélevé. Choisissez une offre pour continuer à utiliser ITC — votre compte et vos données sont conservés.',
   SUBSCRIPTION_EXPIRED:
     'Votre abonnement a expiré. Renouvelez-le pour continuer à utiliser ITC — vos données sont conservées.',
   SUBSCRIPTION_PAST_DUE:

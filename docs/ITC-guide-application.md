@@ -86,7 +86,7 @@ Il est généré automatiquement depuis le guide intégré à l’assistant IA d
 
 **Abonnement**
 
-- [Abonnement : offres Standard, Pro, Plus et Pro Max](#fiche-subscription)
+- [Abonnement : offres Free, Pro, Plus et Pro Max](#fiche-subscription)
 
 **Espace agent terrain**
 
@@ -236,7 +236,7 @@ Formulaire :
 2. Vous ajoutez vos agents terrain : identifiant et mot de passe générés, espace agent.  
 3. Vous ajoutez vos locataires : identifiant et mot de passe générés, espace locataire.  
   
-Un essai gratuit de 48 heures (offre Standard) démarre à la création du compte ; choisissez ensuite une offre dans Paramètres › Abonnement. Les agents et les locataires ne passent jamais par cette inscription : ils utilisent les identifiants remis par l’agence.
+L’offre Free (essai gratuit de 48 heures avec les fonctions de Plus, sans assistant IA) démarre à la création du compte ; choisissez ensuite une offre dans Paramètres › Abonnement. Les agents et les locataires ne passent jamais par cette inscription : ils utilisent les identifiants remis par l’agence.
 
 *Questions reconnues par l’IA : creer mon entreprise, creer une entreprise, creer son entreprise, inscription, s inscrire, creer un compte, ouvrir un compte, nouvelle agence, essai gratuit, periode d essai*
 
@@ -890,10 +890,10 @@ Vous pouvez aussi poser n’importe quelle question sur l’application à l’a
 
 <a id="fiche-subscription"></a>
 
-### Abonnement : offres Standard, Pro, Plus et Pro Max
+### Abonnement : offres Free, Pro, Plus et Pro Max
 
 Quatre offres :  
-• Standard : essai gratuit de 48 heures à partir de la création du compte, avec les fonctions de l’offre Pro. Un seul essai par e-mail et par numéro de téléphone.  
+• Free : essai gratuit de 48 heures exactement à partir de la création du compte, avec les fonctions de l’offre Plus (menus Agent et Locataire compris). L’assistant IA n’y est pas inclus : il est réservé à Pro Max. Aucun prélèvement automatique à la fin de l’essai. Un seul essai par e-mail et par numéro de téléphone.  
 • Pro : la gestion essentielle (biens, locataires, contrats, loyers, maintenance, documents, rapports). Sans menu Agent, sans espace locataire, sans assistant IA.  
 • Plus : tout Pro, plus le menu Agent (équipe, missions) et l’espace locataire.  
 • Pro Max : tout Plus, plus l’assistant IA, avec une consommation mensuelle suivie (remise à zéro le 1er du mois).  
@@ -904,11 +904,11 @@ Où le voir : Paramètres › Abonnement (offre actuelle, échéance, comparatif
 Changer d’offre : passage à une offre supérieure immédiat (au prorata) ; passage à une offre inférieure à la fin de la période payée. Résiliation : l’offre reste active jusqu’à la fin de la période payée.  
 Paiement refusé au renouvellement : mettez à jour votre carte (« Gérer le paiement ») ; l’accès est bloqué à la fin de la période payée si le paiement n’aboutit pas.  
   
-À la fin de l’essai ou de l’abonnement : vous pouvez toujours ouvrir l’application et vos données sont conservées, mais les menus de gestion affichent « Abonnement requis » jusqu’au paiement. Les agents et locataires de l’organisation sont aussi bloqués.  
+À la fin de l’essai Free ou de l’abonnement : vous pouvez toujours vous connecter, ouvrir les Paramètres et la page Abonnement ; votre compte et vos données sont conservés, mais les menus de gestion affichent « Abonnement requis » jusqu’au paiement. Les agents et locataires de l’organisation sont aussi bloqués.  
 Un menu marqué « Plus » ou « Pro Max » n’est pas inclus dans votre offre : touchez-le pour découvrir l’offre qui le contient.  
 Seul le propriétaire du compte gère l’abonnement. Pour un remboursement, contactez l’équipe ITC (Paramètres › Aide et support).
 
-*Questions reconnues par l’IA : abonnement, formule, formules, offre, offres, plan, standard, essai, essai gratuit, periode d essai, 48 heures, formule pro…*
+*Questions reconnues par l’IA : abonnement, formule, formules, offre, offres, plan, free, offre free, gratuit, gratuite, offre gratuite, standard…*
 
 ---
 
@@ -1057,6 +1057,6 @@ Pour ces besoins, contactez l’équipe ITC via Paramètres › Aide et support.
 • Identifiant ITC : identifiant de connexion (ITC-XXXX) des agents et des locataires.  
 • Mot de passe provisoire : mot de passe affiché une seule fois à la création, à changer à la première connexion.  
 • Double authentification (MFA) : code à 6 chiffres en plus du mot de passe.  
-• Essai gratuit (offre Standard) : 48 heures à partir de la création du compte, avec les fonctions de l’offre Pro.
+• Free : essai gratuit de 48 heures à partir de la création du compte, avec les fonctions de l’offre Plus (sans assistant IA).
 
 *Questions reconnues par l’IA : glossaire, definition, vocabulaire, lexique, c est quoi un, c est quoi une, bail, echeance, quittance*

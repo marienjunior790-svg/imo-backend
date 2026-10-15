@@ -9,9 +9,18 @@ import {
   effectivePlan,
   lowestPlanWith,
   PLAN_CAPABILITIES,
+  PLAN_LABELS,
+  PLAN_LIMITS,
   TRIAL_DURATION_MS,
 } from '../../src/modules/subscriptions/plans.config.js';
-import { getOffer, listOffers, offerForStripePrice, purchasablePriceId } from '../../src/modules/subscriptions/pricing.config.js';
+import {
+  getOffer,
+  listOffers,
+  offerForStripePrice,
+  PRICES,
+  purchasablePriceId,
+} from '../../src/modules/subscriptions/pricing.config.js';
+import { env } from '../../src/config/env.js';
 import { AI_QUOTAS, nextQuotaReset, quotaPeriodStart } from '../../src/modules/subscriptions/quotas.config.js';
 import { normalizeEmailForTrial, trialClaimKeys } from '../../src/modules/subscriptions/trial-claims.js';
 import { ManualClock } from '../../src/shared/time/clock.js';
@@ -40,21 +49,30 @@ function record(over: Partial<SubscriptionRecord>): SubscriptionRecord {
   };
 }
 
-describe('Essai Standard de 48 heures (horloge contrôlée)', () => {
+describe('Essai Free de 48 heures (horloge contrôlée)', () => {
   const trial = record({});
   const clock = new ManualClock(created);
 
-  it('dure exactement 48 heures', () => {
+  it('dure exactement 48 heures (pas deux jours calendaires)', () => {
     expect(TRIAL_DURATION_MS).toBe(172_800_000);
     expect(trial.trialEndsAt!.toISOString()).toBe('2026-10-17T08:00:00.000Z');
   });
 
-  it('47 h 59 min 59 s : accès autorisé avec les capacités de Pro uniquement', () => {
+  it('s\'affiche sous le nom commercial Free (identifiant technique STANDARD)', () => {
+    const s = computeAccess(trial, created, opts);
+    expect(s.plan).toBe('STANDARD');
+    expect(PLAN_LABELS[s.plan]).toBe('Free');
+    expect(Object.values(PLAN_LABELS)).toEqual(['Free', 'Pro', 'Plus', 'Pro Max']);
+  });
+
+  it('47 h 59 min 59 s : droits de Plus (Agent, Locataire), sans IA', () => {
     clock.set(created.getTime() + 48 * H - 1000);
     const s = computeAccess(trial, clock.now(), opts);
     expect(s.entitled).toBe(true);
     expect(s.status).toBe(SubscriptionStatus.TRIALING);
-    expect(s.capabilities).toEqual(PLAN_CAPABILITIES.PRO);
+    expect(s.capabilities).toEqual([...PLAN_CAPABILITIES.PLUS]);
+    expect(s.capabilities).not.toContain(Capability.AI);
+    expect(s.capabilities).not.toContain(Capability.PREMIUM);
   });
 
   it('48 h exactement : bloqué (TRIAL_EXPIRED)', () => {
@@ -78,8 +96,16 @@ describe('Essai Standard de 48 heures (horloge contrôlée)', () => {
 });
 
 describe('Matrice des capacités', () => {
-  it('Standard (essai) = Pro, sans Agent / Locataire / IA', () => {
-    expect(PLAN_CAPABILITIES.STANDARD).toEqual(PLAN_CAPABILITIES.PRO);
+  it('Free (essai) = Plus : Agent et Locataire, sans IA ni premium', () => {
+    expect(PLAN_CAPABILITIES.STANDARD).toEqual(PLAN_CAPABILITIES.PLUS);
+    expect(PLAN_CAPABILITIES.STANDARD).not.toContain(Capability.AI);
+    expect(PLAN_LIMITS.STANDARD).toEqual(PLAN_LIMITS.PLUS);
+  });
+
+  it('Pro : sans Agent, Locataire ni IA', () => {
+    for (const c of [Capability.AGENT_MENU, Capability.TENANT_MENU, Capability.AI]) {
+      expect(PLAN_CAPABILITIES.PRO).not.toContain(c);
+    }
   });
 
   it('Pro : gestion essentielle seulement', () => {
@@ -199,6 +225,7 @@ describe('Offres mensuelles et annuelles', () => {
     const offers = listOffers();
     expect(offers).toHaveLength(6);
     expect(new Set(offers.map((o) => `${o.plan}:${o.period}`)).size).toBe(6);
+    expect(new Set(offers.map((o) => o.plan))).toEqual(new Set(['PRO', 'PLUS', 'PRO_MAX']));
   });
 
   it('chaque prix Stripe est rattaché à la bonne offre et à la bonne période', () => {
@@ -216,6 +243,39 @@ describe('Offres mensuelles et annuelles', () => {
     }
     expect(purchasablePriceId('PRO', BillingPeriod.MONTHLY)).toBeNull();
     expect(getOffer('PRO_MAX', BillingPeriod.ANNUAL).renewal).toBe('AUTOMATIC');
+  });
+
+  describe('une fois des montants saisis (valeurs de test, restaurées après chaque cas)', () => {
+    const saved = JSON.parse(JSON.stringify(PRICES));
+    const savedStripeId = env.STRIPE_PRICE_PLUS_ANNUAL;
+    afterEach(() => {
+      Object.assign(PRICES, JSON.parse(JSON.stringify(saved)));
+      env.STRIPE_PRICE_PLUS_ANNUAL = savedStripeId;
+    });
+
+    it('le montant affiché est exactement celui saisi ; l\'annuel n\'est jamais déduit du mensuel', () => {
+      PRICES.PLUS.MONTHLY = { amount: 10, currency: 'EUR', annualNote: null };
+      PRICES.PLUS.ANNUAL = { amount: 150, currency: 'EUR', annualNote: null };
+      expect(getOffer('PLUS', BillingPeriod.MONTHLY)).toMatchObject({ amount: 10, currency: 'EUR', available: true });
+      const annual = getOffer('PLUS', BillingPeriod.ANNUAL);
+      expect(annual).toMatchObject({ amount: 150, currency: 'EUR', available: true });
+      expect(annual.amount).not.toBe(10 * 12);
+    });
+
+    it('un montant sans prix Stripe n\'est pas achetable', () => {
+      PRICES.PLUS.ANNUAL = { amount: 150, currency: 'EUR', annualNote: null };
+      env.STRIPE_PRICE_PLUS_ANNUAL = undefined;
+      expect(getOffer('PLUS', BillingPeriod.ANNUAL).available).toBe(false);
+      expect(purchasablePriceId('PLUS', BillingPeriod.ANNUAL)).toBeNull();
+    });
+
+    it('un prix Stripe sans montant saisi n\'affiche aucun tarif fictif', () => {
+      PRICES.PLUS.MONTHLY = { amount: 10, currency: 'EUR', annualNote: null };
+      const pro = getOffer('PRO', BillingPeriod.MONTHLY);
+      expect(pro.amount).toBeNull();
+      expect(pro.currency).toBeNull();
+      expect(pro.available).toBe(false);
+    });
   });
 });
 

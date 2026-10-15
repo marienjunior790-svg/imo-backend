@@ -245,7 +245,7 @@ export class SubscriptionService {
     await this.assertAccess(organizationId, UserRole.OWNER, Capability.CORE_MANAGEMENT);
   }
 
-  // ─── Essai Standard ────────────────────────────────────────────────────────
+  // ─── Essai Free (plan technique STANDARD) ──────────────────────────────────
 
   /**
    * Démarre l'essai de 48 h dans la transaction de création du compte.
@@ -367,7 +367,7 @@ export class SubscriptionService {
       .notifyOwners({
         organizationId: sub.organizationId,
         kind: state.isTrial ? 'TRIAL_EXPIRED' : 'SUBSCRIPTION_EXPIRED',
-        title: state.isTrial ? 'Essai terminé' : 'Abonnement expiré',
+        title: state.isTrial ? 'Essai Free terminé' : 'Abonnement expiré',
         message: DENIAL_MESSAGES[state.isTrial ? 'TRIAL_EXPIRED' : 'SUBSCRIPTION_EXPIRED'],
         email: true,
       })
@@ -625,8 +625,8 @@ export class SubscriptionService {
         await this.notifier.notifyOwners({
           organizationId: sub.organizationId,
           kind: t.type,
-          title: `Votre essai se termine dans moins de ${t.label}`,
-          message: `Votre essai gratuit ITC se termine le ${formatDateTimeFr(sub.trialEndsAt!)}. Choisissez une offre pour continuer sans interruption — vos données sont conservées.`,
+          title: `Votre essai Free se termine dans moins de ${t.label}`,
+          message: `Votre essai Free ITC se termine le ${formatDateTimeFr(sub.trialEndsAt!)}. Aucun paiement ne sera prélevé automatiquement : choisissez une offre pour continuer sans interruption — vos données sont conservées.`,
           data: { trialEndsAt: sub.trialEndsAt!.toISOString() },
           email: true,
         });

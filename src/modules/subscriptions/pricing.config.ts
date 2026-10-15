@@ -8,14 +8,18 @@ import { PAID_PLANS, PaidPlan } from './plans.config.js';
  * sans devise ou sans identifiant de prix Stripe est présentée « bientôt disponible » et ne peut pas être achetée.
  * Le montant affiché doit être identique au prix configuré dans Stripe (qui reste la référence de facturation).
  */
-interface PriceSetting {
+export interface PriceSetting {
   amount: number | null;
   currency: string | null;
   /** Remise annuelle, uniquement si elle est décidée (texte affiché tel quel). */
   annualNote: string | null;
 }
 
-const PRICES: Record<PaidPlan, Record<BillingPeriod, PriceSetting>> = {
+/**
+ * Chaque période porte son propre montant : le prix annuel n'est jamais déduit du prix mensuel.
+ * Les montants décidés commercialement ne sont saisis ici qu'avec l'autorisation de mise en vente.
+ */
+export const PRICES: Record<PaidPlan, Record<BillingPeriod, PriceSetting>> = {
   PRO: {
     MONTHLY: { amount: null, currency: null, annualNote: null },
     ANNUAL: { amount: null, currency: null, annualNote: null },
