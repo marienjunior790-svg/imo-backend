@@ -1,6 +1,6 @@
 # ITC — Offres et grille tarifaire commerciale officielle
 
-Devise : **EUR (€)**
+Devise : **EUR (€)** — montants **TTC** (le client paie exactement le montant affiché).
 
 | Offre | Prix mensuel | Prix annuel | Accès principal |
 |---|---|---|---|
@@ -17,7 +17,7 @@ Devise : **EUR (€)**
 - Après expiration, les données du compte sont conservées et les paramètres ainsi que la page Abonnement restent accessibles.
 - Les tarifs annuels sont des montants fixes et ne doivent pas être recalculés automatiquement à partir des prix mensuels (12 × 45 € = 540 € ≠ 800 € ; 12 × 122 € = 1 464 € ≠ 1 850 € ; 12 × 245 € = 2 940 € ≠ 3 000 €).
 - Les offres payantes ne sont achetables que lorsque leurs identifiants de prix Stripe sont configurés et vérifiés.
-- Aucun prix Stripe ne doit être créé et aucune production ne doit être modifiée sans autorisation explicite distincte.
+- Aucune production ne doit être modifiée sans autorisation explicite distincte.
 
 ## Correspondance technique
 
@@ -28,19 +28,31 @@ Devise : **EUR (€)**
 | Plus | `PLUS` | `CORE_MANAGEMENT`, `AGENT_MENU`, `TENANT_MENU` |
 | Pro Max | `PRO_MAX` | toutes, dont `AI` (quotas mensuels) et `PREMIUM` |
 
-## État de la configuration (grille décidée ≠ grille active)
+## État de la configuration
 
 | Élément | État |
 |---|---|
-| Montants dans `src/modules/subscriptions/pricing.config.ts` | Non saisis (`null`) : aucune offre affichée avec un prix ni achetable |
-| Identifiants de prix Stripe `STRIPE_PRICE_{PRO,PLUS,PRO_MAX}_{MONTHLY,ANNUAL}` | Non configurés en production |
-| Produits et prix Stripe | Non créés |
+| Montants dans `src/modules/subscriptions/pricing.config.ts` | Saisis (EUR, TTC) |
+| Identifiants de prix Stripe `STRIPE_PRICE_{PRO,PLUS,PRO_MAX}_{MONTHLY,ANNUAL}` | À renseigner (d'abord en mode test) |
+| Produits et prix Stripe | Créés par le titulaire du compte Stripe |
 
-Mise en vente (chaque étape sur autorisation distincte) :
+Une offre n'est achetable que si `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` et son identifiant de prix sont
+configurés ; sinon elle reste « bientôt disponible ».
 
-1. Créer dans Stripe les 6 prix récurrents en EUR, avec exactement les montants de la grille (mensuel et annuel séparés).
-2. Renseigner les 6 identifiants de prix dans les variables d'environnement.
-3. Saisir les montants et la devise `EUR` dans `pricing.config.ts` (le montant affiché doit être identique au prix Stripe).
+## Connexion de Stripe
 
-Les tests `tests/unit/subscription.price-grid.spec.test.ts` vérifient la grille, l'absence de recalcul annuel,
-l'absence de tarif actif tant que la grille n'est pas saisie, et la non-disponibilité d'une offre sans identifiant Stripe.
+1. Dans Stripe (mode test, puis mode réel), créer 3 produits — Pro, Plus, Pro Max — avec chacun 2 prix récurrents
+   en EUR : mensuel et annuel, exactement les montants de la grille, TTC (sans taxe ajoutée par Stripe).
+2. Activer le portail client (Paramètres › Facturation › Portail client).
+3. Renseigner les variables d'environnement (`.env` local ou variables Railway, saisies par le titulaire) :
+   `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` et les 6 `STRIPE_PRICE_…`.
+4. Webhook : `https://<adresse-du-serveur>/api/v1/subscription/stripe/webhook`, événements
+   `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`,
+   `customer.subscription.updated`, `customer.subscription.deleted`.
+   En local : `stripe listen --forward-to localhost:3000/api/v1/subscription/stripe/webhook`.
+
+Le montant affiché dans l'application vient de `pricing.config.ts` ; il doit être identique au prix Stripe, qui reste
+la référence de facturation.
+
+Les tests `tests/unit/subscription.price-grid.spec.test.ts` vérifient la grille, l'absence de recalcul annuel
+et la non-disponibilité d'une offre sans identifiant Stripe.

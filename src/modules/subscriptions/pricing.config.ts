@@ -16,21 +16,21 @@ export interface PriceSetting {
 }
 
 /**
+ * Grille officielle (docs/abonnements-offres-et-tarifs.md), montants TTC en euros.
  * Chaque période porte son propre montant : le prix annuel n'est jamais déduit du prix mensuel.
- * Les montants décidés commercialement ne sont saisis ici qu'avec l'autorisation de mise en vente.
  */
 export const PRICES: Record<PaidPlan, Record<BillingPeriod, PriceSetting>> = {
   PRO: {
-    MONTHLY: { amount: null, currency: null, annualNote: null },
-    ANNUAL: { amount: null, currency: null, annualNote: null },
+    MONTHLY: { amount: 45, currency: 'EUR', annualNote: null },
+    ANNUAL: { amount: 800, currency: 'EUR', annualNote: null },
   },
   PLUS: {
-    MONTHLY: { amount: null, currency: null, annualNote: null },
-    ANNUAL: { amount: null, currency: null, annualNote: null },
+    MONTHLY: { amount: 122, currency: 'EUR', annualNote: null },
+    ANNUAL: { amount: 1850, currency: 'EUR', annualNote: null },
   },
   PRO_MAX: {
-    MONTHLY: { amount: null, currency: null, annualNote: null },
-    ANNUAL: { amount: null, currency: null, annualNote: null },
+    MONTHLY: { amount: 245, currency: 'EUR', annualNote: null },
+    ANNUAL: { amount: 3000, currency: 'EUR', annualNote: null },
   },
 };
 

@@ -3,8 +3,8 @@
  * (RUN_DB_TESTS=true).
  *
  * Horloge serveur contrôlée (ManualClock) pour les bornes de l'essai. Stripe : signature vérifiée par la
- * bibliothèque officielle avec un secret de test ; seul l'appel réseau `subscriptions.retrieve` est remplacé,
- * aucun paiement réel ni simulé n'est créé.
+ * bibliothèque officielle avec un secret de test ; les appels réseau (`customers.create`,
+ * `checkout.sessions.create`, `subscriptions.retrieve`) sont remplacés, aucun paiement réel ni simulé n'est créé.
  */
 import { execFileSync } from 'child_process';
 import path from 'path';
@@ -19,6 +19,7 @@ import { SubscriptionService } from '../../src/modules/subscriptions/subscriptio
 import { AiQuotaService } from '../../src/modules/subscriptions/ai-quota.service.js';
 import { AI_QUOTAS } from '../../src/modules/subscriptions/quotas.config.js';
 import { setStripeClient } from '../../src/modules/subscriptions/stripe.gateway.js';
+import { env } from '../../src/config/env.js';
 import { PaidPlan } from '../../src/modules/subscriptions/plans.config.js';
 
 const describeDb = process.env.RUN_DB_TESTS === 'true' ? describe : describe.skip;
@@ -331,6 +332,7 @@ describeDb('Abonnements — parcours réels', () => {
     const secret = process.env.STRIPE_WEBHOOK_SECRET!;
     const remote = new Map<string, Stripe.Subscription>();
     let networkDown = false;
+    const checkoutRequests: Stripe.Checkout.SessionCreateParams[] = [];
     let owner: Account;
     const subId = `sub_test_${stamp}`;
     const sec = (d: number) => Math.floor(d / 1000);
@@ -370,6 +372,15 @@ describeDb('Abonnements — parcours réels', () => {
       periodEnd = periodStart + 30 * 24 * H;
       setStripeClient({
         webhooks: real.webhooks,
+        customers: { create: async () => ({ id: `cus_test_${stamp}` }) },
+        checkout: {
+          sessions: {
+            create: async (params: Stripe.Checkout.SessionCreateParams) => {
+              checkoutRequests.push(params);
+              return { id: `cs_test_${stamp}`, url: 'https://checkout.stripe.com/c/pay/cs_test' };
+            },
+          },
+        },
         subscriptions: {
           retrieve: async (id: string) => {
             if (networkDown) throw new Error('connect ECONNRESET api.stripe.com');
@@ -381,10 +392,34 @@ describeDb('Abonnements — parcours réels', () => {
       } as unknown as Stripe);
     });
 
-    it('[12][22] la demande de paiement n\'active rien ; aucune offre achetable sans prix validé', async () => {
+    it('[12][22] sans identifiant de prix Stripe, l\'offre n\'est pas achetable', async () => {
+      const savedId = env.STRIPE_PRICE_PRO_ANNUAL;
+      env.STRIPE_PRICE_PRO_ANNUAL = undefined;
+      try {
+        const checkout = await post(owner.token, '/subscription/checkout', { plan: 'PRO', period: 'ANNUAL' });
+        expect(checkout.status).toBe(409);
+        expect(checkout.body.code).toBe('OFFER_UNAVAILABLE');
+      } finally {
+        env.STRIPE_PRICE_PRO_ANNUAL = savedId;
+      }
+      expect(checkoutRequests).toHaveLength(0);
+    });
+
+    it('[12][22] la demande de paiement utilise le prix Stripe de l\'offre et n\'active rien', async () => {
+      const offers = await get(owner.token, '/subscription/plans');
+      expect(offers.body.data.offers).toContainEqual(
+        expect.objectContaining({ plan: 'PLUS', period: 'MONTHLY', amount: 122, currency: 'EUR', available: true }),
+      );
       const checkout = await post(owner.token, '/subscription/checkout', { plan: 'PLUS', period: 'MONTHLY' });
-      expect(checkout.status).toBe(409);
-      expect(checkout.body.code).toBe('OFFER_UNAVAILABLE');
+      expect(checkout.status).toBe(200);
+      expect(checkout.body.data.url).toMatch(/^https:\/\/checkout\.stripe\.com\//);
+      expect(checkoutRequests).toHaveLength(1);
+      expect(checkoutRequests[0]).toMatchObject({
+        mode: 'subscription',
+        customer: `cus_test_${stamp}`,
+        line_items: [{ price: 'price_test_plus_monthly', quantity: 1 }],
+        metadata: { organizationId: owner.orgId, plan: 'PLUS', period: 'MONTHLY' },
+      });
       const back = await request(app).get('/billing/return?status=success');
       expect(back.status).toBe(200);
       const sub = await activeSub(owner.orgId);

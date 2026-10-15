@@ -235,13 +235,13 @@ describe('Offres mensuelles et annuelles', () => {
     expect(offerForStripePrice('price_inconnu')).toBeNull();
   });
 
-  it('aucun prix inventé : sans montant validé, l\'offre n\'est pas achetable', () => {
+  it('chaque offre payante a un montant en EUR, achetable avec son prix Stripe', () => {
     for (const offer of listOffers()) {
-      expect(offer.amount).toBeNull();
-      expect(offer.currency).toBeNull();
-      expect(offer.available).toBe(false);
+      expect(offer.amount).toBeGreaterThan(0);
+      expect(offer.currency).toBe('EUR');
+      expect(offer.available).toBe(true);
     }
-    expect(purchasablePriceId('PRO', BillingPeriod.MONTHLY)).toBeNull();
+    expect(purchasablePriceId('PRO', BillingPeriod.MONTHLY)).toBe('price_test_pro_monthly');
     expect(getOffer('PRO_MAX', BillingPeriod.ANNUAL).renewal).toBe('AUTOMATIC');
   });
 
@@ -270,7 +270,7 @@ describe('Offres mensuelles et annuelles', () => {
     });
 
     it('un prix Stripe sans montant saisi n\'affiche aucun tarif fictif', () => {
-      PRICES.PLUS.MONTHLY = { amount: 10, currency: 'EUR', annualNote: null };
+      PRICES.PRO.MONTHLY = { amount: null, currency: null, annualNote: null };
       const pro = getOffer('PRO', BillingPeriod.MONTHLY);
       expect(pro.amount).toBeNull();
       expect(pro.currency).toBeNull();
