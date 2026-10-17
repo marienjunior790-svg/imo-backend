@@ -17,12 +17,14 @@ export function buildRetrievalMeta(input: {
   eligibleTotal?: number;
   sqlFetchCount?: number;
   sqlMatchCount?: number;
+  sqlFetchMode?: MatchRetrievalMeta['sqlFetchMode'];
 }): MatchRetrievalMeta {
   return {
     strategy: 'hard_sql_score_preselect',
     candidateCount: input.candidateCount,
     truncated: input.truncated,
     recallLimit: input.recallLimit ?? MATCH_CANDIDATE_RECALL_LIMIT,
+    ...(input.sqlFetchMode != null ? { sqlFetchMode: input.sqlFetchMode } : {}),
     ...(input.eligibleTotal != null ? { eligibleTotal: input.eligibleTotal } : {}),
     ...(input.sqlFetchCount != null ? { sqlFetchCount: input.sqlFetchCount } : {}),
     ...(input.sqlMatchCount != null ? { sqlMatchCount: input.sqlMatchCount } : {}),

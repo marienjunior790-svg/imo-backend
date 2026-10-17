@@ -89,17 +89,26 @@ export interface MatchInterpretationMeta {
 export interface MatchRetrievalMeta {
   /** Phase 0D : hard SQL + présélection par score. Legacy bench peut encore citer published_at_desc_take. */
   strategy: 'hard_sql_score_preselect' | 'published_at_desc_take';
+  /**
+   * Phase 0E.2 — mode de récupération SQL :
+   * rent_asc (A) ou progressive (C, lots bas/milieu/haut). Absent sur legacy.
+   */
+  sqlFetchMode?: 'rent_asc' | 'progressive';
   /** Nombre de candidats retenus pour le ranking final (≤ recallLimit). */
   candidateCount: number;
   /**
    * true si le rappel n’est pas exhaustif :
    * SQL fetch plafonné et/ou présélection score sur un pool éligible > recallLimit.
+   * Ne signifie jamais un rappel exact au-delà de sqlFetchLimit.
    */
   truncated: boolean;
   recallLimit: number;
-  /** Taille du pool éligible après hard filters (parmi le fetch SQL). */
+  /**
+   * Taille du pool éligible après hard filters **parmi le fetch SQL chargé**
+   * (≠ sqlMatchCount lorsque le fetch est tronqué).
+   */
   eligibleTotal?: number;
-  /** Lignes renvoyées par findMany. */
+  /** Lignes renvoyées par findMany (après dédup si progressive). */
   sqlFetchCount?: number;
   /** count() SQL sur le where hard (peut dépasser sqlFetchCount). */
   sqlMatchCount?: number;

@@ -92,6 +92,12 @@ const envSchema = z.object({
   INTELLIGENCE_MATCHING_ENABLED: z.coerce.boolean().default(true),
   /** CI-5 — taille minimale d’échantillon pour publier des stats (sinon INSUFFICIENT_SAMPLE) */
   INTELLIGENCE_MARKET_STATS_MIN_SAMPLE: z.coerce.number().int().min(3).max(100).default(5),
+  /**
+   * Phase 0E.2 — fetch SQL quand sqlMatchCount > sqlFetchLimit :
+   * adaptive = rent_asc sous la limite, progressive au-delà (recommandé) ;
+   * rent_asc = repli A uniquement ; progressive = C dès troncature.
+   */
+  INTELLIGENCE_SQL_FETCH_POLICY: z.enum(['adaptive', 'rent_asc', 'progressive']).default('adaptive'),
 });
 
 const parsed = envSchema.safeParse(process.env);
