@@ -85,14 +85,24 @@ export interface MatchInterpretationMeta {
   incomplete: boolean;
 }
 
-/** Métadonnées de recall (transparence SCALE — cap mémoire). */
+/** Métadonnées de recall (transparence SCALE). */
 export interface MatchRetrievalMeta {
-  strategy: 'published_at_desc_take';
-  /** Nombre de candidats chargés depuis la base (après where, avant scoring). */
+  /** Phase 0D : hard SQL + présélection par score. Legacy bench peut encore citer published_at_desc_take. */
+  strategy: 'hard_sql_score_preselect' | 'published_at_desc_take';
+  /** Nombre de candidats retenus pour le ranking final (≤ recallLimit). */
   candidateCount: number;
-  /** true si le rappel a atteint recallLimit (annonces plus anciennes potentiellement absentes). */
+  /**
+   * true si le rappel n’est pas exhaustif :
+   * SQL fetch plafonné et/ou présélection score sur un pool éligible > recallLimit.
+   */
   truncated: boolean;
   recallLimit: number;
+  /** Taille du pool éligible après hard filters (parmi le fetch SQL). */
+  eligibleTotal?: number;
+  /** Lignes renvoyées par findMany. */
+  sqlFetchCount?: number;
+  /** count() SQL sur le where hard (peut dépasser sqlFetchCount). */
+  sqlMatchCount?: number;
 }
 
 export interface MatchResult {

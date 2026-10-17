@@ -3,7 +3,11 @@ import {
   FORBIDDEN_LISTING_KEYS,
   toListingView,
 } from '../../src/modules/intelligence/listing-view';
-import { buildRetrievalMeta, MATCH_CANDIDATE_RECALL_LIMIT, withRetrievalMeta } from '../../src/modules/intelligence/retrieval';
+import {
+  buildRetrievalMeta,
+  MATCH_CANDIDATE_RECALL_LIMIT,
+  withRetrievalMeta,
+} from '../../src/modules/intelligence/retrieval';
 import { runMatchEngine } from '../../src/modules/intelligence/matching.engine';
 import type { ListingCandidate } from '../../src/modules/intelligence/types';
 
@@ -35,7 +39,6 @@ function sourceWithPhoneAttempt() {
       type: 'AGENCY',
       isActive: true,
       isValidated: true,
-      // Simule une fuite potentielle côté Prisma — ne doit jamais apparaître dans le DTO
       phone: '+242060000000',
       email: 'secret@example.com',
     } as {
@@ -71,18 +74,27 @@ describe('Catalogue public listings — anti-fuite (P0)', () => {
   });
 });
 
-describe('Match retrieval meta (P1)', () => {
+describe('Match retrieval meta', () => {
   it('truncated=false sous le cap', () => {
-    const meta = buildRetrievalMeta(120, MATCH_CANDIDATE_RECALL_LIMIT);
+    const meta = buildRetrievalMeta({
+      candidateCount: 120,
+      truncated: false,
+      recallLimit: MATCH_CANDIDATE_RECALL_LIMIT,
+    });
     expect(meta.truncated).toBe(false);
     expect(meta.candidateCount).toBe(120);
     expect(meta.recallLimit).toBe(MATCH_CANDIDATE_RECALL_LIMIT);
-    expect(meta.strategy).toBe('published_at_desc_take');
+    expect(meta.strategy).toBe('hard_sql_score_preselect');
   });
 
-  it('truncated=true à la limite de rappel', () => {
-    const meta = buildRetrievalMeta(MATCH_CANDIDATE_RECALL_LIMIT, MATCH_CANDIDATE_RECALL_LIMIT);
+  it('truncated=true documenté', () => {
+    const meta = buildRetrievalMeta({
+      candidateCount: MATCH_CANDIDATE_RECALL_LIMIT,
+      truncated: true,
+      eligibleTotal: 800,
+    });
     expect(meta.truncated).toBe(true);
+    expect(meta.eligibleTotal).toBe(800);
   });
 
   it('withRetrievalMeta attache la méta sans casser le ranking', () => {
@@ -95,7 +107,14 @@ describe('Match retrieval meta (P1)', () => {
       },
     ];
     const base = runMatchEngine(candidates, { maxRent: 200_000, cities: ['Brazzaville'] });
-    const withMeta = withRetrievalMeta(base, MATCH_CANDIDATE_RECALL_LIMIT);
+    const withMeta = withRetrievalMeta(
+      base,
+      buildRetrievalMeta({
+        candidateCount: MATCH_CANDIDATE_RECALL_LIMIT,
+        truncated: true,
+        eligibleTotal: MATCH_CANDIDATE_RECALL_LIMIT,
+      }),
+    );
     expect(withMeta.retrieval?.truncated).toBe(true);
     expect(withMeta.matches.length).toBe(base.matches.length);
     expect(assertNoPrivateLeak(withMeta)).toEqual([]);
