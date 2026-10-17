@@ -267,6 +267,8 @@ export class BuildingService {
         rentAmount: toNum(a.rentAmount),
         currency: a.currency,
         status: a.status,
+        isPublished: a.isPublished,
+        publishedAt: a.publishedAt,
         openTickets,
         tenant: lease?.tenant
           ? {

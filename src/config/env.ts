@@ -88,6 +88,10 @@ const envSchema = z.object({
    */
   SUBSCRIPTION_RENEWAL_CONFIRMATION_MINUTES: z.coerce.number().min(0).max(24 * 60).default(120),
   SUBSCRIPTION_ALERTS_SCHEDULER: z.enum(['on', 'off']).default('on'),
+  /** Core Intelligence CI-1 — moteur de correspondance demande↔annonces */
+  INTELLIGENCE_MATCHING_ENABLED: z.coerce.boolean().default(true),
+  /** CI-5 — taille minimale d’échantillon pour publier des stats (sinon INSUFFICIENT_SAMPLE) */
+  INTELLIGENCE_MARKET_STATS_MIN_SAMPLE: z.coerce.number().int().min(3).max(100).default(5),
 });
 
 const parsed = envSchema.safeParse(process.env);

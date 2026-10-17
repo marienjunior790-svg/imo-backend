@@ -209,6 +209,9 @@ model Organization {
   /// Spec locataire v1.0 — { autoProvisionOnLeaseActive, deliveryModes: IN_APP|EMAIL|SMS[] }
   portalAccess Json?
 
+  /// CI-5 — contribution opt-in aux statistiques de marché anonymisées (annonces publiées uniquement)
+  contributeMarketStats Boolean @default(false)
+
   // Abonnement SaaS (cache dénormalisé pour accès rapide)
   subscriptionId        String?            @unique
   subscriptionStatus    SubscriptionStatus @default(ACTIVE)

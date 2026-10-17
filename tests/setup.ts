@@ -26,3 +26,5 @@ process.env.STRIPE_PRICE_PLUS_ANNUAL = 'price_test_plus_annual';
 process.env.STRIPE_PRICE_PRO_MAX_MONTHLY = 'price_test_pro_max_monthly';
 process.env.STRIPE_PRICE_PRO_MAX_ANNUAL = 'price_test_pro_max_annual';
 process.env.SUBSCRIPTION_ALERTS_SCHEDULER = 'off';
+process.env.INTELLIGENCE_MATCHING_ENABLED = 'true';
+process.env.INTELLIGENCE_MARKET_STATS_MIN_SAMPLE = '5';
