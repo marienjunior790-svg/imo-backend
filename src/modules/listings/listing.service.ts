@@ -1,13 +1,14 @@
 import { inject, injectable } from 'tsyringe';
 import { ApartmentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
-import { AppError, NotFoundError, ValidationError } from '../../shared/errors/app.error.js';
+import { AppError, NotFoundError } from '../../shared/errors/app.error.js';
 import {
   assertNoPrivateLeak,
   toListingView,
   type ApartmentListingSource,
 } from '../intelligence/listing-view.js';
 import type { ListingView } from '../intelligence/types.js';
+import { assertApartmentPublishable } from './publish-guards.js';
 
 export interface ListingSearchFilters {
   city?: string;
@@ -123,9 +124,7 @@ export class ListingService {
       where: { id: apartmentId, organizationId },
     });
     if (!apt) throw new NotFoundError('Appartement introuvable');
-    if (apt.status !== ApartmentStatus.AVAILABLE) {
-      throw new ValidationError('Seuls les biens disponibles peuvent être publiés');
-    }
+    assertApartmentPublishable(apt);
 
     return this.prisma.apartment.update({
       where: { id: apartmentId },
