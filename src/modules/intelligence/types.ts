@@ -85,6 +85,16 @@ export interface MatchInterpretationMeta {
   incomplete: boolean;
 }
 
+/** Métadonnées de recall (transparence SCALE — cap mémoire). */
+export interface MatchRetrievalMeta {
+  strategy: 'published_at_desc_take';
+  /** Nombre de candidats chargés depuis la base (après where, avant scoring). */
+  candidateCount: number;
+  /** true si le rappel a atteint recallLimit (annonces plus anciennes potentiellement absentes). */
+  truncated: boolean;
+  recallLimit: number;
+}
+
 export interface MatchResult {
   demand: DemandSpec;
   matches: RankedMatch[];
@@ -93,6 +103,7 @@ export interface MatchResult {
   emptyReason?: 'EMPTY_ELIGIBLE';
   suggestions?: string[];
   interpretation?: MatchInterpretationMeta;
+  retrieval?: MatchRetrievalMeta;
 }
 
 /** Ligne interne pour éligibilité / score (peut contenir flags techniques, jamais exposée brute). */

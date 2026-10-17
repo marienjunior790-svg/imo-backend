@@ -8,6 +8,7 @@ import { MARKET_STATS_VERSION } from './market-stats.js';
 import { runMatchEngine } from './matching.engine.js';
 import { toListingView, type ApartmentListingSource } from './listing-view.js';
 import type { RawDemandInput } from './normalizer.js';
+import { MATCH_CANDIDATE_RECALL_LIMIT, withRetrievalMeta } from './retrieval.js';
 import { SCORER_VERSION } from './scorer-version.js';
 import type { ListingCandidate, MatchResult } from './types.js';
 
@@ -22,6 +23,7 @@ export class MatchingService {
       interpreterVersion: INTERPRETER_VERSION,
       marketStatsVersion: MARKET_STATS_VERSION,
       marketStatsMinSample: env.INTELLIGENCE_MARKET_STATS_MIN_SAMPLE,
+      candidateRecallLimit: MATCH_CANDIDATE_RECALL_LIMIT,
       currencyDefault: env.DEFAULT_CURRENCY,
       localeDefault: 'fr-CG',
     };
@@ -42,7 +44,7 @@ export class MatchingService {
         status: ApartmentStatus.AVAILABLE,
         organization: { isActive: true, isValidated: true },
       },
-      take: 500,
+      take: MATCH_CANDIDATE_RECALL_LIMIT,
       orderBy: { publishedAt: 'desc' },
       include: {
         building: {
@@ -77,9 +79,11 @@ export class MatchingService {
       };
     });
 
-    return runMatchEngine(candidates, raw, {
+    const result = runMatchEngine(candidates, raw, {
       limit,
       defaults: { currency: env.DEFAULT_CURRENCY, locale: 'fr-CG' },
     });
+
+    return withRetrievalMeta(result, rows.length, MATCH_CANDIDATE_RECALL_LIMIT);
   }
 }

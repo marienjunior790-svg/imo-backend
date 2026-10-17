@@ -1,7 +1,13 @@
 import { inject, injectable } from 'tsyringe';
 import { ApartmentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
-import { NotFoundError, ValidationError } from '../../shared/errors/app.error.js';
+import { AppError, NotFoundError, ValidationError } from '../../shared/errors/app.error.js';
+import {
+  assertNoPrivateLeak,
+  toListingView,
+  type ApartmentListingSource,
+} from '../intelligence/listing-view.js';
+import type { ListingView } from '../intelligence/types.js';
 
 export interface ListingSearchFilters {
   city?: string;
@@ -11,6 +17,15 @@ export interface ListingSearchFilters {
   minRooms?: number;
   search?: string;
 }
+
+/** Select org catalogue public — jamais phone / email. */
+const PUBLIC_ORG_SELECT = {
+  id: true,
+  name: true,
+  type: true,
+  isActive: true,
+  isValidated: true,
+} as const;
 
 @injectable()
 export class ListingService {
@@ -35,25 +50,39 @@ export class ListingService {
       }),
     };
 
-    const [items, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       this.prisma.apartment.findMany({
         where,
         skip,
         take: limit,
         orderBy: { publishedAt: 'desc' },
         include: {
-          building: { select: { id: true, name: true, address: true, district: true, city: true } },
-          organization: { select: { id: true, name: true, type: true } },
-          documents: { where: { type: 'APARTMENT_PHOTO' }, take: 3 },
+          building: {
+            select: {
+              name: true,
+              address: true,
+              district: true,
+              city: true,
+              latitude: true,
+              longitude: true,
+            },
+          },
+          organization: { select: PUBLIC_ORG_SELECT },
+          documents: {
+            where: { type: 'APARTMENT_PHOTO' },
+            take: 3,
+            select: { cloudinaryUrl: true, type: true },
+          },
         },
       }),
       this.prisma.apartment.count({ where }),
     ]);
 
+    const items = rows.map((apt) => this.toSafeListingView(apt));
     return { items, total };
   }
 
-  async getPublicListing(apartmentId: string) {
+  async getPublicListing(apartmentId: string): Promise<ListingView> {
     const apt = await this.prisma.apartment.findFirst({
       where: {
         id: apartmentId,
@@ -62,13 +91,31 @@ export class ListingService {
         organization: { isActive: true, isValidated: true },
       },
       include: {
-        building: true,
-        organization: { select: { id: true, name: true, type: true, phone: true } },
-        documents: { where: { type: 'APARTMENT_PHOTO' } },
+        building: {
+          select: {
+            name: true,
+            address: true,
+            district: true,
+            city: true,
+            latitude: true,
+            longitude: true,
+          },
+        },
+        organization: { select: PUBLIC_ORG_SELECT },
+        documents: {
+          where: { type: 'APARTMENT_PHOTO' },
+          select: { cloudinaryUrl: true, type: true },
+        },
       },
     });
     if (!apt) throw new NotFoundError('Annonce introuvable ou non disponible');
-    return apt;
+
+    const view = this.toSafeListingView(apt);
+    const leaks = assertNoPrivateLeak(view);
+    if (leaks.length) {
+      throw new AppError(500, 'Annonce publique invalide', 'PRIVATE_LEAK_GUARD');
+    }
+    return view;
   }
 
   async publish(organizationId: string, apartmentId: string, amenities?: string) {
@@ -102,5 +149,25 @@ export class ListingService {
       data: { isPublished: false, publishedAt: null },
       include: { building: true },
     });
+  }
+
+  private toSafeListingView(apt: {
+    id: string;
+    label: string;
+    description: string | null;
+    rooms: number | null;
+    surface: unknown;
+    floor: number | null;
+    rentAmount: unknown;
+    currency: string;
+    status: string;
+    isPublished: boolean;
+    publishedAt: Date | null;
+    amenities: string | null;
+    building: ApartmentListingSource['building'];
+    organization: ApartmentListingSource['organization'];
+    documents?: { cloudinaryUrl: string; type: string }[];
+  }): ListingView {
+    return toListingView(apt as unknown as ApartmentListingSource, 'INTERNAL_GESTION');
   }
 }
