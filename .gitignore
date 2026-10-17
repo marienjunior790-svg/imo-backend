@@ -7,4 +7,6 @@ mobile/.expo/
 mobile/android/
 mobile/ios/
 mobile/dist/
+ksuites/node_modules/
+ksuites/dist/
 *.apk
