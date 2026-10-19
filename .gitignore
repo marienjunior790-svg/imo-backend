@@ -8,3 +8,5 @@ mobile/android/
 mobile/ios/
 mobile/dist/
 *.apk
+itc/node_modules/
+itc/dist/
