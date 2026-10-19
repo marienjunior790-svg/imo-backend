@@ -32,11 +32,16 @@ import { env, isAiMemoryEnabled, isWhatsAppConfigured } from '../../config/env.j
 import { formatDateFr, formatXaf, paymentStatusFr } from './ai.lease-request.js';
 import { isValidWhatsAppPhone, normalizePhoneE164 } from '../../shared/utils/phone.util.js';
 import { stripClientOrganizationIds } from './ai.data-first.js';
+import {
+  isFormationKnowledgeQuestion,
+  searchFormationKnowledge,
+} from './ai.formation-knowledge.js';
 
 export type AiToolName =
   | 'getDashboardSummary'
   | 'getOutstandingPayments'
   | 'getVacantUnits'
+  | 'searchFormationKnowledge'
   | 'getUnits'
   | 'getBuildings'
   | 'getContracts'
@@ -118,6 +123,31 @@ export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool
       name: 'getVacantUnits',
       description: 'Logements vacants / disponibles (statut AVAILABLE).',
       parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'searchFormationKnowledge',
+      description:
+        'Recherche dans le corpus de formation immobilière ITC (fiches pédagogiques). ' +
+        'Savoir SECONDAIRE — ne remplace JAMAIS les données org (loyers, vacants, impayés). ' +
+        'Les passages peuvent être unverified (transcript non validé). Citer cardId / timestamps.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Question ou mots-clés (ex. rendement brut, ABF, crédit).',
+          },
+          topK: {
+            type: 'number',
+            description: 'Nombre de passages (1–8, défaut 3).',
+          },
+        },
+        required: ['query'],
+        additionalProperties: false,
+      },
     },
   },
   {
@@ -679,6 +709,26 @@ export class AiToolsService {
           return await this.getOutstandingPayments(organizationId, args);
         case 'getVacantUnits':
           return await this.getVacantUnits(organizationId);
+        case 'searchFormationKnowledge': {
+          const query =
+            typeof args.query === 'string' && args.query.trim()
+              ? args.query.trim()
+              : typeof args.q === 'string'
+                ? args.q.trim()
+                : '';
+          if (!query) {
+            return {
+              error: 'Paramètre query requis',
+              code: 400,
+              note: 'Corpus formation — aucune donnée org consultée.',
+            };
+          }
+          const topK =
+            typeof args.topK === 'number' && Number.isFinite(args.topK) ? args.topK : undefined;
+          // organizationId volontairement ignoré : corpus global formation, pas multi-tenant métier.
+          void organizationId;
+          return searchFormationKnowledge(query, { topK });
+        }
         case 'getUnits':
           return await this.getUnits(organizationId, typeof args.status === 'string' ? args.status : undefined);
         case 'getBuildings':
@@ -1203,6 +1253,13 @@ export class AiToolsService {
         (q.includes('logement') || q.includes('appart') || q.includes('bien') || q.includes('unit')));
     if (wantsVacant) {
       tools.push({ name: 'getVacantUnits' });
+    }
+
+    if (isFormationKnowledgeQuestion(message)) {
+      tools.push({
+        name: 'searchFormationKnowledge',
+        args: { query: message.slice(0, 240), topK: 3 },
+      });
     }
 
     const wantsPropertyTypesCatalog =
@@ -2299,6 +2356,29 @@ export class AiToolsService {
 
 export function formatToolResultForLocalReply(toolName: string, result: unknown): string {
   const data = result as Record<string, unknown>;
+  if (toolName === 'searchFormationKnowledge') {
+    const hits = (data.hits as Array<Record<string, unknown>>) ?? [];
+    const note = typeof data.note === 'string' ? data.note : '';
+    if (!hits.length) {
+      return `**Savoir formation**\n${note || 'Aucun passage pertinent dans le corpus v1.'}`;
+    }
+    const lines = hits.map((h, i) => {
+      const id = String(h.cardId ?? '');
+      const title = String(h.title ?? '');
+      const status = String(h.verificationStatus ?? 'unverified');
+      const excerpt = String(h.excerpt ?? '');
+      const formulas = (h.formulas as string[] | undefined) ?? [];
+      const ts =
+        h.timestampStart && h.timestampEnd
+          ? ` (${String(h.timestampStart)}–${String(h.timestampEnd)})`
+          : '';
+      return (
+        `${i + 1}. [${id}] ${title}${ts} — statut ${status}\n${excerpt}` +
+        (formulas.length ? `\nFormule : ${formulas.join(' | ')}` : '')
+      );
+    });
+    return `**Savoir formation** (secondaire — pas un fait portefeuille)\n${note}\n\n${lines.join('\n\n')}`;
+  }
   if (toolName === 'getDashboardSummary' && data.summary) {
     const s = data.summary as Record<string, number>;
     const org = data.organization as { name?: string };

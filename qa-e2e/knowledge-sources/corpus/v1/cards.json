@@ -1,0 +1,401 @@
+{
+  "manifest": {
+    "corpusVersion": "1.0.0-gemini-phase1-2",
+    "schemaVersion": "1.0.0",
+    "generatedAt": "2026-10-19",
+    "sourceVideoUrl": "https://youtu.be/BhuVohwG-3s",
+    "sourceVideoDurationClaimed": "01:48:00",
+    "auditRef": "AI_KB_PHASE1_2_GO_NO_GO.md",
+    "note": "Indexed for local lexical retrieval only. verificationStatus=unverified for all cards. NOT production_ready.",
+    "counts": {
+      "total": 6,
+      "unverified": 6,
+      "verified": 0,
+      "retired": 0
+    },
+    "cardIds": [
+      "KC-IMM-001",
+      "KC-IMM-002",
+      "KC-IMM-003",
+      "KC-IMM-004",
+      "KC-IMM-005",
+      "KC-IMM-006"
+    ]
+  },
+  "cards": [
+    {
+      "id": "KC-IMM-001",
+      "schemaVersion": "1.0.0",
+      "title": "Psychologie financière et éducation budgétaire",
+      "category": "Fondamentaux & Psychologie",
+      "keywords": [
+        "argent",
+        "psychologie",
+        "éducation financière",
+        "épargne",
+        "croyances"
+      ],
+      "content": "L'argent est la conséquence d'un état psychologique et d'une éducation financière. Les dépenses compulsives comblent souvent un besoin émotionnel. Il est impératif d'instaurer une épargne systématique (minimum 10% des revenus) et de structurer ses finances en trois horizons : court terme (sécurité / épargne de précaution de 1 à 3 mois sur Livret A), moyen terme (projets à 5 ans) et long terme (retraite / anticipation).",
+      "method": {
+        "summary": "L'argent est la conséquence d'un état psychologique et d'une éducation financière. Les dépenses compulsives comblent souvent un besoin émotionnel. Il est impératif d'instaurer une ",
+        "steps": [
+          "Analyser ses dépenses réelles sur les derniers relevés",
+          "Éliminer les dépenses compulsives ou superflues (abonnements inutiles, sorties excessives tracées)",
+          "Mettre en place un virement automatique d'épargne (10% minimum) dès la perception du salaire"
+        ]
+      },
+      "formulas": [],
+      "examples": [
+        {
+          "label": "Exemple 1",
+          "text": "Un jeune de 25 ans qui épargne 100 € par mois bénéficie de l'effet des intérêts composés, nécessitant 3 à 4 fois moins d'effort d'épargne qu'un investisseur démarrant à 30 ans pour le même capital final.",
+          "inputs": null,
+          "expectedOutput": null,
+          "verifiable": false,
+          "note": "Source formation — non vérifié contre transcript (PHASE 1.2)."
+        }
+      ],
+      "source": {
+        "type": "youtube",
+        "url": "https://youtu.be/BhuVohwG-3s",
+        "videoId": "BhuVohwG-3s",
+        "chapter": "Psychologie financière et éducation budgétaire",
+        "timestampStart": "00:08:00",
+        "timestampEnd": "00:32:00",
+        "originDocuments": [
+          "incoming/2026-10-19-gemini-phase1-2/ITC_AI_KNOWLEDGE_BASE.json",
+          "incoming/2026-10-19-gemini-phase1-2/ITC_AI_MANUEL_IMMOBILIER.docx"
+        ]
+      },
+      "verificationStatus": "unverified",
+      "warnings": [
+        "Statut index/JSON « Validé » non retenu (PHASE 1.2) — transcript non fourni.",
+        "Savoir de formation — ne remplace pas les données org ITC ni le droit local."
+      ],
+      "limitations": [
+        "L'effort d'épargne dépend des charges fixes incompressibles (familles monoparentales, bas salaires)."
+      ],
+      "relatedCardIds": [],
+      "corpusRole": "candidate",
+      "retired": false
+    },
+    {
+      "id": "KC-IMM-002",
+      "schemaVersion": "1.0.0",
+      "title": "Formule de calcul du Rendement Brut",
+      "category": "Analyse Financière & Rentabilité",
+      "keywords": [
+        "rendement brut",
+        "loyer annuel",
+        "prix d'acquisition",
+        "calcul immobilier"
+      ],
+      "content": "Le rendement brut mesure la performance brute d'un investissement immobilier avant déduction des charges, impôts et frais de gestion. Il permet de comparer rapidement des opportunités sur le marché.",
+      "method": {
+        "summary": "Le rendement brut mesure la performance brute d'un investissement immobilier avant déduction des charges, impôts et frais de gestion. Il permet de comparer rapidement des opportuni",
+        "steps": [
+          "Calculer le loyer annuel hors charges (loyer mensuel x 12)",
+          "Déterminer le coût total d'acquisition (prix d'achat net vendeur + frais de notaire + frais d'agence + travaux immédiats)",
+          "Diviser le loyer annuel par le coût total d'acquisition et multiplier par 100"
+        ]
+      },
+      "formulas": [
+        {
+          "id": "F-IMM-002-001",
+          "name": "Formule de calcul du Rendement Brut",
+          "expression": "Rendement Brut (%) = (Loyer Annuel Hors Charges / Prix d'Acquisition Total) * 100",
+          "expressionLatex": null,
+          "variables": [],
+          "conditions": [
+            "Ne prend pas en compte la taxe foncière, les charges de copropriété, les impôts et la vacance locative."
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "label": "Exemple 1",
+          "text": "Bien acheté 100 000 € tous frais compris générant 7 500 € de loyers annuels : Rendement brut = (7 500 / 100 000) * 100 = 7,5%.",
+          "inputs": {
+            "loyerAnnuelHorsCharges": 7500,
+            "prixAcquisitionTotal": 100000,
+            "currency": "EUR"
+          },
+          "expectedOutput": {
+            "rendementBrutPct": 7.5
+          },
+          "verifiable": true,
+          "note": "Arithmétique interne cohérente ; attribution formation non transcript-vérifiée."
+        }
+      ],
+      "source": {
+        "type": "youtube",
+        "url": "https://youtu.be/BhuVohwG-3s",
+        "videoId": "BhuVohwG-3s",
+        "chapter": "Formule de calcul du Rendement Brut",
+        "timestampStart": "00:38:00",
+        "timestampEnd": "00:40:00",
+        "originDocuments": [
+          "incoming/2026-10-19-gemini-phase1-2/ITC_AI_KNOWLEDGE_BASE.json",
+          "incoming/2026-10-19-gemini-phase1-2/ITC_AI_MANUEL_IMMOBILIER.docx"
+        ]
+      },
+      "verificationStatus": "unverified",
+      "warnings": [
+        "Statut index/JSON « Validé » non retenu (PHASE 1.2) — transcript non fourni.",
+        "Savoir de formation — ne remplace pas les données org ITC ni le droit local."
+      ],
+      "limitations": [
+        "Ne prend pas en compte la taxe foncière, les charges de copropriété, les impôts et la vacance locative."
+      ],
+      "relatedCardIds": [],
+      "corpusRole": "candidate",
+      "retired": false
+    },
+    {
+      "id": "KC-IMM-003",
+      "schemaVersion": "1.0.0",
+      "title": "La stratégie de l'achat en dessous du marché (Le bien moche)",
+      "category": "Stratégie d'Achat & Négociation",
+      "keywords": [
+        "bonne affaire",
+        "bien moche",
+        "valeur de marché",
+        "DVF",
+        "négociation"
+      ],
+      "content": "Pour sécuriser un investissement et créer de la valeur instantanément, il faut rechercher les biens boudés par la masse (sales, encombrés, mal éclairés, à rafraîchir). L'achat doit impérativement se faire en dessous de la valeur de marché estimée via les bases notariales (DVF), les annonces comparatives et les agences locales.",
+      "method": {
+        "summary": "Pour sécuriser un investissement et créer de la valeur instantanément, il faut rechercher les biens boudés par la masse (sales, encombrés, mal éclairés, à rafraîchir). L'achat doit",
+        "steps": [
+          "Identifier les annonces de biens dégradés ou encombrés",
+          "Consulter la base DVF des notaires et analyser 10 comparables rénovés dans le même secteur",
+          "Chiffrer les travaux réels nécessaires avec un artisan",
+          "Déduire les travaux et la marge de sécurité souhaitée du prix de marché pour formuler l'offre d'achat"
+        ]
+      },
+      "formulas": [
+        {
+          "id": "F-IMM-003-001",
+          "name": "La stratégie de l'achat en dessous du marché (Le bien moche)",
+          "expression": "Prix d'Achat Max = Valeur de Marché Rénové - Coût des Travaux - Marge de Sécurité Souhaitée",
+          "expressionLatex": null,
+          "variables": [],
+          "conditions": [
+            "Nécessite de savoir dissocier l'émotionnel personnel de la valeur intrinsèque du bien."
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "label": "Exemple 1",
+          "text": "Appartement valant 150 000 € après rénovation, nécessitant 20 000 € de travaux, avec un objectif de 20 000 € de marge : Offre max = 150 000 - 20 000 - 20 000 = 110 000 € frais de notaire inclus.",
+          "inputs": {
+            "valeurMarcheRenove": 150000,
+            "coutTravaux": 20000,
+            "margeSecurite": 20000,
+            "currency": "EUR"
+          },
+          "expectedOutput": {
+            "prixAchatMax": 110000
+          },
+          "verifiable": true,
+          "note": "Arithmétique interne cohérente ; attribution formation non transcript-vérifiée."
+        }
+      ],
+      "source": {
+        "type": "youtube",
+        "url": "https://youtu.be/BhuVohwG-3s",
+        "videoId": "BhuVohwG-3s",
+        "chapter": "La stratégie de l'achat en dessous du marché (Le bien moche)",
+        "timestampStart": "00:47:00",
+        "timestampEnd": "00:53:00",
+        "originDocuments": [
+          "incoming/2026-10-19-gemini-phase1-2/ITC_AI_KNOWLEDGE_BASE.json",
+          "incoming/2026-10-19-gemini-phase1-2/ITC_AI_MANUEL_IMMOBILIER.docx"
+        ]
+      },
+      "verificationStatus": "unverified",
+      "warnings": [
+        "Statut index/JSON « Validé » non retenu (PHASE 1.2) — transcript non fourni.",
+        "Savoir de formation — ne remplace pas les données org ITC ni le droit local."
+      ],
+      "limitations": [
+        "Nécessite de savoir dissocier l'émotionnel personnel de la valeur intrinsèque du bien."
+      ],
+      "relatedCardIds": [],
+      "corpusRole": "candidate",
+      "retired": false
+    },
+    {
+      "id": "KC-IMM-004",
+      "schemaVersion": "1.0.0",
+      "title": "Techniques de valorisation : Transformation de studio en deux pièces",
+      "category": "Optimisation & Travaux",
+      "keywords": [
+        "transformation",
+        "studio",
+        "deux pièces",
+        "cloison",
+        "valeur perçue"
+      ],
+      "content": "Transformer un grand studio (35 à 45 m²) en un deux pièces compact en créant une chambre séparée (minimum 9 m²) par une cloison en placo permet d'augmenter significativement la valeur vénale et locative du bien (10 à 15% de plus qu'un studio de même surface).",
+      "method": {
+        "summary": "Transformer un grand studio (35 à 45 m²) en un deux pièces compact en créant une chambre séparée (minimum 9 m²) par une cloison en placo permet d'augmenter significativement la val",
+        "steps": [
+          "Sélectionner un grand studio disposant de fenêtres séparées",
+          "Implanter une cloison légère pour isoler une zone nuit fermée",
+          "Ouvrir la cuisine sur le séjour avec un îlot central pour moderniser les espaces de vie",
+          "Rafraîchir les peintures (teintes lumineuses) et lustrer les parquets"
+        ]
+      },
+      "formulas": [],
+      "examples": [
+        {
+          "label": "Exemple 1",
+          "text": "Un studio de 40 m² acheté et transformé en T2 se revend 15% plus cher grâce à la création d'une véritable chambre séparée.",
+          "inputs": null,
+          "expectedOutput": null,
+          "verifiable": false,
+          "note": "Source formation — non vérifié contre transcript (PHASE 1.2)."
+        }
+      ],
+      "source": {
+        "type": "youtube",
+        "url": "https://youtu.be/BhuVohwG-3s",
+        "videoId": "BhuVohwG-3s",
+        "chapter": "Techniques de valorisation : Transformation de studio en deux pièces",
+        "timestampStart": "00:57:00",
+        "timestampEnd": "01:00:00",
+        "originDocuments": [
+          "incoming/2026-10-19-gemini-phase1-2/ITC_AI_KNOWLEDGE_BASE.json",
+          "incoming/2026-10-19-gemini-phase1-2/ITC_AI_MANUEL_IMMOBILIER.docx"
+        ]
+      },
+      "verificationStatus": "unverified",
+      "warnings": [
+        "Statut index/JSON « Validé » non retenu (PHASE 1.2) — transcript non fourni.",
+        "Savoir de formation — ne remplace pas les données org ITC ni le droit local."
+      ],
+      "limitations": [
+        "Vérifier la luminosité de chaque pièce créée et respecter les règles de copropriété pour les modifications intérieures majeures."
+      ],
+      "relatedCardIds": [],
+      "corpusRole": "candidate",
+      "retired": false
+    },
+    {
+      "id": "KC-IMM-005",
+      "schemaVersion": "1.0.0",
+      "title": "Obtention du crédit immobilier et constitution du dossier bancaire",
+      "category": "Financement & Crédit",
+      "keywords": [
+        "crédit immobilier",
+        "banquier",
+        "dossier",
+        "taux d'endettement",
+        "gestion bancaire"
+      ],
+      "content": "Le crédit immobilier est le principal levier d'enrichissement en France. Pour obtenir un accord bancaire, même avec des revenus modestes (ex. 1 500 € à 2 000 €), il faut présenter un dossier irréprochable reposant sur 5 piliers fondamentaux.",
+      "method": {
+        "summary": "Le crédit immobilier est le principal levier d'enrichissement en France. Pour obtenir un accord bancaire, même avec des revenus modestes (ex. 1 500 € à 2 000 €), il faut présenter ",
+        "steps": [
+          "1. Prouver une bonne gestion financière (épargne régulière même minime de 30 € à 10 % par mois)",
+          "2. Bannir les découverts, les jeux d'argent (poker, paris sportifs) et les dépenses compulsives sur les relevés",
+          "3. Présenter un bien acheté en dessous du prix de marché (sécurité pour la banque)",
+          "4. Fournir un dossier bancaire structuré et professionnel (chiffrage précis, devis travaux, étude de marché)",
+          "5. Démontrer un cash-flow positif ou équilibré (les loyers couvrent ou dépassent les mensualités de crédit)"
+        ]
+      },
+      "formulas": [],
+      "examples": [
+        {
+          "label": "Exemple 1",
+          "text": "Un emprunteur gagnant 1 500 € avec une épargne régulière et un dossier structuré obtiendra plus facilement son crédit qu'un profil gagnant 3 000 € avec des découverts et des paris en ligne.",
+          "inputs": null,
+          "expectedOutput": null,
+          "verifiable": false,
+          "note": "Source formation — non vérifié contre transcript (PHASE 1.2)."
+        }
+      ],
+      "source": {
+        "type": "youtube",
+        "url": "https://youtu.be/BhuVohwG-3s",
+        "videoId": "BhuVohwG-3s",
+        "chapter": "Obtention du crédit immobilier et constitution du dossier bancaire",
+        "timestampStart": "01:34:00",
+        "timestampEnd": "01:38:00",
+        "originDocuments": [
+          "incoming/2026-10-19-gemini-phase1-2/ITC_AI_KNOWLEDGE_BASE.json",
+          "incoming/2026-10-19-gemini-phase1-2/ITC_AI_MANUEL_IMMOBILIER.docx"
+        ]
+      },
+      "verificationStatus": "unverified",
+      "warnings": [
+        "Statut index/JSON « Validé » non retenu (PHASE 1.2) — transcript non fourni.",
+        "Savoir de formation — ne remplace pas les données org ITC ni le droit local."
+      ],
+      "limitations": [
+        "Le taux d'endettement réglementaire tourne autour de 35% selon les directives HCSF."
+      ],
+      "relatedCardIds": [],
+      "corpusRole": "candidate",
+      "retired": false
+    },
+    {
+      "id": "KC-IMM-006",
+      "schemaVersion": "1.0.0",
+      "title": "Gestion des risques administratifs : Secteur sauvegardé et Architectes des Bâtiments de France (ABF)",
+      "category": "Risques & Urbanisme",
+      "keywords": [
+        "secteur sauvegardé",
+        "ABF",
+        "urbanisme",
+        "déclaration préalable",
+        "risques administratifs"
+      ],
+      "content": "Dans les secteurs historiques ou sauvegardés (proximité de monuments historiques), les travaux extérieurs et intérieurs sont soumis à des autorisations strictes des Architectes des Bâtiments de France (ABF). Ignorer ces règles expose à des arrêtés de suspension de chantier et à des obligations de remise en état.",
+      "method": {
+        "summary": "Dans les secteurs historiques ou sauvegardés (proximité de monuments historiques), les travaux extérieurs et intérieurs sont soumis à des autorisations strictes des Architectes des",
+        "steps": [
+          "Vérifier si le bien se situe en zone protégée ou secteur sauvegardé avant l'achat",
+          "Déposer systématiquement une déclaration préalable de travaux ou un permis de construire adapté",
+          "Respecter les délais administratifs et purger les recours avant d'entamer le moindre chantier"
+        ]
+      },
+      "formulas": [],
+      "examples": [
+        {
+          "label": "Exemple 1",
+          "text": "Achat d'un immeuble à Bézier en secteur sauvegardé : absence de déclaration préalable initiale ayant entraîné une mise en demeure de l'urbanisme et un risque de blocage de revente.",
+          "inputs": null,
+          "expectedOutput": null,
+          "verifiable": false,
+          "note": "Source formation — non vérifié contre transcript (PHASE 1.2)."
+        }
+      ],
+      "source": {
+        "type": "youtube",
+        "url": "https://youtu.be/BhuVohwG-3s",
+        "videoId": "BhuVohwG-3s",
+        "chapter": "Gestion des risques administratifs : Secteur sauvegardé et Architectes des Bâtiments de France (ABF)",
+        "timestampStart": "01:29:00",
+        "timestampEnd": "01:31:00",
+        "originDocuments": [
+          "incoming/2026-10-19-gemini-phase1-2/ITC_AI_KNOWLEDGE_BASE.json",
+          "incoming/2026-10-19-gemini-phase1-2/ITC_AI_MANUEL_IMMOBILIER.docx"
+        ]
+      },
+      "verificationStatus": "unverified",
+      "warnings": [
+        "Statut index/JSON « Validé » non retenu (PHASE 1.2) — transcript non fourni.",
+        "Savoir de formation — ne remplace pas les données org ITC ni le droit local."
+      ],
+      "limitations": [
+        "Les délais d'instruction de l'administration peuvent être longs (plusieurs mois)."
+      ],
+      "relatedCardIds": [],
+      "corpusRole": "candidate",
+      "retired": false
+    }
+  ]
+}

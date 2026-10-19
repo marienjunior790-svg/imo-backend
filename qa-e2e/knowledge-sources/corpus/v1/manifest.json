@@ -1,0 +1,23 @@
+{
+  "corpusVersion": "1.0.0-gemini-phase1-2",
+  "schemaVersion": "1.0.0",
+  "generatedAt": "2026-10-19",
+  "sourceVideoUrl": "https://youtu.be/BhuVohwG-3s",
+  "sourceVideoDurationClaimed": "01:48:00",
+  "auditRef": "AI_KB_PHASE1_2_GO_NO_GO.md",
+  "note": "Indexed for local lexical retrieval only. verificationStatus=unverified for all cards. NOT production_ready.",
+  "counts": {
+    "total": 6,
+    "unverified": 6,
+    "verified": 0,
+    "retired": 0
+  },
+  "cardIds": [
+    "KC-IMM-001",
+    "KC-IMM-002",
+    "KC-IMM-003",
+    "KC-IMM-004",
+    "KC-IMM-005",
+    "KC-IMM-006"
+  ]
+}
