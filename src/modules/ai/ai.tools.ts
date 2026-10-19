@@ -31,6 +31,7 @@ import {
 import { env, isAiMemoryEnabled, isWhatsAppConfigured } from '../../config/env.js';
 import { formatDateFr, formatXaf, paymentStatusFr } from './ai.lease-request.js';
 import { isValidWhatsAppPhone, normalizePhoneE164 } from '../../shared/utils/phone.util.js';
+import { stripClientOrganizationIds } from './ai.data-first.js';
 
 export type AiToolName =
   | 'getDashboardSummary'
@@ -668,10 +669,7 @@ export class AiToolsService {
         : { ...(rawArgs ?? {}) };
 
     // Interdit : org inventée par le LLM / injection prompt — seul organizationId du JWT compte.
-    delete args.organizationId;
-    delete args.orgId;
-    delete args.organization_id;
-    delete args.org_id;
+    stripClientOrganizationIds(args);
 
     try {
       switch (toolName as AiToolName) {

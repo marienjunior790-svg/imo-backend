@@ -1,5 +1,10 @@
 import type { AiOrganizationContext } from './ai.context.service.js';
 import { isAppHowtoIntent, resolveAppHowtoReply } from './ai.app-guide.js';
+import {
+  estimateVacancyMonthlyImpact,
+  formatDataFirstReply,
+  MISSING_DATA_MESSAGE,
+} from './ai.data-first.js';
 
 export interface AiActionHint {
   label: string;
@@ -323,13 +328,41 @@ ${list || 'Consultez le module Paiements pour le détail complet.'}`;
 
   if (q.includes('vacant') || q.includes('disponib') || q.includes('libre')) {
     if (s.availableApartments === 0) {
-      return `Aucun logement vacant. Occupation : ${s.occupancyRate} % (${s.occupiedApartments}/${s.totalApartments}).`;
+      return formatDataFirstReply({
+        facts: [
+          `Aucun logement vacant pour « ${org} ».`,
+          `Occupation : ${s.occupancyRate} % (${s.occupiedApartments}/${s.totalApartments}).`,
+        ],
+        analysis: ['Le parc est plein côté disponibilité — priorisez la rétention et les renouvellements de baux.'],
+        recommendations: ['Suivre les contrats bientôt à échéance dans Contrats.', 'Vérifier les tickets maintenance ouverts.'],
+      });
     }
-    const list = ctx.availableApartments
-      .map((a) => `• ${a.label}${a.buildingName ? ` — ${a.buildingName}` : ''} — ${fmt(a.rentXaf)} XAF/mois`)
-      .join('\n');
-    return `${s.availableApartments} logement(s) vacant(s) :
-${list}`;
+    const list = ctx.availableApartments.map(
+      (a) => `${a.label}${a.buildingName ? ` — ${a.buildingName}` : ''} — ${fmt(a.rentXaf)} XAF/mois`,
+    );
+    const impact = estimateVacancyMonthlyImpact({
+      vacantCount: s.availableApartments,
+      sampleRentXaf: ctx.availableApartments.map((a) => a.rentXaf),
+    });
+    return formatDataFirstReply({
+      facts: [
+        `${s.availableApartments} logement(s) vacant(s) (données org).`,
+        ...(list.length ? list : [MISSING_DATA_MESSAGE]),
+      ],
+      analysis: [
+        'Chaque vacant réduit le potentiel d’encaissement mensuel tant qu’il n’est pas reloué.',
+        `Occupation actuelle : ${s.occupancyRate} %.`,
+      ],
+      recommendations: [
+        'Prioriser la publication / commercialisation des vacants (module Biens).',
+        'Vérifier loyer et état du logement avant visite.',
+      ],
+      estimations:
+        impact.monthlyLossXaf != null
+          ? [`Manque à gagner indicatif ≈ ${fmt(impact.monthlyLossXaf)} XAF/mois. ${impact.hypothesis}`]
+          : undefined,
+      limits: [impact.limit || 'Échantillon de loyers limité dans le contexte IA.'],
+    });
   }
 
   if (q.includes('occupation') || q.includes('occup')) {
