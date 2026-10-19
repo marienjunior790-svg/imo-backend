@@ -8,3 +8,5 @@ mobile/android/
 mobile/ios/
 mobile/dist/
 *.apk
+k-suites/node_modules/
+k-suites/dist/

@@ -14,6 +14,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "start:prod": "prisma migrate deploy && node dist/server.js",
+    "dev:site": "npm run dev --prefix k-suites",
+    "build:site": "npm run build --prefix k-suites",
     "test": "jest --config jest.config.cjs",
     "test:watch": "jest --config jest.config.cjs --watch",
     "test:coverage": "jest --config jest.config.cjs --coverage",
