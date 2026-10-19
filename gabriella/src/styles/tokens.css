@@ -1,0 +1,20 @@
+:root {
+  /* Palette dérivée de l'architecture 6 étages, béton chaud, terrasses vue ville */
+  --g-ink:    #14120f;
+  --g-deep:   #1c1915;
+  --g-stone:  #6b6158;
+  --g-sand:   #e8dfd0;
+  --g-linen:  #f5f0e8;
+  --g-warm:   #faf7f2;
+  --g-brass:  #a07d4f;
+  --g-brass-d: rgba(160, 125, 79, 0.28);
+  --g-line:   rgba(20, 18, 15, 0.11);
+  --g-line-l: rgba(245, 240, 232, 0.14);
+
+  --font-s: "Playfair Display", "Times New Roman", serif;
+  --font-u: "Figtree", "Inter", system-ui, sans-serif;
+  --ease:   cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+  --g: clamp(1.25rem, 4.5vw, 4.5rem);
+  --max: 1340px;
+}
