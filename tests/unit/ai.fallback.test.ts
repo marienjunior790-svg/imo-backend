@@ -52,11 +52,13 @@ describe('AI local fallback', () => {
     expect(reply).toContain('Studio RDC');
   });
 
-  it('salue et présente le copilote (pas un dump froid)', () => {
+  it('salue brièvement sans dump patrimoine', () => {
     const reply = buildLocalFallbackReply('Bonjour', mockContext);
-    expect(reply.toLowerCase()).toContain('bonjour');
-    expect(reply).toContain('Agence Test');
-    expect(reply).toMatch(/impay|vacant|patrimoine|contrat/i);
+    expect(reply.toLowerCase()).toMatch(/bonjour|bonsoir/);
+    expect(reply.toLowerCase()).toContain('aider');
+    expect(reply).not.toMatch(/occupation|encaiss|impay|vacant\(s\)|Je peux vous aider sur/i);
+    expect(reply).not.toContain('Agence Test');
+    expect(reply.length).toBeLessThan(80);
   });
 
   it('répond à « mes logements » avec le parc réel (jamais « pas compris »)', () => {

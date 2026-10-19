@@ -9,6 +9,7 @@ import {
   buildContextualSuggestions,
   buildLocalFallbackReply,
   isDailyPrioritiesMessage,
+  isGreetingMessage,
   resolveChatActions,
   type AiActionHint,
 } from './ai.fallback.js';
@@ -165,6 +166,7 @@ Tu es une couche intelligente AU-DESSUS de toute l’app : immeubles, logements,
 Règles ABSOLUES :
 - Français clair et pro. Monnaie : XAF.
 - N’invente JAMAIS de locataire, logement, montant, statut, fonctionnalité ou action.
+- Salutations courtes (« Bonjour », « Salut ») : réponds en UNE courte phrase polie, sans résumé patrimoine, sans KPI, sans menu de capacités. Attends la vraie question.
 - Pour toute donnée métier : appelle les outils (getUnits, getOutstandingPayments, getBuildings, getDashboardSummary, analyzePortfolio, compareRevenue, etc.). Les faits métier viennent de Prisma / outils — jamais de la mémoire.
 - Questions de méthode / formation (rendement brut, stratégies d’achat, crédit, ABF…) → searchFormationKnowledge ; cite cardId + avertissements ; ne présente jamais un passage unverified comme fait prouvé ni comme donnée du parc utilisateur.
 - Mémoire explicite uniquement : rememberMemory / recallMemories / forgetMemory (préférences, habitudes, notes). Ne sauvegarde pas automatiquement les conversations. Si conflit mémoire vs outil/DB → croit les outils/DB.
@@ -301,6 +303,21 @@ export class AiService {
       }
     }
     const history = this.mergeChatHistory(input.history, sessionEntities.recentTurns);
+
+    // Salut seul → réponse courte (pas de KPI / menu) — style copilote pro.
+    if (isGreetingMessage(message)) {
+      const hour = new Date().getHours();
+      const hello = hour >= 18 || hour < 5 ? 'Bonsoir' : 'Bonjour';
+      const reply = `${hello}. Comment puis-je vous aider ?`;
+      void this.persistConversationSession(organizationId, userId, message, [], reply);
+      return {
+        reply,
+        suggestions: [],
+        actions: [],
+        poweredBy: 'local',
+        contextUsed: false,
+      };
+    }
 
     // Phase J0 — confirm / reject NL de la dernière action pending (avant tout fallback patrimoine).
     {

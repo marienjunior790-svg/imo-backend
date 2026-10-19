@@ -35,6 +35,11 @@ function isGreeting(q: string): boolean {
   );
 }
 
+/** Salut court (ex. « Bonjour ») — pas de dump patrimoine. */
+export function isGreetingMessage(message: string): boolean {
+  return isGreeting(normalizeQuery(message));
+}
+
 function isThanks(q: string): boolean {
   return /^(merci|thanks|thank you|nickel|parfait|top|ok|d['']accord)\b/.test(q) && q.length < 40;
 }
@@ -54,7 +59,12 @@ export function resolveChatActions(message: string): AiActionHint[] {
   const q = normalizeQuery(message);
   const actions: AiActionHint[] = [];
 
-  if (isGreeting(q) || isHelp(q)) {
+  if (isGreeting(q)) {
+    // Salut seul : pas de menu CRM imposé — l’utilisateur pose sa question.
+    return actions;
+  }
+
+  if (isHelp(q)) {
     actions.push({ label: 'Résumé du patrimoine', route: '/buildings' });
     actions.push({ label: 'Voir les paiements', route: '/payments' });
     actions.push({ label: 'Ajouter un locataire', route: '/tenants' });
@@ -256,24 +266,13 @@ export function buildLocalFallbackReply(message: string, ctx: AiOrganizationCont
   const org = ctx.organization.name;
 
   if (isGreeting(q)) {
-    const alert =
-      s.latePayments > 0
-        ? `Attention : ${s.latePayments} impayé(s) à traiter.`
-        : s.availableApartments > 0
-          ? `${s.availableApartments} logement(s) vacant(s) disponibles.`
-          : 'Parc stable côté impayés / vacance.';
-    return `Bonjour — Intelligence ITC pour « ${org} ».
-
-${portfolioSnapshot(ctx)}
-${alert}
-
-${capabilitiesBlurb()}
-
-Posez une question précise, ou choisissez une suggestion ci-dessous.`;
+    const hour = new Date().getHours();
+    const hello = hour >= 18 ? 'Bonsoir' : hour < 5 ? 'Bonsoir' : 'Bonjour';
+    return `${hello}. Comment puis-je vous aider ?`;
   }
 
   if (isThanks(q)) {
-    return `Avec plaisir. Dites-moi la suite : impayés, vacants, contrat PDF, ou retirer un locataire.`;
+    return `Avec plaisir.`;
   }
 
   if (isHelp(q)) {
