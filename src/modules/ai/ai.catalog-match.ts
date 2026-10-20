@@ -4,11 +4,13 @@
  */
 import { formatDataFirstReply, MISSING_DATA_MESSAGE } from './ai.data-first.js';
 import type { RawDemandInput } from '../intelligence/normalizer.js';
-import type { MatchResult } from '../intelligence/types.js';
+import type { MatchFactor, MatchResult } from '../intelligence/types.js';
 
 const KNOWN_CITIES = ['brazzaville', 'pointe-noire', 'pointe noire', 'kinshasa'] as const;
 
 export type CatalogMatchDemandArgs = RawDemandInput & { limit?: number };
+
+export type CatalogMatchFactor = Pick<MatchFactor, 'key' | 'label' | 'impact' | 'weight'>;
 
 export type CatalogMatchToolPayload = {
   source: 'public_catalog_matching';
@@ -17,6 +19,8 @@ export type CatalogMatchToolPayload = {
   sqlFetchCount: number | null;
   eligibleCount: number;
   emptyReason: 'EMPTY_ELIGIBLE' | null;
+  /** Suggestions moteur EMPTY_ELIGIBLE — jamais inventées ici. */
+  emptySuggestions: string[];
   scorerVersion: string;
   demandApplied: {
     maxRent?: number;
@@ -37,10 +41,25 @@ export type CatalogMatchToolPayload = {
     city: string | null;
     district: string | null;
     score: number;
+    /** Tous les matches outil ont passé les hard filters. */
+    matchTier: 'eligible';
+    /** Facteurs scorer (copie) — absents si le moteur n’en a pas fourni. */
+    factors: CatalogMatchFactor[];
   }>;
   error?: string;
   code?: number | string;
 };
+
+/** Phrases « pourquoi » à partir des factors moteur uniquement (pas d’invention). */
+export function explainMatchFactors(factors: CatalogMatchFactor[] | undefined, max = 3): string[] {
+  if (!factors?.length) return [];
+  const ranked = [...factors].sort((a, b) => b.weight - a.weight).slice(0, max);
+  return ranked.map((f) => {
+    const tone =
+      f.impact === 'positive' ? 'favorable' : f.impact === 'negative' ? 'réserve' : 'neutre';
+    return `${f.label} (${tone})`;
+  });
+}
 
 function normalize(message: string): string {
   return message
@@ -209,6 +228,7 @@ export function toCatalogMatchToolPayload(
     sqlFetchCount: result.retrieval?.sqlFetchCount ?? null,
     eligibleCount: result.eligibleCount,
     emptyReason: result.emptyReason === 'EMPTY_ELIGIBLE' ? 'EMPTY_ELIGIBLE' : null,
+    emptySuggestions: Array.isArray(result.suggestions) ? result.suggestions.slice(0, 6) : [],
     scorerVersion: result.scorerVersion,
     demandApplied: {
       maxRent: result.demand.maxRent,
@@ -229,6 +249,13 @@ export function toCatalogMatchToolPayload(
       city: m.listing.building?.city ?? null,
       district: m.listing.building?.district ?? null,
       score: m.score,
+      matchTier: 'eligible' as const,
+      factors: (m.factors ?? []).map((f) => ({
+        key: f.key,
+        label: f.label,
+        impact: f.impact,
+        weight: f.weight,
+      })),
     })),
   };
 }
@@ -262,6 +289,9 @@ export function formatCatalogMatchForLocalReply(
     'Catalogue public des annonces publiées (matching ITC) — distinct du parc privé de votre organisation.';
 
   if (payload.emptyReason === 'EMPTY_ELIGIBLE' || sql === 0 || matches.length === 0) {
+    const engineTips = payload.emptySuggestions?.length
+      ? payload.emptySuggestions
+      : ['Élargir budget, pièces ou ville, ou vérifier qu’une annonce publiée complète existe.'];
     return formatDataFirstReply({
       facts: [
         `Catalogue public : sqlMatchCount=${sql ?? 0} (aucun logement éligible).`,
@@ -271,29 +301,34 @@ export function formatCatalogMatchForLocalReply(
       analysis: [
         'Absence de résultat = filtre hard / éligibilité, pas une invention de disponibilités.',
       ],
-      recommendations: [
-        'Élargir budget, pièces ou ville, ou vérifier qu’une annonce publiée complète existe.',
-      ],
+      recommendations: engineTips,
       limits: ['Ne pas conclure qu’un bien existe hors de sqlMatchCount / matches outils.'],
     });
   }
 
-  const lines = matches.map(
-    (m, i) =>
+  const lines = matches.map((m, i) => {
+    const base =
       `${i + 1}. ${m.label} — ${m.rooms ?? '?'} p. — ${m.rentAmount.toLocaleString('fr-FR')} ${m.currency}` +
-      (m.city ? ` — ${m.city}` : ''),
-  );
+      (m.city ? ` — ${m.city}` : '') +
+      ` · score ${m.score}`;
+    const why = explainMatchFactors(m.factors, 3);
+    return why.length ? `${base} — pourquoi : ${why.join(' ; ')}` : base;
+  });
 
+  const topWhy = explainMatchFactors(matches[0]?.factors, 3);
   const fields = payload.fieldsFromMessage ?? [];
   return formatDataFirstReply({
     facts: [
-      `Catalogue public : sqlMatchCount=${sql} · ${matches.length} correspondance(s) renvoyée(s).`,
+      `Catalogue public : sqlMatchCount=${sql} · ${matches.length} correspondance(s) renvoyée(s) (éligibles hard).`,
       criteria.length ? `Critères appliqués : ${criteria.join(', ')}.` : 'Critères : défauts matching (devise).',
       ...lines,
       note,
     ],
     analysis: [
-      'Scores issus du moteur matching ITC ; sqlMatchCount n’est pas réécrit après le count SQL.',
+      topWhy.length
+        ? `Meilleure proposition expliquée par le scorer ${payload.scorerVersion ?? '?'} : ${topWhy.join(' ; ')}.`
+        : `Classement scorer ${payload.scorerVersion ?? '?'} parmi les biens déjà éligibles (hard) ; sqlMatchCount non réécrit.`,
+      'Aucun bien hors critères hard n’est proposé.',
     ],
     recommendations: [
       'Ouvrir le détail d’une annonce dans le Store / module listings pour confirmer avant visite.',

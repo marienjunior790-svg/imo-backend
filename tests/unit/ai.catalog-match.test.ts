@@ -4,6 +4,7 @@
 import { AppError } from '../../src/shared/errors/app.error.js';
 import {
   demandFromToolArgs,
+  explainMatchFactors,
   formatCatalogMatchForLocalReply,
   isCatalogMatchQuestion,
   parseCatalogMatchDemand,
@@ -58,8 +59,12 @@ function sampleMatchResult(overrides?: Partial<MatchResult>): MatchResult {
             flags: [],
           },
         },
-        score: 0.8,
-        factors: [],
+        score: 82,
+        factors: [
+          { key: 'price', label: 'Loyer dans le budget', impact: 'positive', weight: 0.9 },
+          { key: 'rooms', label: 'Nombre de pièces suffisant', impact: 'positive', weight: 0.7 },
+          { key: 'location', label: 'Ville correspondante', impact: 'positive', weight: 0.6 },
+        ],
         scorerVersion: '0.2.0',
       },
     ],
@@ -121,12 +126,45 @@ describe('GO-TOOL-MATCH — format Data-First (B3/B4/B5)', () => {
     expect(payload.matches[0]!.rooms).toBe(3);
   });
 
+  it('GO-MATCH-EXPLAIN-1 — factors scorer propagés (pas inventés)', () => {
+    const payload = toCatalogMatchToolPayload(sampleMatchResult(), ['minRooms', 'maxRent']);
+    expect(payload.matches[0]!.matchTier).toBe('eligible');
+    expect(payload.matches[0]!.factors.map((f) => f.key)).toEqual(
+      expect.arrayContaining(['price', 'rooms', 'location']),
+    );
+    expect(explainMatchFactors(payload.matches[0]!.factors, 2)).toEqual([
+      'Loyer dans le budget (favorable)',
+      'Nombre de pièces suffisant (favorable)',
+    ]);
+    const text = formatCatalogMatchForLocalReply(payload);
+    expect(text).toMatch(/pourquoi/i);
+    expect(text).toMatch(/Loyer dans le budget/);
+    expect(text).toMatch(/éligibles hard/i);
+  });
+
+  it('GO-MATCH-EXPLAIN-1 — sans factors : pas de pourquoi inventé', () => {
+    const base = sampleMatchResult();
+    const payload = toCatalogMatchToolPayload(
+      {
+        ...base,
+        matches: base.matches.map((m) => ({ ...m, factors: [] })),
+      },
+      ['minRooms'],
+    );
+    expect(payload.matches[0]!.factors).toEqual([]);
+    expect(explainMatchFactors(payload.matches[0]!.factors)).toEqual([]);
+    const text = formatCatalogMatchForLocalReply(payload);
+    expect(text).not.toMatch(/pourquoi :/);
+    expect(text).toContain('Appt Test');
+  });
+
   it('U3 — empty ≠ invention de listing', () => {
     const payload = toCatalogMatchToolPayload(
       sampleMatchResult({
         matches: [],
         eligibleCount: 0,
         emptyReason: 'EMPTY_ELIGIBLE',
+        suggestions: ['Augmenter le budget maximal', 'Réduire le nombre de pièces minimum'],
         retrieval: {
           strategy: 'hard_sql_score_preselect',
           candidateCount: 0,
@@ -139,11 +177,16 @@ describe('GO-TOOL-MATCH — format Data-First (B3/B4/B5)', () => {
       }),
       ['minRooms'],
     );
+    expect(payload.emptySuggestions).toEqual([
+      'Augmenter le budget maximal',
+      'Réduire le nombre de pièces minimum',
+    ]);
     const text = formatCatalogMatchForLocalReply(payload);
     expect(text).toContain('**Fait**');
     expect(text).toContain('sqlMatchCount=0');
     expect(text).not.toContain('Appt Test');
     expect(text).toMatch(/aucun logement éligible/i);
+    expect(text).toMatch(/Augmenter le budget maximal/);
   });
 
   it('U4 — erreur technique distincte de empty', () => {
