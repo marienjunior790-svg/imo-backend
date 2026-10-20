@@ -1,11 +1,11 @@
 {
-  "version": "1.0.0",
-  "updatedAt": "2026-10-20",
+  "version": "1.1.0",
+  "updatedAt": "2026-10-21",
   "notes": [
-    "Cas déterministes NL → intent/demand (copilote). Pas d'écriture prod.",
-    "expectTool: outil local attendu (ou null = ne doit pas appeler matchCatalogListings).",
-    "expectEmptyHard: true = critères hard trop serrés (EMPTY_ELIGIBLE probable en prod / corpus).",
-    "Ambigu : comportement documenté actuel — clarifier produit avant d'assouplir le parseur."
+    "GO-MATCH-EVAL-2. Cas synthétiques uniquement — aucun nom, téléphone, email ou identifiant réel.",
+    "expectTools = ordre exact des outils que le copilote exécute (resolveLocalToolIntents puis execute). Pas le texte de réponse.",
+    "expectEmptyHard = EMPTY_ELIGIBLE sur le corpus gold B2 figé (Brazzaville), pas sur le catalogue live.",
+    "Champs absents de expectDemand ne doivent pas être inventés (minRooms, maxRent, cities)."
   ],
   "cases": [
     {
@@ -13,72 +13,105 @@
       "kind": "positive",
       "message": "Trouve-moi un logement de 3 pièces avec un loyer maximal de 300 000 XAF.",
       "expectCatalog": true,
-      "expectTool": "matchCatalogListings",
-      "forbidTools": ["getOutstandingPayments", "getUnits"],
+      "expectTools": ["matchCatalogListings"],
+      "forbidTools": ["getOutstandingPayments", "getUnits", "proposeCreateLease", "getContracts"],
       "expectDemand": { "minRooms": 3, "maxRent": 300000 },
       "expectEmptyHard": false,
-      "notes": "Régression smoke A post c98787c / explicabilité bc148a4"
+      "notes": "Budget + pièces, sans ville. Régression smoke A."
     },
     {
       "id": "P2-general-search",
       "kind": "positive",
       "message": "Je cherche un logement à louer.",
       "expectCatalog": true,
-      "expectTool": "matchCatalogListings",
-      "forbidTools": ["getOutstandingPayments"],
+      "expectTools": ["matchCatalogListings"],
+      "forbidTools": ["getOutstandingPayments", "getUnits", "proposeCreateLease"],
       "expectDemand": {},
       "expectEmptyHard": false,
-      "notes": "Recherche générale — pas inventer minRooms/maxRent"
+      "notes": "Sans critères chiffrés ni ville — ne rien inventer."
     },
     {
       "id": "P3-explicit-appart",
       "kind": "positive",
       "message": "Trouve-moi un appartement de 3 pièces à 300 000 XAF maximum.",
       "expectCatalog": true,
-      "expectTool": "matchCatalogListings",
-      "forbidTools": ["getOutstandingPayments"],
+      "expectTools": ["matchCatalogListings"],
+      "forbidTools": ["getOutstandingPayments", "proposeCreateLease"],
       "expectDemand": { "minRooms": 3, "maxRent": 300000 },
       "expectEmptyHard": false
+    },
+    {
+      "id": "P4-budget-rooms-city",
+      "kind": "positive",
+      "message": "Trouve-moi un logement de 3 pièces à Brazzaville avec un loyer maximal de 300 000 XAF.",
+      "expectCatalog": true,
+      "expectTools": ["matchCatalogListings"],
+      "forbidTools": ["getOutstandingPayments", "getUnits", "proposeCreateLease", "getContracts"],
+      "expectDemand": { "minRooms": 3, "maxRent": 300000, "cities": ["Brazzaville"] },
+      "expectEmptyHard": false,
+      "notes": "Budget + pièces + localisation connue du parseur."
     },
     {
       "id": "N1-hard-tight",
       "kind": "negative_hard",
       "message": "Trouve un 5 pièces à 50 000 XAF maximum.",
       "expectCatalog": true,
-      "expectTool": "matchCatalogListings",
-      "forbidTools": ["getOutstandingPayments"],
+      "expectTools": ["matchCatalogListings"],
+      "forbidTools": ["getOutstandingPayments", "proposeCreateLease"],
       "expectDemand": { "minRooms": 5, "maxRent": 50000 },
       "expectEmptyHard": true,
-      "notes": "Outil appelé ; EMPTY_ELIGIBLE attendu sur catalogue réel / gold serré"
+      "notes": "Outil catalogue appelé ; gold B2 → EMPTY_ELIGIBLE."
+    },
+    {
+      "id": "N5-city-outside-gold",
+      "kind": "negative_hard",
+      "message": "Trouve un logement de 2 pièces à Pointe-Noire, loyer maximal 200 000 XAF.",
+      "expectCatalog": true,
+      "expectTools": ["matchCatalogListings"],
+      "forbidTools": ["getOutstandingPayments", "getUnits", "proposeCreateLease"],
+      "expectDemand": { "minRooms": 2, "maxRent": 200000, "cities": ["Pointe-Noire"] },
+      "expectEmptyHard": true,
+      "notes": "Ville hors corpus gold (tout Brazzaville) → EMPTY_ELIGIBLE, sans inventer de bien."
     },
     {
       "id": "N2-impayes-smoke-B",
       "kind": "negative_routing",
       "message": "Analyse mes impayés et indique-moi les actions prioritaires.",
       "expectCatalog": false,
-      "expectTool": "getOutstandingPayments",
-      "forbidTools": ["matchCatalogListings"],
+      "expectTools": ["getOutstandingPayments"],
+      "forbidTools": ["matchCatalogListings", "proposeCreateLease", "getContracts"],
       "expectDemand": {},
       "expectEmptyHard": false
     },
     {
       "id": "N3-contrat",
       "kind": "negative_routing",
-      "message": "Crée un nouveau contrat pour Jean",
+      "message": "Crée un nouveau contrat de location.",
       "expectCatalog": false,
-      "expectTool": null,
-      "forbidTools": ["matchCatalogListings"],
+      "expectTools": ["proposeCreateLease"],
+      "forbidTools": ["matchCatalogListings", "getOutstandingPayments", "getUnits"],
       "expectDemand": {},
       "expectEmptyHard": false,
-      "notes": "Parcours contrat — pas catalogue"
+      "notes": "Création de contrat — outil proposeCreateLease, pas le catalogue."
+    },
+    {
+      "id": "N6-contrat-avec-loyer",
+      "kind": "negative_routing",
+      "message": "Crée un nouveau contrat pour un logement de 3 pièces, loyer maximal 200 000 XAF.",
+      "expectCatalog": false,
+      "expectTools": ["askAboutDocument", "getUnits", "proposeCreateLease"],
+      "forbidTools": ["matchCatalogListings", "getOutstandingPayments"],
+      "expectDemand": { "minRooms": 3, "maxRent": 200000 },
+      "expectEmptyHard": false,
+      "notes": "Pièces + loyer dans une création de contrat. Le parseur voit les critères, mais l'outil catalogue n'est pas appelé. « loyer » + « contrat » ouvre aussi askAboutDocument (comportement actuel)."
     },
     {
       "id": "N4-vacants-org",
       "kind": "negative_routing",
       "message": "Quels logements sont vacants ?",
       "expectCatalog": false,
-      "expectTool": "getVacantUnits",
-      "forbidTools": ["matchCatalogListings"],
+      "expectTools": ["getVacantUnits"],
+      "forbidTools": ["matchCatalogListings", "getOutstandingPayments", "proposeCreateLease"],
       "expectDemand": {},
       "expectEmptyHard": false
     },
@@ -87,43 +120,44 @@
       "kind": "ambiguous",
       "message": "logement pas trop cher",
       "expectCatalog": false,
-      "expectTool": null,
-      "forbidTools": ["matchCatalogListings"],
+      "expectTools": ["getUnits"],
+      "forbidTools": ["matchCatalogListings", "getOutstandingPayments", "proposeCreateLease"],
       "expectDemand": {},
       "expectEmptyHard": false,
-      "notes": "Ambigu : pas de verbe trouve/cherche → pas catalogue (comportement actuel)"
+      "notes": "Sans verbe trouve/cherche : parc org (getUnits), pas le catalogue public."
     },
     {
       "id": "A2-seek-without-housing",
       "kind": "ambiguous",
       "message": "Je cherche quelque chose à Bacongo",
       "expectCatalog": false,
-      "expectTool": null,
-      "forbidTools": ["matchCatalogListings"],
+      "expectTools": [],
+      "forbidTools": ["matchCatalogListings", "getOutstandingPayments", "proposeCreateLease", "getUnits"],
       "expectDemand": {},
       "expectEmptyHard": false,
-      "notes": "Ambigu : cherche sans type logement → pas catalogue ; Bacongo hors KNOWN_CITIES parse"
+      "notes": "Cherche sans type de logement. Bacongo n'est pas une ville du parseur."
     },
     {
       "id": "A3-seek-housing-vague-budget",
       "kind": "ambiguous",
       "message": "cherche un logement pas trop cher",
       "expectCatalog": true,
-      "expectTool": "matchCatalogListings",
-      "forbidTools": ["getOutstandingPayments"],
+      "expectTools": ["matchCatalogListings"],
+      "forbidTools": ["getOutstandingPayments", "getUnits", "proposeCreateLease"],
       "expectDemand": {},
       "expectEmptyHard": false,
-      "notes": "Catalogue oui ; ne pas inventer maxRent depuis « pas trop cher »"
+      "notes": "Catalogue oui ; « pas trop cher » n'invente pas de maxRent."
     },
     {
-      "id": "A4-tenant-impaye",
+      "id": "A4-impayes-sans-nom",
       "kind": "ambiguous",
-      "message": "Quels sont les impayés du locataire Yannick ?",
+      "message": "Quels sont les impayés en cours ?",
       "expectCatalog": false,
-      "expectTool": "getOutstandingPayments",
-      "forbidTools": ["matchCatalogListings"],
+      "expectTools": ["getOutstandingPayments"],
+      "forbidTools": ["matchCatalogListings", "proposeCreateLease", "getUnits"],
       "expectDemand": {},
-      "expectEmptyHard": false
+      "expectEmptyHard": false,
+      "notes": "Impayés sans nom de personne."
     }
   ]
 }
