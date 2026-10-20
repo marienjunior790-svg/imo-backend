@@ -1,5 +1,8 @@
 import { ApartmentStatus } from '@prisma/client';
-import { assertApartmentPublishable } from '../../src/modules/listings/publish-guards';
+import {
+  assertApartmentPublishable,
+  assertRemainsPublishableIfPublished,
+} from '../../src/modules/listings/publish-guards';
 import { ValidationError } from '../../src/shared/errors/app.error';
 
 describe('Publication annonce — garde-fous (Phase 0D suite)', () => {
@@ -31,5 +34,50 @@ describe('Publication annonce — garde-fous (Phase 0D suite)', () => {
     expect(() =>
       assertApartmentPublishable({ status: ApartmentStatus.OCCUPIED, rooms: 2 }),
     ).toThrow(ValidationError);
+  });
+});
+
+describe('Annonce déjà publiée — conservation publiabilité (Data Quality)', () => {
+  const published = {
+    isPublished: true,
+    status: ApartmentStatus.AVAILABLE,
+    rooms: 2,
+  };
+
+  it('autorise un update neutre (label/loyer) sans toucher rooms', () => {
+    expect(() => assertRemainsPublishableIfPublished(published, {})).not.toThrow();
+  });
+
+  it('autorise rooms ≥ 1 sur une annonce publiée', () => {
+    expect(() =>
+      assertRemainsPublishableIfPublished(published, { rooms: 3 }),
+    ).not.toThrow();
+  });
+
+  it('refuse de vider rooms sur une annonce publiée', () => {
+    expect(() =>
+      assertRemainsPublishableIfPublished(published, { rooms: null }),
+    ).toThrow(ValidationError);
+  });
+
+  it('refuse rooms < 1 sur une annonce publiée', () => {
+    expect(() =>
+      assertRemainsPublishableIfPublished(published, { rooms: 0 }),
+    ).toThrow(ValidationError);
+  });
+
+  it('refuse de passer OCCUPIED tout en restant publié', () => {
+    expect(() =>
+      assertRemainsPublishableIfPublished(published, { status: ApartmentStatus.OCCUPIED }),
+    ).toThrow(ValidationError);
+  });
+
+  it('n’impose rien si l’annonce n’est pas publiée (brouillon rooms null OK)', () => {
+    expect(() =>
+      assertRemainsPublishableIfPublished(
+        { isPublished: false, status: ApartmentStatus.AVAILABLE, rooms: null },
+        {},
+      ),
+    ).not.toThrow();
   });
 });

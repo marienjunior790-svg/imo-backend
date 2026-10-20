@@ -2,6 +2,7 @@ import { inject, injectable } from 'tsyringe';
 import { ApartmentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { NotFoundError } from '../../shared/errors/app.error.js';
+import { assertRemainsPublishableIfPublished } from '../listings/publish-guards.js';
 import { SubscriptionService } from '../subscriptions/subscription.service.js';
 
 export interface ApartmentInput {
@@ -131,7 +132,18 @@ export class ApartmentService {
   }
 
   async update(organizationId: string, id: string, data: Partial<ApartmentInput>) {
-    await this.get(organizationId, id);
+    const current = await this.get(organizationId, id);
+    assertRemainsPublishableIfPublished(
+      {
+        isPublished: current.isPublished,
+        status: current.status,
+        rooms: current.rooms,
+      },
+      {
+        ...(data.status !== undefined ? { status: data.status } : {}),
+        ...(data.rooms !== undefined ? { rooms: data.rooms } : {}),
+      },
+    );
     await this.repo.update(organizationId, id, data);
     return this.get(organizationId, id);
   }
