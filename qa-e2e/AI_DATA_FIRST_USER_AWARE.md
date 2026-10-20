@@ -74,7 +74,7 @@ Dernière exécution locale : **17/17 PASS** (2026-10-19).
 ## 5. Limites connues (ne pas sur-déclarer)
 
 - Le chemin LLM complet (provider externe + historique multi-tours) n’est pas mocké end-to-end ici ; la politique est injectée dans le prompt et les outils sont scopés.
-- Fallback « impayés » n’utilise pas encore le même formatage sectionné que « vacants » (données réelles du contexte, structure Fait/Estimation à étendre si besoin).
+- Fallback « impayés » : **parité Data-First** avec vacants depuis GO-BRAIN (2026-10-20) — sections Fait / Analyse / Recommandation / Limite.
 - Capacité **non déclarée opérationnelle en production** tant qu’un GO de déploiement backend n’a pas validé le binaire déployé.
 - Aucune migration / écriture prod effectuée dans ce lot.
 
