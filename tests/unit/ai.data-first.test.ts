@@ -132,6 +132,28 @@ describe('Data-First — pas d’invention / structure', () => {
     expect(reply).toContain('Aucun logement vacant');
     expect(reply).not.toContain('B2');
   });
+
+  it('structure la réponse impayés locale (parité Data-First avec vacants)', () => {
+    const reply = buildLocalFallbackReply('Quels sont mes impayés ?', sampleCtx());
+    expect(reply).toContain('**Fait**');
+    expect(reply).toContain('**Analyse**');
+    expect(reply).toContain('**Recommandation**');
+    expect(reply).toMatch(/impay|retard/i);
+    expect(reply).not.toMatch(/invent/i);
+  });
+
+  it('indique l’absence d’impayés sans inventer de locataire', () => {
+    const reply = buildLocalFallbackReply(
+      'mes impayés',
+      sampleCtx({
+        summary: { ...sampleCtx().summary, latePayments: 0, pendingPayments: 1 },
+        latePayments: [],
+      }),
+    );
+    expect(reply).toContain('**Fait**');
+    expect(reply).toContain('Aucun loyer en retard');
+    expect(reply).not.toMatch(/Grace|Tair|150\s?000/i);
+  });
 });
 
 describe('Data-First — formules financières vérifiables', () => {

@@ -315,14 +315,49 @@ ${portfolioSnapshot(ctx)}`;
 
   if (q.includes('retard') || q.includes('impaye') || q.includes('impayé')) {
     if (s.latePayments === 0) {
-      return `Aucun loyer en retard pour « ${org} ». ${s.pendingPayments} paiement(s) en attente.`;
+      return formatDataFirstReply({
+        facts: [
+          `Aucun loyer en retard pour « ${org} ».`,
+          `${s.pendingPayments} paiement(s) en attente (données org).`,
+        ],
+        analysis: [
+          'Aucun retard n’apparaît dans les données consultées — la trésorerie locative n’est pas bloquée de ce côté.',
+        ],
+        recommendations: [
+          'Surveiller les prochaines échéances dans Paiements.',
+          'Contrôler les paiements encore en attente si besoin.',
+        ],
+      });
     }
-    const list = ctx.latePayments
-      .map((p) => `• ${p.tenantName} (${p.apartmentLabel}) : ${fmt(p.amountXaf)} XAF — échéance ${p.dueDate}`)
-      .join('\n');
+    const list = ctx.latePayments.map(
+      (p) => `${p.tenantName} (${p.apartmentLabel}) : ${fmt(p.amountXaf)} XAF — échéance ${p.dueDate}`,
+    );
     const totalLate = ctx.latePayments.reduce((sum, p) => sum + p.amountXaf, 0);
-    return `Vous avez ${s.latePayments} loyer(s) impayé(s)${totalLate > 0 ? ` (échantillon : ${fmt(totalLate)} XAF)` : ''} :
-${list || 'Consultez le module Paiements pour le détail complet.'}`;
+    const samplePartial = ctx.latePayments.length < s.latePayments;
+    return formatDataFirstReply({
+      facts: [
+        `${s.latePayments} loyer(s) impayé(s) / en retard (données org).`,
+        ...(list.length ? list : [MISSING_DATA_MESSAGE]),
+        ...(totalLate > 0
+          ? [`Montant cumulé (échantillon contexte) : ${fmt(totalLate)} XAF.`]
+          : []),
+      ],
+      analysis: [
+        'Les retards impactent directement l’encaissement du mois.',
+        ...(s.pendingPayments > 0
+          ? [`${s.pendingPayments} paiement(s) encore en attente — à ne pas confondre avec les retards.`]
+          : []),
+      ],
+      recommendations: [
+        'Prioriser les relances (module Paiements / automatisations).',
+        'Vérifier le détail locataire par locataire avant action.',
+      ],
+      limits: [
+        samplePartial
+          ? 'L’échantillon du contexte IA peut être partiel — confirmer le total dans Paiements.'
+          : 'Liste issue du contexte org consulté ; montants = faits outil, pas une estimation.',
+      ],
+    });
   }
 
   if (q.includes('vacant') || q.includes('disponib') || q.includes('libre')) {

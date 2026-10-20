@@ -35,10 +35,12 @@ const mockContext: AiOrganizationContext = {
 };
 
 describe('AI local fallback', () => {
-  it('répond aux questions sur les retards', () => {
+  it('répond aux questions sur les retards en structure Data-First', () => {
     const reply = buildLocalFallbackReply('Quels loyers sont en retard ?', mockContext);
+    expect(reply).toContain('**Fait**');
     expect(reply).toContain('Grace Tair');
     expect(reply).toContain('150');
+    expect(reply).toContain('**Recommandation**');
   });
 
   it('répond aux questions sur les encaissements', () => {
