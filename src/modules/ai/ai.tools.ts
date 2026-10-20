@@ -33,14 +33,24 @@ import { formatDateFr, formatXaf, paymentStatusFr } from './ai.lease-request.js'
 import { isValidWhatsAppPhone, normalizePhoneE164 } from '../../shared/utils/phone.util.js';
 import { stripClientOrganizationIds } from './ai.data-first.js';
 import {
+  demandFromToolArgs,
+  formatCatalogMatchForLocalReply,
+  isCatalogMatchQuestion,
+  parseCatalogMatchDemand,
+  toCatalogMatchToolPayload,
+  type CatalogMatchToolPayload,
+} from './ai.catalog-match.js';
+import {
   isFormationKnowledgeQuestion,
   searchFormationKnowledge,
 } from './ai.formation-knowledge.js';
+import { MatchingService } from '../intelligence/matching.service.js';
 
 export type AiToolName =
   | 'getDashboardSummary'
   | 'getOutstandingPayments'
   | 'getVacantUnits'
+  | 'matchCatalogListings'
   | 'searchFormationKnowledge'
   | 'getUnits'
   | 'getBuildings'
@@ -123,6 +133,35 @@ export const OPENAI_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool
       name: 'getVacantUnits',
       description: 'Logements vacants / disponibles (statut AVAILABLE).',
       parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'matchCatalogListings',
+      description:
+        'Recherche dans le CATALOGUE PUBLIC d’annonces publiées (moteur MatchingService). ' +
+        'Distinct du parc privé org (getVacantUnits / getUnits). ' +
+        'Ne pas inventer de critères absents. Transmet sqlMatchCount / emptyReason sans les réécrire. ' +
+        'Pour « trouve / cherche un logement » avec budget, pièces, ville.',
+      parameters: {
+        type: 'object',
+        properties: {
+          minRooms: { type: 'number', description: 'Nombre min de pièces (≥1) si explicite.' },
+          maxRent: { type: 'number', description: 'Loyer max XAF si explicite.' },
+          minRent: { type: 'number' },
+          minSurface: { type: 'number' },
+          cities: { type: 'array', items: { type: 'string' } },
+          districts: { type: 'array', items: { type: 'string' } },
+          currency: { type: 'string', description: 'Devise (défaut matching : XAF).' },
+          limit: { type: 'number', description: '1–10 correspondances (défaut 5).' },
+          text: {
+            type: 'string',
+            description: 'Message utilisateur brut pour extraction locale des critères.',
+          },
+        },
+        additionalProperties: false,
+      },
     },
   },
   {
@@ -685,6 +724,7 @@ export class AiToolsService {
     @inject(TeamMembersService) private readonly teamMembers: TeamMembersService,
     @inject(AiMemoryService) private readonly memory: AiMemoryService,
     @inject(AiAutomationService) private readonly automations: AiAutomationService,
+    @inject(MatchingService) private readonly matching: MatchingService,
   ) {}
 
   async execute(
@@ -709,6 +749,11 @@ export class AiToolsService {
           return await this.getOutstandingPayments(organizationId, args);
         case 'getVacantUnits':
           return await this.getVacantUnits(organizationId);
+        case 'matchCatalogListings': {
+          // Catalogue public — organizationId JWT non utiliséé comme filtre matching.
+          void organizationId;
+          return await this.matchCatalogListings(args);
+        }
         case 'searchFormationKnowledge': {
           const query =
             typeof args.query === 'string' && args.query.trim()
@@ -943,6 +988,38 @@ export class AiToolsService {
       throw new ForbiddenError('Contexte utilisateur requis pour la mémoire IA');
     }
     return ctx;
+  }
+
+  /**
+   * Matching catalogue public — délègue à MatchingService.match.
+   * sqlMatchCount / emptyReason préservés (jamais réécrits ici).
+   */
+  private async matchCatalogListings(args: Record<string, unknown>): Promise<CatalogMatchToolPayload> {
+    const fromArgs = demandFromToolArgs(args);
+    let fieldsFromMessage: string[] = [];
+    if (typeof args.text === 'string' && args.text.trim()) {
+      const parsed = parseCatalogMatchDemand(args.text);
+      fieldsFromMessage = parsed.fieldsFromMessage;
+      // Args explicites d’outil priment ; compléter seulement les champs absents.
+      if (fromArgs.minRooms == null && parsed.demand.minRooms != null) {
+        fromArgs.minRooms = parsed.demand.minRooms;
+      }
+      if (fromArgs.maxRent == null && parsed.demand.maxRent != null) {
+        fromArgs.maxRent = parsed.demand.maxRent;
+      }
+      if (!fromArgs.cities?.length && parsed.demand.cities?.length) {
+        fromArgs.cities = parsed.demand.cities;
+      }
+      if (!fromArgs.districts?.length && parsed.demand.districts?.length) {
+        fromArgs.districts = parsed.demand.districts;
+      }
+      if (!fromArgs.currency && parsed.demand.currency) {
+        fromArgs.currency = parsed.demand.currency;
+      }
+    }
+    const { limit, ...demand } = fromArgs;
+    const result = await this.matching.match(demand, limit ?? 5);
+    return toCatalogMatchToolPayload(result, fieldsFromMessage);
   }
 
   private async proposeAutomationKind(
@@ -1253,6 +1330,15 @@ export class AiToolsService {
         (q.includes('logement') || q.includes('appart') || q.includes('bien') || q.includes('unit')));
     if (wantsVacant) {
       tools.push({ name: 'getVacantUnits' });
+    }
+
+    // Catalogue public (MatchingService) — après vacants/impayés pour ne pas les voler.
+    if (isCatalogMatchQuestion(message)) {
+      const parsed = parseCatalogMatchDemand(message);
+      tools.push({
+        name: 'matchCatalogListings',
+        args: { ...parsed.demand, text: message.slice(0, 500) },
+      });
     }
 
     if (isFormationKnowledgeQuestion(message)) {
@@ -2356,6 +2442,9 @@ export class AiToolsService {
 
 export function formatToolResultForLocalReply(toolName: string, result: unknown): string {
   const data = result as Record<string, unknown>;
+  if (toolName === 'matchCatalogListings') {
+    return formatCatalogMatchForLocalReply(data as CatalogMatchToolPayload);
+  }
   if (toolName === 'searchFormationKnowledge') {
     const hits = (data.hits as Array<Record<string, unknown>>) ?? [];
     const note = typeof data.note === 'string' ? data.note : '';

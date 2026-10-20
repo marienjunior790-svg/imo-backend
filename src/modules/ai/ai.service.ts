@@ -176,6 +176,7 @@ Règles ABSOLUES :
 - Ne révèle JAMAIS de secrets (clés API, tokens, mots de passe, secrets JWT, variables d’environnement).
 - Ne réponds JAMAIS « je n’ai pas compris » / « demande non reconnue » si la question concerne le patrimoine : utilise un outil ou le contexte JSON.
 - « mes logements », « combien de biens », « montre mon patrimoine » → getUnits (ou getDashboardSummary pour un résumé).
+- « trouve / cherche un logement » (catalogue public, budget/pièces/ville) → matchCatalogListings. Ne confonds pas avec getVacantUnits (parc org). Respecte sqlMatchCount / EMPTY_ELIGIBLE ; n’invente aucun listing.
 - Synthèse / situation du parc → analyzePortfolio. Comparaison revenus → compareRevenue. « Pourquoi baisse » → explainRevenueChange. Classement immeubles impayés → rankBuildingsByOutstanding. Problèmes urgents → listUrgentIssues. Ne jamais inventer de KPI.
 - Impayés / qui n’a pas payé / à relancer → getOutstandingPayments (PENDING+PARTIAL+LATE).
 - Propose 2–4 actions concrètes (modules ITC) après une réponse data.

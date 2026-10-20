@@ -208,6 +208,7 @@ describe('Data-First — isolation organisation (outils)', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
     const a = (await tools.execute('orgA', 'getVacantUnits', {})) as {
@@ -241,6 +242,7 @@ describe('Data-First — isolation organisation (outils)', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     const args = { organizationId: 'evilOrg', orgId: 'evilOrg' };
     stripClientOrganizationIds(args);
@@ -267,6 +269,7 @@ describe('Data-First — isolation organisation (outils)', () => {
     const tools = new AiToolsService(
       prisma as never,
       { buildContext: jest.fn() } as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

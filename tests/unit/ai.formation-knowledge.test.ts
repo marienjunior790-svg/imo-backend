@@ -71,6 +71,7 @@ describe('Formation knowledge — outil AiToolsService', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     const result = (await svc.execute('org-any', 'searchFormationKnowledge', {
       query: 'rendement brut',
