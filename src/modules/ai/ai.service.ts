@@ -15,6 +15,7 @@ import {
 } from './ai.fallback.js';
 import { APP_GUIDE_PROMPT, isAppHowtoIntent, resolveAppHowtoReply } from './ai.app-guide.js';
 import { hasHowtoCue, manualPromptFor, resolveManualAnswer, searchAppManual } from './ai.app-manual.js';
+import { shouldSkipLeaseDraftForCatalogSearch } from './ai.catalog-match.js';
 import {
   LEASE_DRAFT_MARKER,
   collectLeaseDraftMessages,
@@ -1857,6 +1858,10 @@ export class AiService {
     message: string,
     history?: AiChatInput['history'],
   ): Promise<AiChatResponse | null> {
+    // Recherche catalogue public (« trouve un logement… ») ≠ suite de brouillon bail.
+    // Sinon un loyer/pièces dans le message + historique « Nouveau contrat » vole le matching.
+    if (shouldSkipLeaseDraftForCatalogSearch(message)) return null;
+
     const startsNew =
       mentionsContract(message) && (hasLeaseCreateCue(message) || hasLeaseMakeCue(message) || hasLeasePdfCue(message));
     const draft = startsNew ? [message] : collectLeaseDraftMessages(message, history);

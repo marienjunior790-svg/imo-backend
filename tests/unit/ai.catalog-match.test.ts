@@ -97,6 +97,14 @@ describe('GO-TOOL-MATCH — intent & parse (B2)', () => {
     expect(fieldsFromMessage).toEqual(expect.arrayContaining(['minRooms', 'maxRent', 'cities']));
   });
 
+  it('extrait maxRent depuis « loyer maximal de 300 000 XAF » (espaces)', () => {
+    const { demand } = parseCatalogMatchDemand(
+      'Trouve-moi un logement de 3 pièces avec un loyer maximal de 300 000 XAF.',
+    );
+    expect(demand.minRooms).toBe(3);
+    expect(demand.maxRent).toBe(300_000);
+  });
+
   it('U6 — mes impayés / vacants / logements ne passent pas par le catalogue', () => {
     expect(isCatalogMatchQuestion('mes impayés')).toBe(false);
     expect(isCatalogMatchQuestion('Quels logements sont vacants ?')).toBe(false);

@@ -1363,7 +1363,8 @@ export class AiToolsService {
         (q.includes('montre') && (q.includes('patrimoine') || q.includes('parc'))) ||
         q.includes('liste des biens') ||
         q.includes('liste des logements'));
-    if (wantsUnits) {
+    // Parc org seulement — une recherche catalogue (trouve/cherche + logement) ne dump pas getUnits.
+    if (wantsUnits && !isCatalogMatchQuestion(message)) {
       tools.push({ name: 'getUnits' });
     }
 

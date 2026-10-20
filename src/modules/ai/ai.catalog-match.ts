@@ -89,6 +89,14 @@ export function isCatalogMatchQuestion(message: string): boolean {
 }
 
 /**
+ * Recherche catalogue explicite : ne doit jamais être absorbée par le brouillon
+ * « Nouveau contrat » (loyer/pièces dans le message + historique session).
+ */
+export function shouldSkipLeaseDraftForCatalogSearch(message: string): boolean {
+  return isCatalogMatchQuestion(message);
+}
+
+/**
  * Extrait uniquement les critères explicitement présents.
  * Pas de défaut métier inventé (pas de minRooms=1 silencieux).
  */
@@ -112,12 +120,16 @@ export function parseCatalogMatchDemand(message: string): {
     }
   }
 
+  // « 300 000 » / « 300.000 » → digits collés pour les regex budget
+  const qAmount = q.replace(/(\d)[\s.](?=\d{3}\b)/g, '$1');
+  const budgetCue =
+    '(?:budget|max(?:imum|imale?)?|maximal|loyer\\s+max(?:imum|imale?)?|jusqu\'?a|moins\\s+de|inferieur\\s+a|<=?)';
   const budgetK =
-    q.match(/(?:budget|max(?:imum)?|jusqu'?a|moins de|inferieur a|<=?)\s*(\d+)\s*k\b/) ||
-    q.match(/\b(\d+)\s*k\s*(?:xaf|fcfa)?\b/);
+    qAmount.match(new RegExp(`${budgetCue}\\s*(?:de\\s*)?(\\d+)\\s*k\\b`)) ||
+    qAmount.match(/\b(\d+)\s*k\s*(?:xaf|fcfa)?\b/);
   const budgetFull =
-    q.match(/(?:budget|max(?:imum)?|jusqu'?a|moins de|inferieur a|<=?)\s*(\d{5,8})\b/) ||
-    q.match(/\b(\d{5,8})\s*(?:xaf|fcfa)\b/);
+    qAmount.match(new RegExp(`${budgetCue}\\s*(?:de\\s*)?(\\d{5,8})\\b`)) ||
+    qAmount.match(/\b(\d{5,8})\s*(?:xaf|fcfa)\b/);
   if (budgetK) {
     const amount = Number(budgetK[1]) * 1000;
     if (amount >= 10_000 && amount <= 50_000_000) {
