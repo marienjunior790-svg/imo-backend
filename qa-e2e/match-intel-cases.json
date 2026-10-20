@@ -1,0 +1,129 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-10-20",
+  "notes": [
+    "Cas déterministes NL → intent/demand (copilote). Pas d'écriture prod.",
+    "expectTool: outil local attendu (ou null = ne doit pas appeler matchCatalogListings).",
+    "expectEmptyHard: true = critères hard trop serrés (EMPTY_ELIGIBLE probable en prod / corpus).",
+    "Ambigu : comportement documenté actuel — clarifier produit avant d'assouplir le parseur."
+  ],
+  "cases": [
+    {
+      "id": "P1-smoke-A",
+      "kind": "positive",
+      "message": "Trouve-moi un logement de 3 pièces avec un loyer maximal de 300 000 XAF.",
+      "expectCatalog": true,
+      "expectTool": "matchCatalogListings",
+      "forbidTools": ["getOutstandingPayments", "getUnits"],
+      "expectDemand": { "minRooms": 3, "maxRent": 300000 },
+      "expectEmptyHard": false,
+      "notes": "Régression smoke A post c98787c / explicabilité bc148a4"
+    },
+    {
+      "id": "P2-general-search",
+      "kind": "positive",
+      "message": "Je cherche un logement à louer.",
+      "expectCatalog": true,
+      "expectTool": "matchCatalogListings",
+      "forbidTools": ["getOutstandingPayments"],
+      "expectDemand": {},
+      "expectEmptyHard": false,
+      "notes": "Recherche générale — pas inventer minRooms/maxRent"
+    },
+    {
+      "id": "P3-explicit-appart",
+      "kind": "positive",
+      "message": "Trouve-moi un appartement de 3 pièces à 300 000 XAF maximum.",
+      "expectCatalog": true,
+      "expectTool": "matchCatalogListings",
+      "forbidTools": ["getOutstandingPayments"],
+      "expectDemand": { "minRooms": 3, "maxRent": 300000 },
+      "expectEmptyHard": false
+    },
+    {
+      "id": "N1-hard-tight",
+      "kind": "negative_hard",
+      "message": "Trouve un 5 pièces à 50 000 XAF maximum.",
+      "expectCatalog": true,
+      "expectTool": "matchCatalogListings",
+      "forbidTools": ["getOutstandingPayments"],
+      "expectDemand": { "minRooms": 5, "maxRent": 50000 },
+      "expectEmptyHard": true,
+      "notes": "Outil appelé ; EMPTY_ELIGIBLE attendu sur catalogue réel / gold serré"
+    },
+    {
+      "id": "N2-impayes-smoke-B",
+      "kind": "negative_routing",
+      "message": "Analyse mes impayés et indique-moi les actions prioritaires.",
+      "expectCatalog": false,
+      "expectTool": "getOutstandingPayments",
+      "forbidTools": ["matchCatalogListings"],
+      "expectDemand": {},
+      "expectEmptyHard": false
+    },
+    {
+      "id": "N3-contrat",
+      "kind": "negative_routing",
+      "message": "Crée un nouveau contrat pour Jean",
+      "expectCatalog": false,
+      "expectTool": null,
+      "forbidTools": ["matchCatalogListings"],
+      "expectDemand": {},
+      "expectEmptyHard": false,
+      "notes": "Parcours contrat — pas catalogue"
+    },
+    {
+      "id": "N4-vacants-org",
+      "kind": "negative_routing",
+      "message": "Quels logements sont vacants ?",
+      "expectCatalog": false,
+      "expectTool": "getVacantUnits",
+      "forbidTools": ["matchCatalogListings"],
+      "expectDemand": {},
+      "expectEmptyHard": false
+    },
+    {
+      "id": "A1-no-seek-verb",
+      "kind": "ambiguous",
+      "message": "logement pas trop cher",
+      "expectCatalog": false,
+      "expectTool": null,
+      "forbidTools": ["matchCatalogListings"],
+      "expectDemand": {},
+      "expectEmptyHard": false,
+      "notes": "Ambigu : pas de verbe trouve/cherche → pas catalogue (comportement actuel)"
+    },
+    {
+      "id": "A2-seek-without-housing",
+      "kind": "ambiguous",
+      "message": "Je cherche quelque chose à Bacongo",
+      "expectCatalog": false,
+      "expectTool": null,
+      "forbidTools": ["matchCatalogListings"],
+      "expectDemand": {},
+      "expectEmptyHard": false,
+      "notes": "Ambigu : cherche sans type logement → pas catalogue ; Bacongo hors KNOWN_CITIES parse"
+    },
+    {
+      "id": "A3-seek-housing-vague-budget",
+      "kind": "ambiguous",
+      "message": "cherche un logement pas trop cher",
+      "expectCatalog": true,
+      "expectTool": "matchCatalogListings",
+      "forbidTools": ["getOutstandingPayments"],
+      "expectDemand": {},
+      "expectEmptyHard": false,
+      "notes": "Catalogue oui ; ne pas inventer maxRent depuis « pas trop cher »"
+    },
+    {
+      "id": "A4-tenant-impaye",
+      "kind": "ambiguous",
+      "message": "Quels sont les impayés du locataire Yannick ?",
+      "expectCatalog": false,
+      "expectTool": "getOutstandingPayments",
+      "forbidTools": ["matchCatalogListings"],
+      "expectDemand": {},
+      "expectEmptyHard": false
+    }
+  ]
+}
