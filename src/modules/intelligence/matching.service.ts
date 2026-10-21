@@ -19,16 +19,8 @@ import {
   withRetrievalMeta,
 } from './retrieval.js';
 import { SCORER_VERSION } from './scorer-version.js';
-import {
-  mergeProgressiveRounds,
-  pickClosestToTarget,
-  progressiveMidWindow,
-  progressivePerRound,
-  progressivePriceTarget,
-  resolveSqlFetchMode,
-  type SqlFetchMode,
-} from './sql-fetch.js';
-import type { DemandSpec, ListingCandidate, MatchResult } from './types.js';
+import { readKeysetPages, RENT_KEYSET_ORDER } from './sql-keyset.js';
+import type { ListingCandidate, MatchResult } from './types.js';
 
 const LISTING_INCLUDE = {
   building: {
@@ -86,38 +78,38 @@ export class MatchingService {
     const where = buildHardApartmentWhere(demand);
 
     const sqlMatchCount = await this.prisma.apartment.count({ where });
-    const sqlFetchMode = resolveSqlFetchMode(
-      sqlMatchCount,
-      env.INTELLIGENCE_SQL_FETCH_POLICY,
-      MATCH_SQL_FETCH_LIMIT,
-    );
-
-    const fetched =
-      sqlFetchMode === 'progressive'
-        ? await this.fetchProgressive(where, demand)
-        : await this.fetchRentAsc(where);
-
-    const sqlFetchTruncated = sqlMatchCount > fetched.length;
+    const { rows: fetched, batches } = await this.fetchRentAscAll(where);
+    if (fetched.length !== sqlMatchCount) {
+      throw new AppError(
+        503,
+        'Lecture du catalogue interrompue avant la fin du filtre SQL.',
+        'MATCH_READ_INCOMPLETE',
+      );
+    }
 
     const gate = filterEligible(fetched, demand);
+    const retrievalBase = {
+      sqlFetchCount: fetched.length,
+      sqlMatchCount,
+      sqlFetchMode: 'rent_asc' as const,
+      completeness: 'complete' as const,
+      batches,
+    };
     if (!gate.ok) {
       const empty = runMatchEngine(fetched, raw, { limit, defaults });
       return withRetrievalMeta(
         { ...empty, eligibleCount: 0 },
         buildRetrievalMeta({
           candidateCount: 0,
-          truncated: sqlFetchTruncated,
+          truncated: false,
           eligibleTotal: 0,
-          sqlFetchCount: fetched.length,
-          sqlMatchCount,
-          sqlFetchMode,
+          ...retrievalBase,
         }),
       );
     }
 
     const pre = preselectByScore(gate.eligible, demand, MATCH_CANDIDATE_RECALL_LIMIT);
     const result = runMatchEngine(pre.selected, raw, { limit, defaults });
-    const truncated = sqlFetchTruncated || pre.truncated;
 
     return withRetrievalMeta(
       {
@@ -126,11 +118,9 @@ export class MatchingService {
       },
       buildRetrievalMeta({
         candidateCount: pre.selected.length,
-        truncated,
+        truncated: pre.truncated,
         eligibleTotal: pre.eligibleTotal,
-        sqlFetchCount: fetched.length,
-        sqlMatchCount,
-        sqlFetchMode,
+        ...retrievalBase,
       }),
     );
   }
@@ -149,85 +139,22 @@ export class MatchingService {
     };
   }
 
-  /** A — rent ASC + take limit. */
-  private async fetchRentAsc(where: Prisma.ApartmentWhereInput): Promise<ListingCandidate[]> {
-    const rows = await this.prisma.apartment.findMany({
-      where,
-      take: MATCH_SQL_FETCH_LIMIT,
-      orderBy: [{ rentAmount: 'asc' }, { publishedAt: 'desc' }, { id: 'asc' }],
-      include: LISTING_INCLUDE,
+  /** Lecture ordonnée par lots, jusqu'à épuisement du filtre SQL. Le score n'est pas appelé ici. */
+  private async fetchRentAscAll(where: Prisma.ApartmentWhereInput): Promise<{
+    rows: ListingCandidate[];
+    batches: number;
+  }> {
+    const { rows, batches } = await readKeysetPages({
+      batchSize: MATCH_SQL_FETCH_LIMIT,
+      read: (query) =>
+        this.prisma.apartment.findMany({
+          where,
+          take: query.take,
+          ...(query.cursor ? { cursor: query.cursor, skip: query.skip } : {}),
+          orderBy: RENT_KEYSET_ORDER,
+          include: LISTING_INCLUDE,
+        }),
     });
-    return rows.map((apt) => this.toCandidate(apt));
-  }
-
-  /**
-   * C — 3 lots (bas / milieu / haut), budget global sqlFetchLimit.
-   * 3 requêtes max. Pas de garantie de rappel exact (Phase 0E.2).
-   */
-  private async fetchProgressive(
-    where: Prisma.ApartmentWhereInput,
-    demand: DemandSpec,
-  ): Promise<ListingCandidate[]> {
-    const perRound = progressivePerRound(MATCH_SQL_FETCH_LIMIT, 3);
-    const target = progressivePriceTarget(demand);
-    const positiveWhere: Prisma.ApartmentWhereInput = {
-      AND: [where, { rentAmount: { gt: 0 } }],
-    };
-
-    const [lowRows, highRows] = await Promise.all([
-      this.prisma.apartment.findMany({
-        where: positiveWhere,
-        take: perRound,
-        orderBy: [{ rentAmount: 'asc' }, { publishedAt: 'desc' }, { id: 'asc' }],
-        include: LISTING_INCLUDE,
-      }),
-      this.prisma.apartment.findMany({
-        where: positiveWhere,
-        take: perRound,
-        orderBy: [{ rentAmount: 'desc' }, { id: 'asc' }],
-        include: LISTING_INCLUDE,
-      }),
-    ]);
-
-    const low = lowRows.map((apt) => this.toCandidate(apt));
-    const high = highRows.map((apt) => this.toCandidate(apt));
-    const exclude = new Set([...low, ...high].map((c) => c.view.id));
-
-    let mid: ListingCandidate[] = [];
-    if (target != null) {
-      const win = progressiveMidWindow(demand, target);
-      const midOversample = await this.prisma.apartment.findMany({
-        where: {
-          AND: [positiveWhere, { rentAmount: { gte: win.gte, lte: win.lte } }],
-        },
-        take: Math.min(perRound * 5, MATCH_SQL_FETCH_LIMIT),
-        orderBy: [{ rentAmount: 'asc' }, { id: 'asc' }],
-        include: LISTING_INCLUDE,
-      });
-      mid = pickClosestToTarget(
-        midOversample.map((apt) => this.toCandidate(apt)),
-        target,
-        perRound,
-        exclude,
-      );
-    }
-
-    if (!mid.length) {
-      const fallback = await this.prisma.apartment.findMany({
-        where: positiveWhere,
-        take: perRound,
-        orderBy: [{ id: 'asc' }],
-        include: LISTING_INCLUDE,
-      });
-      mid = fallback
-        .map((apt) => this.toCandidate(apt))
-        .filter((c) => !exclude.has(c.view.id))
-        .slice(0, perRound);
-    }
-
-    const { merged } = mergeProgressiveRounds([low, mid, high], MATCH_SQL_FETCH_LIMIT);
-    return merged;
+    return { rows: rows.map((apt) => this.toCandidate(apt)), batches };
   }
 }
-
-export type { SqlFetchMode };

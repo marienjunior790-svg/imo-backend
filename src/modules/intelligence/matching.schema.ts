@@ -17,6 +17,8 @@ export const matchDemandSchema = z.object({
   minSurface: z.number().positive().max(10_000).optional(),
   cities: z.array(z.string().min(1).max(80)).max(20).optional(),
   districts: z.array(z.string().min(1).max(80)).max(20).optional(),
+  preferredDistricts: z.array(z.string().min(1).max(80)).max(20).optional(),
+  excludedDistricts: z.array(z.string().min(1).max(80)).max(20).optional(),
   currency: z.string().min(3).max(8).optional(),
   locale: z.string().min(2).max(16).optional(),
   text: z.string().max(2000).optional(),

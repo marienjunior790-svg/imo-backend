@@ -101,6 +101,8 @@ router.post(
       minSurface?: number;
       cities?: string[];
       districts?: string[];
+      preferredDistricts?: string[];
+      excludedDistricts?: string[];
       currency?: string;
       locale?: string;
       text?: string;
