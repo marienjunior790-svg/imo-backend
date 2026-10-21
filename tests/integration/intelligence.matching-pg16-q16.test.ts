@@ -59,13 +59,12 @@ describeDb(`GO-MATCH-QUALITY-16 — PostgreSQL 16 (${gate.reason})`, () => {
 
   beforeAll(async () => {
     const ident = await prisma.$queryRaw<
-      Array<{ version: string; db: string; port: number; encoding: string; collate: string }>
+      Array<{ version: string; db: string; port: number; encoding: string }>
     >`
       SELECT version() AS version,
              current_database() AS db,
              inet_server_port()::int AS port,
-             current_setting('server_encoding') AS encoding,
-             current_setting('lc_collate') AS collate
+             current_setting('server_encoding') AS encoding
     `;
     const row = ident[0];
     if (!row || row.db !== 'immo_tec_test' || Number(row.port) !== 5432) {
@@ -75,7 +74,7 @@ describeDb(`GO-MATCH-QUALITY-16 — PostgreSQL 16 (${gate.reason})`, () => {
       throw new Error(`Quality-16 attend PostgreSQL 16, reçu ${row.version.split(',')[0]}`);
     }
     process.stdout.write(
-      `q16 engine=${row.version.split(',')[0]} encoding=${row.encoding} collate=${row.collate}\n`,
+      `q16 engine=${row.version.split(',')[0]} encoding=${row.encoding}\n`,
     );
 
     await prisma.organization.create({
