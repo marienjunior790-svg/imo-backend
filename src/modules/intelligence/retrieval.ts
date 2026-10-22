@@ -4,9 +4,8 @@ import type { MatchResult, MatchRetrievalMeta } from './types.js';
 export const MATCH_CANDIDATE_RECALL_LIMIT = 500;
 
 /**
- * Max lignes chargées depuis SQL après hard filters.
- * Au-delà → truncated (rappel non exhaustif côté base).
- * Dimensionné pour catalogues régionaux ; pas un « simple bump » du take aveugle.
+ * Taille d'un lot de la lecture ordonnée (loyer, date de publication, id).
+ * Le parcours continue au-delà de ce lot. Ce n'est pas le plafond du catalogue.
  */
 export const MATCH_SQL_FETCH_LIMIT = 10_000;
 
@@ -18,6 +17,8 @@ export function buildRetrievalMeta(input: {
   sqlFetchCount?: number;
   sqlMatchCount?: number;
   sqlFetchMode?: MatchRetrievalMeta['sqlFetchMode'];
+  completeness?: MatchRetrievalMeta['completeness'];
+  batches?: number;
 }): MatchRetrievalMeta {
   return {
     strategy: 'hard_sql_score_preselect',
@@ -25,6 +26,8 @@ export function buildRetrievalMeta(input: {
     truncated: input.truncated,
     recallLimit: input.recallLimit ?? MATCH_CANDIDATE_RECALL_LIMIT,
     ...(input.sqlFetchMode != null ? { sqlFetchMode: input.sqlFetchMode } : {}),
+    ...(input.completeness != null ? { completeness: input.completeness } : {}),
+    ...(input.batches != null ? { batches: input.batches } : {}),
     ...(input.eligibleTotal != null ? { eligibleTotal: input.eligibleTotal } : {}),
     ...(input.sqlFetchCount != null ? { sqlFetchCount: input.sqlFetchCount } : {}),
     ...(input.sqlMatchCount != null ? { sqlMatchCount: input.sqlMatchCount } : {}),

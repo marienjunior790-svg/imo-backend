@@ -49,7 +49,12 @@ export interface DemandSpec {
   minRooms?: number;
   minSurface?: number;
   cities?: string[];
+  /** Quartier impératif : filtre dur (SQL + éligibilité). */
   districts?: string[];
+  /** Quartier préféré : classement seulement. Ne devient jamais un filtre dur. */
+  preferredDistricts?: string[];
+  /** Quartier refusé. Filtre mémoire, jamais une préférence, jamais recopié dans `districts`. */
+  excludedDistricts?: string[];
   currency: string;
   locale: string;
   /** Pondérations 0–1 (somme non obligatoire — normalisées en interne). */
@@ -94,6 +99,14 @@ export interface MatchRetrievalMeta {
    * rent_asc (A) ou progressive (C, lots bas/milieu/haut). Absent sur legacy.
    */
   sqlFetchMode?: 'rent_asc' | 'progressive';
+  /**
+   * complete : le filtre SQL a été parcouru jusqu'au bout.
+   * partial / error : réservés à un résultat qui ne doit pas être lu comme une recherche finie.
+   * Absent sur les réponses antérieures à Quality-14.
+   */
+  completeness?: 'complete' | 'partial' | 'error';
+  /** Nombre de lots lus dans l'ordre loyer / publication / id. */
+  batches?: number;
   /** Nombre de candidats retenus pour le ranking final (≤ recallLimit). */
   candidateCount: number;
   /**
