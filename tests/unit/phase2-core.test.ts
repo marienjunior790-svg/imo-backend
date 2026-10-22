@@ -73,7 +73,7 @@ describe('AI local fallback', () => {
   });
 
   it('résumé par défaut', () => {
-    const reply = buildLocalFallbackReply('Bonjour', sampleCtx());
+    const reply = buildLocalFallbackReply('Résumer mon patrimoine', sampleCtx());
     expect(reply).toContain('Agence Test');
     expect(reply).toContain('10 biens');
   });
